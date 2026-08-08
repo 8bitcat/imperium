@@ -428,6 +428,7 @@
   <button id="claimbtn" class="btn amber" style="display:none">GÖR TILL HEMLAND</button>
   <button id="justifybtn" class="btn" style="display:none">&#9878;&#65039; RÄTTFÄRDIGA KRIG</button>
   <button id="attackbtn" class="btn warbtn" style="display:none">&#9876; ANFALL MED ARMÉN</button>
+  <button id="nukebtn" class="btn warbtn" style="display:none">&#9762; ATOMSLAG (500 &#128176;)</button>
   <button id="wpbtn" class="btn" style="display:none">&#128330; VIT FRED (AVBRYT)</button>
   <button id="nationbtn" class="btn" style="display:none">&#127963;&#65039; NATION</button>
 </div>
@@ -452,6 +453,12 @@
 
 <div id="hint">DRA = ROTERA &nbsp;&#8226;&nbsp; SKROLLA/NYP = ZOOM &nbsp;&#8226;&nbsp; KLICKA PÅ ETT LAND</div>
 <div id="toasts"></div>
+
+<!-- STRIDSFEED: pågående + köade strider (uppe till höger) -->
+<div id="battlefeed" class="panel" style="top:56px; right:10px; min-width:180px; max-width:46vw; display:none">
+  <div class="ptitle">&#9654; STRIDER</div>
+  <div id="battlefeedlist"></div>
+</div>
 
 <!-- MENY -->
 <div id="menu" class="overlay show">
