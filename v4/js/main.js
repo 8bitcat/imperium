@@ -131,14 +131,15 @@ function applyState() {
 }
 
 // ---------- armé (solo-prototypen) ----------
+// Ingen gratisarmé — den börjar TOM och byggs enhet för enhet i NATION-panelen
 function spawnArmy(countryId) {
-  state.solo.army = { units: STARTER_ARMY(), ll: capitalLL(countryId), at: countryId };
+  state.solo.army = { units: [], ll: capitalLL(countryId), at: countryId };
   updateArmyMarker();
 }
 
 function updateArmyMarker() {
   const a = state.solo?.army;
-  globe.setArmy(a ? { ll: a.ll, comp: compOf(a.units), color: SOLO_COLOR } : null);
+  globe.setArmy(a && a.units.length ? { ll: a.ll, comp: compOf(a.units), color: SOLO_COLOR } : null);
 }
 
 function armyFlyTo(targetLL, ms, done) {
@@ -238,7 +239,7 @@ function refreshInfoPanel() {
       if (!war) {
         $('#istatus').textContent = `FÖRSVAR: ${def.length} ENHETER${conqTxt}`;
         $('#istatus').style.color = '';
-        if (s.army && !state.battle) show(justifyBtn, true);
+        if (s.army?.units.length && !state.battle) show(justifyBtn, true);
       } else if (war.status === 'justifying') {
         $('#istatus').textContent = `RÄTTFÄRDIGAR KRIG (${CASUS_BELLI[war.cb].name.toUpperCase()}) — ${war.days} DAGAR KVAR${conqTxt}`;
         $('#istatus').style.color = 'var(--amber)';
@@ -246,7 +247,7 @@ function refreshInfoPanel() {
       } else {
         $('#istatus').textContent = `KRIG RÄTTFÄRDIGAT: ${CASUS_BELLI[war.cb].name.toUpperCase()} — REDO ATT ANFALLA${conqTxt}`;
         $('#istatus').style.color = 'var(--red)';
-        if (s.army && !state.battle) show(attackBtn, true);
+        if (s.army?.units.length && !state.battle) show(attackBtn, true);
         show(wpBtn, true);
       }
     }
@@ -278,8 +279,8 @@ $('#claimbtn').addEventListener('click', () => {
     initNation(selectedCountry.id);
     spawnArmy(selectedCountry.id);
     applyState();
-    toast(`${selectedCountry.name.toUpperCase()} ÄR DITT HEMLAND — DIN ARMÉ ÄR MOBILISERAD`, 'amber', 5000);
-    toast('VÄLJ ETT GRANNLAND OCH TRYCK ANFALL', '', 5000);
+    toast(`${selectedCountry.name.toUpperCase()} ÄR DITT HEMLAND`, 'amber', 5000);
+    toast('BYGG DIN ARMÉ I \u{1F3DB}\u{FE0F} NATION-PANELEN — SEN KAN DU RÄTTFÄRDIGA KRIG', '', 6000);
     return;
   }
   if (state.mode !== 'player') return;
@@ -291,8 +292,8 @@ $('#claimbtn').addEventListener('click', () => {
 // ---------- nationsmotorn: init, beräkning, resurser, tid ----------
 const UNIT_BUILD = {
   INF: { name: 'INFANTERI', man: 3, money: 50, needs: [] },
-  TANK: { name: 'STRIDSVAGN', man: 5, money: 120, needs: ['JARN', 'OLJA'] },
-  FLYG: { name: 'FLYGPLAN', man: 4, money: 200, needs: ['JARN', 'OLJA', 'GULD'] },
+  TANK: { name: 'STRIDSVAGN', man: 5, money: 120, needs: ['JARN', 'OLJA'], research: ['tanks', 1] },
+  FLYG: { name: 'FLYGPLAN', man: 4, money: 200, needs: ['JARN', 'OLJA', 'GULD'], research: ['aircraft', 1] },
 };
 
 function initNation(countryId) {
@@ -358,12 +359,22 @@ function setPreview(html) {
   $('#natpreview').innerHTML = html || 'HOVRA ÖVER ETT ALTERNATIV FÖR ATT SE FÖRÄNDRINGEN MOT IDAG';
 }
 
+// Fel i panelen: toast + rött i förhandsraden (toasts låg tidigare under panelen)
+function warn(msg) {
+  toast(msg, 'red');
+  setPreview(`<span class="dn">\u{26A0}\u{FE0F} ${msg}</span>`);
+}
+
+// Visar varje förändring i relation till DAGENS värde: "FACTORY OUTPUT 0 → −10"
 function deltaHtml(deltaMods) {
+  const stats = state.solo?.stats;
   const parts = [];
   for (const [k, d] of Object.entries(deltaMods)) {
     if (!d) continue;
     const good = statGoodness(k, d) > 0;
-    parts.push(`<span class="${good ? 'dp' : 'dn'}">${(STATS[k]?.name || k).toUpperCase()} ${d > 0 ? '+' : ''}${d}</span>`);
+    const cur = stats?.[k]?.total ?? 0;
+    const next = Math.max(-100, Math.min(100, cur + d));
+    parts.push(`<span class="${good ? 'dp' : 'dn'}">${(STATS[k]?.name || k).toUpperCase()} ${cur} \u{2192} ${next}</span>`);
   }
   return parts.join(' &nbsp;') || '<span class="dc">INGEN FÖRÄNDRING</span>';
 }
@@ -527,6 +538,7 @@ $('#pausebtn').addEventListener('click', () => {
 
 // ---------- NATION-panelen ----------
 let natTab = 'oversikt';
+let natIdeoPick = null;   // förhandsvald ideologi (bekräftas i rutan längst ner)
 
 function openNation() {
   const s = state.solo;
@@ -583,7 +595,13 @@ function renderNationTab() {
     const btn = document.createElement('button');
     btn.className = 'armybtn';
     btn.innerHTML = `${b.name}<br>${b.money} \u{1F4B0} + ${b.man} \u{1F9CD}${b.needs.length ? '<br>KRÄVER ' + b.needs.map((r) => RESOURCES[r].icon).join('') : ''}`;
-    const blocked = !s.army ? 'INGEN ARMÉ' : missing.length ? 'SAKNAR ' + missing.map((r) => RESOURCES[r].name.toUpperCase()).join(', ') : s.res.money < b.money ? 'FÖR LITE PENGAR' : s.res.man < b.man ? 'FÖR LITE MANPOWER' : null;
+    const resReq = b.research && (s.nation.research[b.research[0]] || 0) < b.research[1]
+      ? `KRÄVER FORSKNING: ${RESEARCH[b.research[0]].name.toUpperCase()} T${b.research[1]}` : null;
+    const blocked = !s.army ? 'INGEN ARMÉ'
+      : resReq
+      || (missing.length ? 'SAKNAR ' + missing.map((r) => RESOURCES[r].name.toUpperCase()).join(', ')
+      : s.res.money < b.money ? 'FÖR LITE PENGAR'
+      : s.res.man < b.man ? 'FÖR LITE MANPOWER' : null);
     if (blocked) { btn.disabled = true; btn.title = blocked; }
     btn.addEventListener('click', () => {
       if (blocked) { toast(blocked, 'red'); return; }
@@ -639,7 +657,7 @@ function renderNationTab() {
       if (!prog.hasCore) continue;
       const formable = prog.have >= e.need && s.nation.formation?.id !== e.id;
       formRow(`${e.icon} ${e.name.toUpperCase()}`, `${prog.have}/${e.need} HISTORISKA LÄNDER`, 120, formable, () => {
-        if (s.res.pp < 120) { toast('KRÄVER 120 \u{2696}\u{FE0F}', 'red'); return; }
+        if (s.res.pp < 120) { warn('KRÄVER 120 \u{2696}\u{FE0F} POLITICAL POWER'); return; }
         s.res.pp -= 120;
         s.nation.formation = { type: 'empire', id: e.id, name: e.name, icon: e.icon };
         s.permMods = { ...e.mods };
@@ -652,7 +670,7 @@ function renderNationTab() {
       if (f.req.ideologies && !f.req.ideologies.includes(s.nation.ideology)) continue;
       if (s.nation.formation?.id === f.id) continue;
       formRow(`${f.icon} ${f.name.toUpperCase()}`, f.desc, f.ppCost, true, () => {
-        if (s.res.pp < f.ppCost) { toast(`KRÄVER ${f.ppCost} \u{2696}\u{FE0F}`, 'red'); return; }
+        if (s.res.pp < f.ppCost) { warn(`KRÄVER ${f.ppCost} \u{2696}\u{FE0F} POLITICAL POWER`); return; }
         s.res.pp -= f.ppCost;
         s.nation.formation = { type: 'federation', id: f.id, name: f.name, icon: f.icon };
         s.permMods = { ...f.mods };
@@ -732,7 +750,7 @@ function renderLawsTab(body) {
       btn.addEventListener('click', () => {
         if (isCur) return;
         if (locked) { toast(locked.toUpperCase(), 'red', 4000); return; }
-        if (s.res.pp < cost) { toast(`KRÄVER ${cost} \u{2696}\u{FE0F} POLITICAL POWER`, 'red'); return; }
+        if (s.res.pp < cost) { warn(`KRÄVER ${cost} \u{2696}\u{FE0F} POLITICAL POWER — DU HAR ${s.res.pp}`); return; }
         s.res.pp -= cost;
         s.nation.laws[cat] = o.id;
         recomputeNation();
@@ -770,7 +788,7 @@ function renderIdeologyTab(body) {
       b.addEventListener('mouseleave', () => setPreview());
       b.addEventListener('click', () => {
         if (s.nation.doctrine === did) return;
-        if (s.res.pp < DOCTRINE_COST) { toast(`KRÄVER ${DOCTRINE_COST} \u{2696}\u{FE0F}`, 'red'); return; }
+        if (s.res.pp < DOCTRINE_COST) { warn(`KRÄVER ${DOCTRINE_COST} \u{2696}\u{FE0F} POLITICAL POWER`); return; }
         s.res.pp -= DOCTRINE_COST;
         s.nation.doctrine = did;
         recomputeNation(); renderResbar(); renderNationTab();
@@ -797,21 +815,56 @@ function renderIdeologyTab(body) {
       setPreview(`<span class="dc">${ideo.name.toUpperCase()} — ${IDEOLOGY_COST} \u{2696}\u{FE0F} + TILLFÄLLIG ORO</span> &nbsp; ` + deltaHtml(diffMods(ideo.mods, ideologyMods(s.nation))));
     });
     card.addEventListener('mouseleave', () => setPreview());
+    // klick = FÖRHANDSGRANSKA — bekräftelsen sker i rutan längst ner
     card.addEventListener('click', () => {
       if (s.nation.ideology === iid) return;
-      if (s.res.pp < IDEOLOGY_COST) { toast(`KRÄVER ${IDEOLOGY_COST} \u{2696}\u{FE0F} POLITICAL POWER`, 'red'); return; }
-      s.res.pp -= IDEOLOGY_COST;
-      s.nation.ideology = iid;
-      s.nation.doctrine = ideo.doctrines ? Object.keys(ideo.doctrines)[0] : null;
-      const forced = enforceRequirements(s.nation);
-      s.extra.unrest = (s.extra.unrest || 0) + 30;
-      recomputeNation(); renderResbar(); renderNationTab();
-      toast(`NY IDEOLOGI: ${ideo.icon} ${ideo.name.toUpperCase()} (+30 ORO ETT TAG)`, 'amber', 5000);
-      if (forced.length) toast('LAGAR TVINGADES OM: ' + forced.map((c) => LAWS[c].name.toUpperCase()).join(', '), 'red', 6000);
+      natIdeoPick = natIdeoPick === iid ? null : iid;
+      renderNationTab();
     });
+    if (natIdeoPick === iid) card.style.borderColor = 'var(--amber)';
     grid.appendChild(card);
   }
   body.appendChild(grid);
+
+  // bekräftelserutan längst ner
+  if (natIdeoPick && natIdeoPick !== s.nation.ideology) {
+    const pick = IDEOLOGIES[natIdeoPick];
+    const box = document.createElement('div');
+    box.style.cssText = 'margin-top:12px;padding:12px;border:1px solid rgba(255,176,46,0.5);background:rgba(30,20,4,0.5);font-size:7px;line-height:2';
+    const reqTxt = pick.requires
+      ? '<br><span style="color:var(--red)">TVINGAR OM LAGAR: ' + Object.keys(pick.requires).map((c) => LAWS[c].name.toUpperCase()).join(', ') + '</span>'
+      : '';
+    box.innerHTML = `<div style="font-size:9px;color:var(--amber);margin-bottom:4px">${pick.icon} BYT TILL ${pick.name.toUpperCase()}?</div>
+      <div>SÅ PÅVERKAS DINA VÄRDEN: ${deltaHtml(diffMods(pick.mods, ideologyMods(s.nation)))}</div>
+      <div style="color:var(--holo-dim)">KOSTAR ${IDEOLOGY_COST} \u{2696}\u{FE0F} (DU HAR ${s.res.pp}) + 30 TILLFÄLLIG ORO${reqTxt}</div>`;
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:8px;margin-top:8px';
+    const okBtn = document.createElement('button');
+    okBtn.className = 'btn amber';
+    okBtn.style.margin = '0';
+    okBtn.textContent = 'BEKRÄFTA BYTET';
+    okBtn.addEventListener('click', () => {
+      if (s.res.pp < IDEOLOGY_COST) { warn(`KRÄVER ${IDEOLOGY_COST} \u{2696}\u{FE0F} POLITICAL POWER — DU HAR ${s.res.pp}`); return; }
+      s.res.pp -= IDEOLOGY_COST;
+      s.nation.ideology = natIdeoPick;
+      s.nation.doctrine = pick.doctrines ? Object.keys(pick.doctrines)[0] : null;
+      const forced = enforceRequirements(s.nation);
+      s.extra.unrest = (s.extra.unrest || 0) + 30;
+      natIdeoPick = null;
+      recomputeNation(); renderResbar(); renderNationTab();
+      toast(`NY IDEOLOGI: ${pick.icon} ${pick.name.toUpperCase()} (+30 ORO ETT TAG)`, 'amber', 5000);
+      if (forced.length) toast('LAGAR TVINGADES OM: ' + forced.map((c) => LAWS[c].name.toUpperCase()).join(', '), 'red', 6000);
+    });
+    const noBtn = document.createElement('button');
+    noBtn.className = 'btn';
+    noBtn.style.margin = '0';
+    noBtn.textContent = 'ÅNGRA';
+    noBtn.addEventListener('click', () => { natIdeoPick = null; renderNationTab(); });
+    btnRow.append(okBtn, noBtn);
+    box.appendChild(btnRow);
+    body.appendChild(box);
+    box.scrollIntoView({ block: 'nearest' });
+  }
 }
 
 // ---------- FORSKNING-fliken ----------
@@ -843,8 +896,8 @@ function renderResearchTab(body) {
         box.addEventListener('mouseleave', () => setPreview());
         box.addEventListener('click', () => {
           if (i < done) return;
-          if (i > done) { toast('KRÄVER FÖREGÅENDE NIVÅ', 'red'); return; }
-          if (s.res.rp < TIER_COST[i]) { toast(`KRÄVER ${TIER_COST[i]} \u{1F52C}`, 'red'); return; }
+          if (i > done) { warn('KRÄVER FÖREGÅENDE NIVÅ'); return; }
+          if (s.res.rp < TIER_COST[i]) { warn(`KRÄVER ${TIER_COST[i]} \u{1F52C} — DU HAR ${s.res.rp}`); return; }
           s.res.rp -= TIER_COST[i];
           s.nation.research[bid] = i + 1;
           recomputeNation(); renderResbar(); renderNationTab();
@@ -946,7 +999,41 @@ function openDemands(target, cbKey, result) {
     wrap.appendChild(opts);
     list.appendChild(wrap);
   }
-  if (cb.demands.reparations) addCheck('reparations', 'KRIGSSKADESTÅND: 15% I 5 ÅR', `+${Math.max(2, Math.round(pop / 4e6))} \u{1F4B0} PER DAG I 150 DAGAR`, false);
+  if (cb.demands.reparations) {
+    demandState.choices.repPct = 0.15;
+    demandState.choices.repYears = 5;
+    addCheck('reparations', 'KRIGSSKADESTÅND', '', false);
+    const wrap = document.createElement('div');
+    const info = document.createElement('div');
+    info.style.cssText = 'font-size:7px;color:var(--holo-dim);margin:4px 0';
+    const repDaily = () => Math.max(1, Math.round((pop / 4e6) * (demandState.choices.repPct / 0.15)));
+    const updInfo = () => {
+      info.textContent = `${demandState.choices.repPct * 100}% I ${demandState.choices.repYears} ÅR → +${repDaily()} \u{1F4B0}/DAG I ${demandState.choices.repYears * 30} DAGAR`;
+    };
+    const mkRow = (values, key, fmt) => {
+      const row = document.createElement('div');
+      row.className = 'seizeopt';
+      for (const v of values) {
+        const b = document.createElement('button');
+        b.className = 'lawopt' + (demandState.choices[key] === v ? ' cur' : '');
+        b.textContent = fmt(v);
+        b.addEventListener('click', () => {
+          demandState.choices[key] = v;
+          row.querySelectorAll('.lawopt').forEach((x) => x.classList.remove('cur'));
+          b.classList.add('cur');
+          updInfo();
+          document.querySelector('#dem_reparations').checked = true;
+        });
+        row.appendChild(b);
+      }
+      return row;
+    };
+    wrap.appendChild(mkRow([0.05, 0.15, 0.25], 'repPct', (v) => `${v * 100}%`));
+    wrap.appendChild(mkRow([2, 5, 10], 'repYears', (v) => `${v} ÅR`));
+    wrap.appendChild(info);
+    updInfo();
+    list.appendChild(wrap);
+  }
   overlay('#demands', true);
 }
 
@@ -995,8 +1082,10 @@ $('#demConfirm').addEventListener('click', () => {
     got.push(`+${amt} \u{1F4B0} BESLAGTAGET`);
   }
   if (cb.demands.reparations && checked('reparations')) {
-    s.reparations.push({ from: target.name, daily: Math.max(2, Math.round(pop / 4e6)), days: 150 });
-    got.push('SKADESTÅND 150 DAGAR');
+    const daily = Math.max(1, Math.round((pop / 4e6) * (choices.repPct / 0.15)));
+    const days = choices.repYears * 30;
+    s.reparations.push({ from: target.name, daily, days });
+    got.push(`SKADESTÅND ${choices.repPct * 100}% I ${choices.repYears} ÅR (+${daily} \u{1F4B0}/DAG)`);
   }
 
   delete s.wars[target.id];
