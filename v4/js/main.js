@@ -161,9 +161,11 @@ function updateArmyMarker() {
   globe.setArmy(a && a.units.length
     ? { ll: a.ll, comp: compOf(a.units), color: SOLO_COLOR, warn: !!s.supplyBad }
     : null);
-  globe.setGarrison(s?.garrison?.length
-    ? { ll: capitalLL(s.home), comp: compOf(s.garrison), color: '#ff9f8a' }
-    : null);
+  // garnisoner i alla länder man bygger i — banér med landets flagga
+  const gl = Object.entries(s?.garrisons || {})
+    .filter(([, units]) => units.length)
+    .map(([cid, units]) => ({ ll: capitalLL(cid), comp: compOf(units), color: '#ff9f8a', a2: state.facts[cid]?.a2 || null }));
+  globe.setGarrisons(gl);
 }
 
 // avstånd (radianer) från armén till närmaste eget territorium.
@@ -211,18 +213,23 @@ function supplyTick() {
 
 // Arméer marscherar långsamt — restiden beror på avståndet
 function armyFlyTo(targetLL, _ms, done) {
-  const a = state.solo.army;
+  const s = state.solo;
+  const a = s.army;
   const dist = d3.geoDistance(a.ll, targetLL);
   const ms = 4000 + dist * 60000; // grannland ≈ 10 s, andra sidan jorden ≈ minuter
   const interp = d3.geoInterpolate(a.ll, targetLL);
   const t0 = performance.now();
+  const token = (s._marchId = (s._marchId || 0) + 1);
+  s.chase = null; // en ny marschorder avbryter en pågående genskjutning
+  s.armyMoving = true;
   toast(`ARMÉN MARSCHERAR — FRAMME OM ~${Math.round(ms / 1000)} SEK`, '', 4000);
   const step = (t) => {
+    if (s._marchId !== token) return; // avbruten av nyare order
     const k = Math.min(1, (t - t0) / ms);
     a.ll = interp(k);
     updateArmyMarker();
     if (k < 1) requestAnimationFrame(step);
-    else done?.();
+    else { s.armyMoving = false; done?.(); }
   };
   requestAnimationFrame(step);
 }
@@ -293,6 +300,9 @@ function refreshInfoPanel() {
   show($('#nukebtn'), false);
   show($('#interceptbtn'), false);
   show($('#movebtn'), false);
+  const fb = $('#fbuild');
+  fb.innerHTML = '';
+  show(fb, false);
 
   if (state.mode === 'solo' || (state.mode === 'player' && state.solo)) {
     const s = state.solo;
@@ -301,9 +311,10 @@ function refreshInfoPanel() {
       $('#istatus').style.color = SOLO_COLOR;
       show(nationBtn, !!s.nation);
       if (s.army?.units.length && s.army.at !== c.id && !state.battle) {
-        $('#movebtn').innerHTML = `\u{1F6A9} FLYTTA ARMÉN HIT${c.id === s.home && s.garrison?.length ? ' (SLÅ IHOP MED GARNISONEN)' : ''}`;
+        $('#movebtn').innerHTML = `\u{1F6A9} FLYTTA ARMÉN HIT${s.garrisons?.[c.id]?.length ? ' (SLÅ IHOP MED GARNISONEN)' : ''}`;
         show($('#movebtn'), true);
       }
+      renderFactBuild(c);
     } else if (!s.home) {
       $('#istatus').textContent = 'FRITT TERRITORIUM';
       $('#istatus').style.color = '';
@@ -348,6 +359,51 @@ function refreshInfoPanel() {
   show(panel, true);
 }
 
+// Bygg armé i valfritt eget land — kostar pengar + manpower + råvaror,
+// enheterna hamnar i det landets garnison (eller ansluter armén om den står där)
+function renderFactBuild(c) {
+  const s = state.solo;
+  if (!s?.nation) return;
+  const fb = $('#fbuild');
+  fb.innerHTML = '';
+  const title = document.createElement('div');
+  title.style.cssText = 'font-size:7px;color:var(--holo-dim);margin:6px 0 2px';
+  title.textContent = `\u{1F3ED} BYGG ARMÉ I ${c.name.toUpperCase()}`;
+  fb.appendChild(title);
+  const row = document.createElement('div');
+  row.className = 'armybuild';
+  const owned = ownedResources();
+  for (const [type, b] of Object.entries(UNIT_BUILD)) {
+    const missing = b.needs.filter((r) => !owned.has(r));
+    const fCost = Math.round(b.money * (FACTIONS[s.faction]?.cost?.[type] ?? 1));
+    const uName = UNIT_TYPES[type].name;
+    const btn = document.createElement('button');
+    btn.className = 'armybtn';
+    btn.innerHTML = `${uName}<br>${fCost} \u{1F4B0} + ${b.man} \u{1F9CD}${b.needs.length ? '<br>KRÄVER ' + b.needs.map((r) => RESOURCES[r].icon).join('') : ''}`;
+    const resReq = b.research && (s.nation.research[b.research[0]] || 0) < b.research[1]
+      ? `KRÄVER FORSKNING: ${RESEARCH[b.research[0]].name.toUpperCase()} T${b.research[1]}` : null;
+    const blocked = resReq
+      || (missing.length ? 'SAKNAR ' + missing.map((r) => RESOURCES[r].name.toUpperCase()).join(', ')
+      : s.res.money < fCost ? 'FÖR LITE PENGAR'
+      : s.res.man < b.man ? 'FÖR LITE MANPOWER' : null);
+    if (blocked) { btn.disabled = true; btn.title = blocked; }
+    btn.addEventListener('click', () => {
+      if (blocked) { warn(blocked); return; }
+      s.res.money -= fCost;
+      s.res.man -= b.man;
+      s.buildQueue ||= [];
+      s.buildQueue.push({ type, name: uName, left: b.days, total: b.days, dest: c.id });
+      renderBuildCorner();
+      renderResbar();
+      toast(`\u{1F528} ${uName} PÅBÖRJAD I ${c.name.toUpperCase()} — KLAR OM ${b.days} DAGAR`, 'amber');
+      refreshInfoPanel();
+    });
+    row.appendChild(btn);
+  }
+  fb.appendChild(row);
+  show(fb, true);
+}
+
 globe.onSelect = (c) => {
   selectedCountry = c;
   refreshInfoPanel();
@@ -355,6 +411,12 @@ globe.onSelect = (c) => {
 
 // klick på en marscherande armé → visa + möjlighet att genskjuta
 globe.onSelectArmy = (m) => {
+  // har man redan valt sin egen armé → jakten börjar direkt
+  if (state.armSelected && state.mode === 'solo' && state.solo?.army?.units.length && !state.battle && !state.solo.chase) {
+    state.armSelected = false;
+    startChase(m);
+    return;
+  }
   selectedCountry = null;
   const panel = $('#infopanel');
   const world = worldCtx().world;
@@ -369,16 +431,71 @@ globe.onSelectArmy = (m) => {
   $('#ftype').innerHTML = '';
   $('#fres').innerHTML = '';
   $('#istatus').textContent = '';
-  for (const id of ['claimbtn', 'attackbtn', 'nukebtn', 'justifybtn', 'wpbtn', 'nationbtn']) show($('#' + id), false);
+  for (const id of ['claimbtn', 'attackbtn', 'nukebtn', 'justifybtn', 'wpbtn', 'nationbtn', 'fbuild', 'movebtn']) show($('#' + id), false);
   const ib = $('#interceptbtn');
-  show(ib, state.mode === 'solo' && !!state.solo?.army?.units.length && !state.battle);
+  show(ib, state.mode === 'solo' && !!state.solo?.army?.units.length && !state.battle && !state.solo?.chase);
   state.pendingIntercept = m;
   show(panel, true);
 };
 
+// klick på egen armé → välj den för genskjutning ("välj din armé, klicka sen på deras")
+globe.onSelectOwnArmy = () => {
+  const s = state.solo;
+  if (state.mode !== 'solo' || !s?.army?.units.length || state.battle) return;
+  if (s.chase) { warn('ARMÉN GENSKJUTER REDAN'); return; }
+  state.armSelected = true;
+  toast('\u{2694} DIN ARMÉ ÄR VALD — KLICKA PÅ EN FIENTLIG ARMÉ FÖR ATT GENSKJUTA', 'amber', 6000);
+};
+
 $('#interceptbtn').addEventListener('click', () => {
   const m = state.pendingIntercept;
-  if (!m || !state.solo?.army?.units.length || state.battle) return;
+  if (!m || !state.solo?.army?.units.length || state.battle || state.solo.chase) return;
+  startChase(m);
+});
+
+// Genskjutning är en MARSCH: armén går mot fiendens armé i realtid.
+// Hinner vi ifatt → mötesstrid. Hinner fienden fram till sitt mål först → vi vänder tillbaka.
+function startChase(m) {
+  const s = state.solo;
+  s.chase = { id: m.id };
+  s._marchId = (s._marchId || 0) + 1; // avbryt ev. pågående vanlig marsch
+  s.armyMoving = true;
+  const from = s.army.at;
+  const src = (worldCtx().world.moving || []).find((x) => x.id === m.id) || m;
+  toast(`\u{2694} GENSKJUTNING — ARMÉN MARSCHERAR MOT ${cname(src.att)}S ARMÉ`, 'amber', 6000);
+  const SPEED = 1 / 45000; // radianer/ms — lite snabbare än AI:ns marsch så jakten kan lyckas
+  let last = performance.now();
+  const step = (t) => {
+    if (!s.chase || s.chase.id !== m.id) return;
+    const dt = t - last; last = t;
+    if (!s.army?.units.length) { s.chase = null; s.armyMoving = false; return; }
+    const world = worldCtx().world;
+    const mm = (world.moving || []).find((x) => x.id === m.id);
+    if (!mm) {
+      // fienden hann fram och invasionen avgjordes — vänd om
+      s.chase = null;
+      toast('\u{26A0}\u{FE0F} FIENDEN NÅDDE FRAM FÖRE OSS — ARMÉN VÄNDER TILLBAKA', 'red', 7000);
+      armyFlyTo(capitalLL(from), 0, () => { s.army.at = from; updateArmyMarker(); refreshInfoPanel(); });
+      return;
+    }
+    if (state.battle) { requestAnimationFrame(step); return; }
+    const k = Math.max(0, Math.min(1, (performance.now() - mm.start) / mm.dur));
+    const e = d3.geoInterpolate(mm.fromLL, mm.toLL)(k);
+    const rem = d3.geoDistance(s.army.ll, e);
+    if (rem < 0.02) {
+      s.chase = null;
+      s.armyMoving = false;
+      openInterceptBattle(mm);
+      return;
+    }
+    s.army.ll = d3.geoInterpolate(s.army.ll, e)(Math.min(1, (SPEED * dt) / rem));
+    updateArmyMarker();
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function openInterceptBattle(m) {
   const targetC = globe.getCountry(m.target);
   const biome = targetC ? biomeFor(targetC) : 'GRAS';
   $('#battle').classList.add('show');
@@ -400,7 +517,7 @@ $('#interceptbtn').addEventListener('click', () => {
     onEnd: (result) => finishIntercept(m, result),
   };
   state.battle = new BattleA(opts);
-});
+}
 
 function finishIntercept(m, result) {
   state.battle?.destroy?.();
@@ -646,12 +763,14 @@ function tickDay() {
     const b = s.buildQueue[0];
     if (--b.left <= 0) {
       s.buildQueue.shift();
-      if (s.army && s.army.at === s.home) {
+      const dest = b.dest || s.home;
+      // en marscherande armé kan inte ta emot nya enheter — de blir garnison i huvudstaden
+      if (s.army && s.army.at === dest && !s.armyMoving && !s.chase) {
         s.army.units.push(mkUnit(b.type, 0));
         toast(`\u{2705} ${b.name} FÄRDIGBYGGD — ANSLUTER TILL ARMÉN`, 'amber', 4500);
       } else {
-        (s.garrison ||= []).push(mkUnit(b.type, 0));
-        toast(`\u{2705} ${b.name} FÄRDIGBYGGD — VÄNTAR I GARNISONEN HEMMA (FLYTTA ARMÉN HEM FÖR ATT SLÅ IHOP)`, 'amber', 6000);
+        ((s.garrisons ||= {})[dest] ||= []).push(mkUnit(b.type, 0));
+        toast(`\u{2705} ${b.name} KLAR I ${cname(dest)} — FLYTTA ARMÉN DIT FÖR ATT SLÅ IHOP`, 'amber', 6000);
       }
       updateArmyMarker();
     }
@@ -999,6 +1118,12 @@ function updateMovingMarkers() {
     name: globe.getCountry(m.att)?.name || '?',
     a2: state.facts[m.att]?.a2 || null,
   })));
+  // krigsrök över länder som just nu invaderas eller är i öppet krig med spelaren
+  const zones = new Set((world?.moving || []).map((m) => m.target));
+  for (const [tid, w] of Object.entries(state.solo?.wars || {})) {
+    if (w.status && w.status !== 'justifying') zones.add(tid);
+  }
+  globe.setWarZones([...zones].map((cid) => ({ ll: capitalLL(cid) })));
 }
 
 // efter AI-världsförändring: rita om + (TV) broadcasta till alla spelare
@@ -1456,11 +1581,12 @@ $('#movebtn').addEventListener('click', () => {
   show($('#movebtn'), false);
   armyFlyTo(capitalLL(dest), 0, () => {
     s.army.at = dest;
-    if (dest === s.home && s.garrison?.length) {
-      const n = s.garrison.length;
-      s.army.units.push(...s.garrison);
-      s.garrison = [];
-      toast(`\u{1F91D} ARMÉERNA SAMMANSLAGNA — +${n} ENHETER FRÅN GARNISONEN`, 'amber', 6000);
+    const g = s.garrisons?.[dest];
+    if (g?.length) {
+      const n = g.length;
+      s.army.units.push(...g);
+      delete s.garrisons[dest];
+      toast(`\u{1F91D} ARMÉERNA SAMMANSLAGNA — +${n} ENHETER FRÅN GARNISONEN I ${cname(dest)}`, 'amber', 6000);
     } else {
       toast(`ARMÉN HAR OMGRUPPERAT TILL ${cname(dest)}`, '', 4000);
     }
@@ -2429,6 +2555,7 @@ function startSolo() {
     permMods: {},      // permanenta effekter (riken/förbund)
     buildQueue: [],    // {type, name, left, total}
     researchQueue: [], // {branch, tier, name, left, total}
+    garrisons: {},     // countryId -> byggda enheter som väntar där
     countryArmies: {}, // stående arméer per land
     aiWars: [], moving: [], aiGoals: {}, votes: [],
   };

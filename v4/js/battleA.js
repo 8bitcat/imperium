@@ -92,12 +92,22 @@ export class BattleA {
       this.terr[y][rx] = 4;
       if (rnd() < 0.45) rx = Math.max(4, Math.min(8, rx + (rnd() < 0.5 ? -1 : 1)));
     }
-    // väg tvärs över med drift; över floden blir det bro
+    // väg tvärs över med drift; över floden blir det bro.
+    // Nära vatten låses vägen RAK så bron alltid får raka anslutningar.
     const road = (x, y) => { this.terr[y][x] = this.terr[y][x] === 4 ? 5 : 3; };
+    const nearWater = (x, y) => {
+      for (let dx = -1; dx <= 3; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx >= 0 && yy >= 0 && xx < COLS && yy < ROWS && this.terr[yy][xx] === 4) return true;
+        }
+      }
+      return false;
+    };
     let ry = 2 + Math.floor(rnd() * 4);
     for (let x = 0; x < COLS; x++) {
       road(x, ry);
-      if (x < COLS - 1 && rnd() < 0.3) {
+      if (x < COLS - 1 && rnd() < 0.3 && !nearWater(x, ry)) {
         const ny = Math.max(1, Math.min(ROWS - 2, ry + (rnd() < 0.5 ? -1 : 1)));
         if (ny !== ry) { road(x, ny); ry = ny; }
       }

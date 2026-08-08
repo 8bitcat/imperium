@@ -149,9 +149,11 @@ export class Globe {
     this.movingArmies = (list || []).map((m) => ({ ...m, interp: d3.geoInterpolate(m.fromLL, m.toLL) }));
   }
 
-  setGarrison(g) { this.garrison = g; }
+  setGarrisons(list) { this.garrisons = list || []; }
+  setGarrison(g) { this.garrisons = g ? [g] : []; } // bakåtkompatibelt
   setDayFloat(f) { this.dayFloat = f; }
   setCountryArmies(list) { this.countryArmies = list || []; }
+  setWarZones(list) { this.warZones = list || []; } // {ll} — krigsrök över anfallna länder
 
   _flagImg(a2) {
     if (!a2) return null;
@@ -285,9 +287,12 @@ export class Globe {
         if (this._down.moved < 10 && dt < 600) {
           const rect = cv.getBoundingClientRect();
           const px = e.clientX - rect.left, py = e.clientY - rect.top;
-          // marscherande arméer har klickprioritet (genskjutning)
+          // egen armé har högsta klickprioritet (välj armé → genskjut)
+          const ah = this._armyHit;
           const hit = (this._movingHits || []).find((h) => Math.hypot(h.x - px, h.y - py) < 16);
-          if (hit && this.onSelectArmy) {
+          if (ah && !hit && Math.hypot(ah.x - px, ah.y - py) < 18 && this.onSelectOwnArmy) {
+            this.onSelectOwnArmy();
+          } else if (hit && this.onSelectArmy) {
             this.onSelectArmy(hit.m);
           } else {
             const c = this.pickAt(px, py);
@@ -328,7 +333,12 @@ export class Globe {
     b.clearRect(0, 0, this.buf.width, this.buf.height);
     b.drawImage(this.scene, 0, 0);
 
+    this._drawWarSmoke(b, t);
+    this._drawClouds(b, t);
     this._drawNight(b);
+    this._drawAurora(b, t);
+    this._drawShootingStars(b, t);
+    this._drawMoon(b, t);
     if (this.showTrade && this.routes.length) this._drawTrade(b, t);
     if (this.showCities) this._drawCityLife(b, t);
     this._drawSatellites(b, t);
@@ -353,34 +363,42 @@ export class Globe {
     x.drawImage(this.buf, 0, 0, this.buf.width, this.buf.height, 0, 0, this.canvas.width, this.canvas.height);
 
     this._drawLabels(x);
+    this._armyHit = null;
     if (this.army) this._drawArmy(x, t);
-    if (this.garrison) this._drawGarrison(x, t);
+    if (this.garrisons?.length) this._drawGarrisons(x, t);
     this._drawCountryArmies(x);
     this._drawMovingArmies(x, t);
 
     requestAnimationFrame((tt) => this._frame(tt));
   }
 
-  // garnisonen hemma (mindre banér i ljusare färg)
-  _drawGarrison(x, t) {
-    const g = this.garrison;
-    if (!this._front(g.ll, 1.5)) return;
-    const p = this.proj(g.ll);
-    if (!p) return;
+  // garnisoner: banér med landets flagga + enhet + antal vid huvudstaden
+  _drawGarrisons(x, t) {
     const ps = this.pixelSize;
-    const sx = p[0] * ps, sy = p[1] * ps + 18;
-    const n = Object.values(g.comp).reduce((a, b) => a + b, 0);
-    x.fillStyle = 'rgba(10,16,24,0.92)';
-    x.fillRect(sx - 22, sy - 9, 44, 18);
-    x.strokeStyle = g.color;
-    x.lineWidth = 1;
-    x.strokeRect(sx - 22, sy - 9, 44, 18);
-    drawUnit(x, 'INF', g.color, sx - 18, sy - 7, 1, 1);
-    x.font = '8px "Press Start 2P", monospace';
-    x.textAlign = 'left';
-    x.textBaseline = 'middle';
-    x.fillStyle = '#fff';
-    x.fillText(`\u{1F3E0}${n}`, sx - 2, sy + 1);
+    for (const g of this.garrisons) {
+      if (!this._front(g.ll, 1.5)) continue;
+      const p = this.proj(g.ll);
+      if (!p) continue;
+      const sx = p[0] * ps, sy = p[1] * ps + 18;
+      const n = Object.values(g.comp).reduce((a, b) => a + b, 0);
+      const w = 52, h = 18;
+      x.fillStyle = 'rgba(10,16,24,0.92)';
+      x.fillRect(sx - w / 2, sy - h / 2, w, h);
+      x.strokeStyle = g.color;
+      x.lineWidth = 1;
+      x.strokeRect(sx - w / 2, sy - h / 2, w, h);
+      const flag = this._flagImg(g.a2);
+      if (flag) {
+        x.imageSmoothingEnabled = false;
+        x.drawImage(flag, sx - w / 2 + 3, sy - 4, 12, 8);
+      }
+      drawUnit(x, 'INF', g.color, sx - w / 2 + 18, sy - 7, 1, 1);
+      x.font = '8px "Press Start 2P", monospace';
+      x.textAlign = 'left';
+      x.textBaseline = 'middle';
+      x.fillStyle = '#fff';
+      x.fillText(`\u{1F3E0}${n}`, sx + 4, sy + 1);
+    }
   }
 
   // stående AI-arméer i kända länder: liten flaggbricka + antal vid huvudstaden
@@ -453,6 +471,7 @@ export class Globe {
     const ps = this.pixelSize;
     const sx = p[0] * ps, sy = p[1] * ps;
 
+    this._armyHit = { x: sx, y: sy };
     const pulse = 5 + 2.5 * Math.sin(t / 260);
     x.beginPath();
     x.arc(sx, sy, pulse + 4, 0, Math.PI * 2);
@@ -565,6 +584,124 @@ export class Globe {
 
   _isNight(ll) {
     return this._sun ? Math.cos(d3.geoDistance(ll, this._sun)) < -0.03 : false;
+  }
+
+  // Drivande pixelmoln som sakta vandrar västerut över klotet
+  _drawClouds(b, t) {
+    if (!this._clouds) {
+      this._clouds = [];
+      for (let i = 0; i < 26; i++) {
+        const h = hashId('cl' + i);
+        const blobs = [];
+        const nb = 4 + (h % 4);
+        for (let j = 0; j < nb; j++) {
+          const hj = hashId('cb' + i + '_' + j);
+          blobs.push([(hj % 7) - 3, ((hj >> 3) % 3) - 1, 1 + ((hj >> 5) % 2)]);
+        }
+        this._clouds.push({
+          lat: ((h % 120) - 60) * 0.9,
+          lon0: (h >> 2) % 360,
+          spd: 0.00025 + ((h >> 4) % 10) * 0.00004,
+          blobs,
+        });
+      }
+    }
+    for (const c of this._clouds) {
+      const lon = ((c.lon0 - t * c.spd) % 360 + 540) % 360 - 180;
+      const ll = [lon, c.lat];
+      if (!this._front(ll)) continue;
+      const p = this.proj(ll);
+      if (!p) continue;
+      const night = this._isNight(ll);
+      b.globalAlpha = night ? 0.18 : 0.45;
+      b.fillStyle = '#f2f8ff';
+      for (const [dx, dy, w] of c.blobs) b.fillRect(Math.round(p[0]) + dx, Math.round(p[1]) + dy, w + 1, 1);
+    }
+    b.globalAlpha = 1;
+  }
+
+  // Norrsken & sydsken: vajande gröna band på natthalvans höga breddgrader
+  _drawAurora(b, t) {
+    if (this.dayFloat == null) return;
+    for (const baseLat of [67, -65]) {
+      for (let lon = -180; lon < 180; lon += 3) {
+        const lat = baseLat + 3.5 * Math.sin(lon * 0.09 + t / 1100) + 1.5 * Math.sin(lon * 0.23 - t / 700);
+        const ll = [lon, lat];
+        if (!this._front(ll) || !this._isNight(ll)) continue;
+        const p = this.proj(ll);
+        if (!p) continue;
+        const a = 0.3 + 0.25 * (0.5 + 0.5 * Math.sin(lon * 0.4 + t / 480));
+        b.globalAlpha = a;
+        b.fillStyle = (lon / 3 | 0) % 5 === 0 ? '#b48cff' : '#59ffa8';
+        b.fillRect(Math.round(p[0]), Math.round(p[1]), 1, 3);
+        b.globalAlpha = a * 0.4;
+        b.fillRect(Math.round(p[0]), Math.round(p[1]) - 2, 1, 2);
+      }
+    }
+    b.globalAlpha = 1;
+  }
+
+  // Stjärnfall i rymden runt klotet, ungefär var 7:e sekund
+  _drawShootingStars(b, t) {
+    const cyc = 7200, life = 750;
+    const idx = Math.floor(t / cyc);
+    const k = (t % cyc) / life;
+    if (k > 1) return;
+    const h = hashId('ss' + idx);
+    const W = this.buf.width, H = this.buf.height;
+    const [cx, cy] = this.proj.translate();
+    const R = this.proj.scale();
+    const x0 = h % W, y0 = (h >> 4) % Math.max(20, H >> 2);
+    const dx = 1 + ((h >> 7) % 2), dy = 0.5 + ((h >> 9) % 2) * 0.4;
+    for (let i = 0; i < 5; i++) {
+      const px = x0 + (k * 34 - i * 2.2) * dx, py = y0 + (k * 34 - i * 2.2) * dy;
+      if (Math.hypot(px - cx, py - cy) < R + 5) continue; // aldrig framför klotet
+      b.globalAlpha = (1 - k) * (1 - i / 5);
+      b.fillStyle = i === 0 ? '#ffffff' : '#bfe8ff';
+      b.fillRect(Math.round(px), Math.round(py), 1, 1);
+    }
+    b.globalAlpha = 1;
+  }
+
+  // Månen kretsar sakta runt klotet ute i rymden
+  _drawMoon(b, t) {
+    const [cx, cy] = this.proj.translate();
+    const R = this.proj.scale();
+    const ang = t / 42000;
+    const mx = cx + Math.cos(ang) * (R + 13), my = cy + Math.sin(ang) * (R + 13) * 0.92;
+    if (mx < 2 || my < 2 || mx > this.buf.width - 2 || my > this.buf.height - 2) return;
+    b.fillStyle = '#d8d8cf';
+    b.fillRect(Math.round(mx) - 1, Math.round(my) - 2, 3, 1);
+    b.fillRect(Math.round(mx) - 2, Math.round(my) - 1, 5, 3);
+    b.fillRect(Math.round(mx) - 1, Math.round(my) + 2, 3, 1);
+    b.fillStyle = '#a9aa9f';
+    b.fillRect(Math.round(mx), Math.round(my), 1, 1);
+    b.fillRect(Math.round(mx) - 1, Math.round(my) + 1, 1, 1);
+  }
+
+  // Krigsrök: stigande rökpuffar + eldflimmer över länder som invaderas
+  _drawWarSmoke(b, t) {
+    for (const z of this.warZones || []) {
+      if (!this._front(z.ll, 1.2)) continue;
+      const p = this.proj(z.ll);
+      if (!p) continue;
+      const bx = Math.round(p[0]), by = Math.round(p[1]);
+      for (let i = 0; i < 4; i++) {
+        const ph = ((t / 1400) + i / 4) % 1;
+        b.globalAlpha = 0.65 * (1 - ph);
+        b.fillStyle = '#aab0b8';
+        b.fillRect(bx + (i - 1) - (ph > 0.5 ? 1 : 0), by - 1 - Math.round(ph * 8), ph > 0.35 ? 3 : 2, 1);
+      }
+      if (Math.floor(t / 180) % 3 !== 0) {
+        b.globalAlpha = 0.95;
+        b.fillStyle = Math.floor(t / 180) % 2 ? '#ff9b3d' : '#ffd23d';
+        b.fillRect(bx - 1, by, 2, 1);
+        b.globalAlpha = 0.4;
+        b.fillStyle = '#ff5a2d';
+        b.fillRect(bx - 2, by - 1, 4, 2);
+      }
+    }
+    b.globalAlpha = 1;
   }
 
   // Blinkande stadsljus + NATTLJUS på mörka sidan + radar-ping
