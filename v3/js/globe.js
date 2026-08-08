@@ -101,12 +101,43 @@ export class Globe {
     this.sceneDirty = true;
   }
 
+  // routes: {a, b, kind: 'road'|'rail'|'land'|'sea'|'air', color, dur, phase, intl}
   setRoutes(routes) {
     this.routes = routes.map((r) => ({
       ...r,
       interp: d3.geoInterpolate(r.a, r.b),
       mid: d3.geoInterpolate(r.a, r.b)(0.5),
     }));
+    this.refreshRouteLines();
+  }
+
+  // bygger MultiLineString per ruttyp så hela nätet ritas med ett fåtal path-anrop
+  refreshRouteLines() {
+    const byKind = {};
+    for (const r of this.routes) {
+      (byKind[r.kind || 'road'] ||= []).push([r.a, r.b]);
+    }
+    this._routeLines = {};
+    for (const [kind, coords] of Object.entries(byKind)) {
+      this._routeLines[kind] = { type: 'MultiLineString', coordinates: coords };
+    }
+    this.sceneDirty = true;
+  }
+
+  // vilket land ligger en lon/lat i? (används också för sjöruttklassning)
+  countryAtLL(ll) {
+    const [lon, lat] = ll;
+    const e = 0.2;
+    for (const c of this.countries) {
+      const [[x0, y0], [x1, y1]] = c.bounds;
+      if (lat < y0 - e || lat > y1 + e) continue;
+      const lonIn = x0 <= x1
+        ? (lon >= x0 - e && lon <= x1 + e)
+        : (lon >= x0 - e || lon <= x1 + e);
+      if (!lonIn) continue;
+      if (d3.geoContains(c.feature, ll)) return c;
+    }
+    return null;
   }
 
   setClaims(claims) { this.claims = claims || {}; this.sceneDirty = true; }
@@ -193,18 +224,7 @@ export class Globe {
     if (!ll || !isFinite(ll[0]) || !isFinite(ll[1])) return null;
     const rp = this.proj(ll);
     if (!rp || Math.hypot(rp[0] - bx, rp[1] - by) > 1.5) return null;
-    const [lon, lat] = ll;
-    const e = 0.2;
-    for (const c of this.countries) {
-      const [[x0, y0], [x1, y1]] = c.bounds;
-      if (lat < y0 - e || lat > y1 + e) continue;
-      const lonIn = x0 <= x1
-        ? (lon >= x0 - e && lon <= x1 + e)
-        : (lon >= x0 - e || lon <= x1 + e);
-      if (!lonIn) continue;
-      if (d3.geoContains(c.feature, ll)) return c;
-    }
-    return null;
+    return this.countryAtLL(ll);
   }
 
   // ---------- input ----------
@@ -355,7 +375,7 @@ export class Globe {
   _drawTrade(b, t) {
     const showDomestic = this.zoom >= 1.8;
     for (const r of this.routes) {
-      if (!r.intl && !showDomestic) continue;
+      if ((r.kind === 'road' || r.kind === 'rail') && !showDomestic) continue;
       if (!this._front(r.mid, 1.9) && !this._front(r.a, 1.6) && !this._front(r.b, 1.6)) continue;
       const frac = ((t + r.phase) % r.dur) / r.dur;
       const positions = r.intl
@@ -367,7 +387,7 @@ export class Globe {
         const p = this.proj(ll);
         if (!p) continue;
         b.globalAlpha = alpha;
-        b.fillStyle = r.color;
+        b.fillStyle = r.kind === 'air' ? '#f2fbff' : r.color;
         b.fillRect(Math.round(p[0]), Math.round(p[1]), 1, 1);
         // liten svans
         const ll2 = r.interp(Math.max(0, Math.min(1, f - 0.025 * (r.intl && alpha < 1 ? -1 : 1))));
@@ -472,6 +492,31 @@ export class Globe {
         s.fill();
         s.strokeStyle = BORDER; s.lineWidth = 0.55; s.stroke();
       }
+    }
+
+    // transportnätet: vägar, järnvägar, sjörutter, flygrutter
+    if (this.showTrade && this._routeLines) {
+      const L = this._routeLines;
+      const domestic = this.zoom >= 1.8;
+      const stroke = (geo, color, width, dash) => {
+        if (!geo) return;
+        s.beginPath();
+        this.spath(geo);
+        s.strokeStyle = color;
+        s.lineWidth = width;
+        s.setLineDash(dash || []);
+        s.stroke();
+        s.setLineDash([]);
+      };
+      if (domestic) {
+        stroke(L.road, 'rgba(201,179,137,0.5)', 0.55);
+        // järnväg: mörk banvall + ljusa "slipers" (tvåfärgad streckning)
+        stroke(L.rail, '#39424e', 0.9);
+        stroke(L.rail, '#c9d2dc', 0.5, [2, 2]);
+      }
+      stroke(L.land, 'rgba(201,179,137,0.35)', 0.5);
+      stroke(L.sea, 'rgba(90,180,230,0.45)', 0.55, [3, 3]);
+      stroke(L.air, 'rgba(232,246,255,0.20)', 0.5, [1, 3]);
     }
 
     // städer (prickar i scenen; ljus/blink sker i kompositpasset)

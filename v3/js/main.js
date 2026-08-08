@@ -29,6 +29,7 @@ const state = {
 };
 
 window.IMPERIUM = state; // för test/debug
+state.globe = globe;
 
 document.fonts?.load('10px "Press Start 2P"').then(() => { globe.sceneDirty = true; }).catch(() => {});
 loadWarSprites();
@@ -383,26 +384,53 @@ function renderLegend() {
   }
 }
 
-// ---------- handelsrutter ----------
+// ---------- transportnätet: vägar, järnvägar, sjörutter, flygrutter ----------
 function buildRoutes(citiesByCountry) {
   const routes = [];
   const capitals = [];
   for (const [cid, list] of Object.entries(citiesByCountry)) {
     if (!list.length) continue;
     const cap = list.find((c) => c.c) || list[0];
-    capitals.push({ cid, ll: cap.ll });
+    capitals.push({ cid, ll: cap.ll, pop: state.facts[cid]?.p || 0 });
     const res = resourcesOf(cid);
+    const col = (i) => RESOURCES[res[i % res.length]].color;
+
+    // VÄGNÄT: varje stad kopplas till sin närmaste grannstad i landet
+    const seenPair = new Set();
     list.forEach((city, i) => {
-      if (city === cap) return;
+      let best = null, bj = -1, bd = 1e9;
+      list.forEach((o, j) => {
+        if (o === city) return;
+        const d = d3.geoDistance(city.ll, o.ll);
+        if (d < bd) { bd = d; best = o; bj = j; }
+      });
+      if (!best) return;
+      const key = Math.min(i, bj) + '-' + Math.max(i, bj);
+      if (seenPair.has(key)) return;
+      seenPair.add(key);
       routes.push({
-        a: cap.ll, b: city.ll,
-        color: RESOURCES[res[i % res.length]].color,
-        dur: 5000 + Math.random() * 4000,
+        a: city.ll, b: best.ll, kind: 'road',
+        color: col(i),
+        dur: 5000 + bd * 40000 + Math.random() * 2000,
         phase: Math.random() * 9000,
         intl: false,
       });
     });
+
+    // JÄRNVÄG: huvudstaden ↔ de två största övriga städerna
+    list.filter((c) => c !== cap).slice(0, 2).forEach((city, i) => {
+      routes.push({
+        a: cap.ll, b: city.ll, kind: 'rail',
+        color: col(i + 1),
+        dur: 3500 + d3.geoDistance(cap.ll, city.ll) * 25000,
+        phase: Math.random() * 7000,
+        intl: false,
+      });
+    });
   }
+
+  // INTERNATIONELLT: huvudstad ↔ 2 närmaste utländska huvudstäder
+  // (kind 'land' tills sjöklassningen konstaterat att rutten går över hav)
   const seen = new Set();
   for (const c of capitals) {
     const near = capitals
@@ -416,7 +444,7 @@ function buildRoutes(citiesByCountry) {
       seen.add(key);
       const res = resourcesOf(c.cid);
       routes.push({
-        a: c.ll, b: o.ll,
+        a: c.ll, b: o.ll, kind: 'land',
         color: RESOURCES[res[0]].color,
         dur: 7000 + d * 5000 + Math.random() * 3000,
         phase: Math.random() * 12000,
@@ -424,7 +452,56 @@ function buildRoutes(citiesByCountry) {
       });
     }
   }
+
+  // FLYGRUTTER: stora länder (>30M) ↔ 2 närmaste stora länder längre bort än ~20°
+  const bigs = capitals.filter((c) => c.pop > 30e6);
+  const seenAir = new Set();
+  for (const c of bigs) {
+    const partners = bigs
+      .filter((o) => o.cid !== c.cid)
+      .map((o) => ({ o, d: d3.geoDistance(c.ll, o.ll) }))
+      .filter((x) => x.d > 0.35)
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 2);
+    for (const { o, d } of partners) {
+      const key = [c.cid, o.cid].sort().join('|');
+      if (seenAir.has(key)) continue;
+      seenAir.add(key);
+      routes.push({
+        a: c.ll, b: o.ll, kind: 'air',
+        color: '#f2fbff',
+        dur: 2500 + d * 2500,
+        phase: Math.random() * 6000,
+        intl: true,
+      });
+    }
+  }
   return routes;
+}
+
+// Klassar internationella rutter som sjörutter genom att sampla storcirkeln:
+// går merparten av rutten utanför alla länder är det hav → skepp istället för väg.
+// Körs i småbitar för att inte hacka till renderingen.
+function classifySeaRoutes() {
+  if (state.seaClassified || !globe.countries.length || !globe.routes.length) return;
+  state.seaClassified = true;
+  const landRoutes = globe.routes.filter((r) => r.kind === 'land');
+  let i = 0;
+  const chunk = () => {
+    const t0 = performance.now();
+    while (i < landRoutes.length && performance.now() - t0 < 8) {
+      const r = landRoutes[i++];
+      let onLand = 0;
+      const samples = 8;
+      for (let s = 1; s <= samples; s++) {
+        if (globe.countryAtLL(r.interp(s / (samples + 1)))) onLand++;
+      }
+      if (onLand / samples <= 0.4) r.kind = 'sea';
+    }
+    if (i < landRoutes.length) setTimeout(chunk, 30);
+    else globe.refreshRouteLines();
+  };
+  setTimeout(chunk, 200);
 }
 
 // ---------- kartdata ----------
@@ -435,6 +512,7 @@ function startWorldLoad() {
     state.facts = facts;
     globe.setCities(cities);
     globe.setRoutes(buildRoutes(cities));
+    classifySeaRoutes();
     if (selectedCountry) refreshInfoPanel();
   }).catch((e) => console.warn('städer kunde inte laddas', e));
 
@@ -447,6 +525,7 @@ function startWorldLoad() {
       show($('#topbar'));
       show($('#hint'));
       $('#toggles').style.display = 'flex';
+      classifySeaRoutes();
     } else {
       toast('KARTDETALJ: HÖG UPPLÖSNING', '', 2500);
       if (selectedCountry) selectedCountry = globe.getCountry(selectedCountry.id);
