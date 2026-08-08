@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>IMPERIUM — Geoscape</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #04080f;
+    --holo: #37e0ff;
+    --holo-dim: #1e7f9e;
+    --holo-faint: rgba(55, 224, 255, 0.35);
+    --amber: #ffb02e;
+    --red: #ff4f4f;
+    --panel: rgba(5, 18, 30, 0.88);
+    --panel-border: rgba(55, 224, 255, 0.45);
+    --text: #cdeef8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: var(--bg);
+    font-family: 'Press Start 2P', monospace;
+    color: var(--text);
+    -webkit-user-select: none; user-select: none;
+    touch-action: none;
+  }
+  canvas#globe {
+    position: fixed; inset: 0; width: 100vw; height: 100vh;
+    image-rendering: pixelated;
+    cursor: grab;
+  }
+  canvas#globe:active { cursor: grabbing; }
+
+  /* ---- scanlines + vignette (XCOM holo feel) ---- */
+  .scanlines {
+    position: fixed; inset: 0; pointer-events: none; z-index: 40;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0 1px, transparent 1px 3px);
+    mix-blend-mode: multiply;
+  }
+  .vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 41;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(2,6,12,0.75) 100%);
+  }
+
+  /* ---- angular HUD panels ---- */
+  .panel {
+    position: fixed; z-index: 50;
+    background: var(--panel);
+    border: 2px solid var(--panel-border);
+    padding: 10px 12px;
+    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+    box-shadow: 0 0 12px rgba(55,224,255,0.15), inset 0 0 24px rgba(55,224,255,0.05);
+    font-size: 9px; line-height: 1.7;
+  }
+  .panel .ptitle {
+    color: var(--holo); font-size: 8px; letter-spacing: 1px;
+    border-bottom: 1px solid var(--holo-faint);
+    padding-bottom: 6px; margin-bottom: 7px;
+  }
+
+  #topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px;
+    background: linear-gradient(180deg, rgba(4,10,18,0.92), rgba(4,10,18,0.55) 70%, transparent);
+    border-bottom: 1px solid rgba(55,224,255,0.2);
+    font-size: 10px; color: var(--holo);
+    text-shadow: 0 0 8px rgba(55,224,255,0.6);
+    pointer-events: none;
+  }
+  #topbar .right { color: var(--amber); text-shadow: 0 0 8px rgba(255,176,46,0.5); }
+
+  #roster { top: 56px; left: 10px; min-width: 190px; max-width: 46vw; display: none; }
+  #roster .row { display: flex; align-items: center; gap: 7px; margin: 4px 0; }
+  #roster .chip { width: 10px; height: 10px; flex: 0 0 10px; border: 1px solid #000; }
+  #roster .home { color: var(--holo-dim); }
+
+  #infopanel { right: 10px; bottom: 12px; min-width: 220px; max-width: 78vw; display: none; }
+  #infopanel #iname { color: var(--amber); font-size: 11px; margin-bottom: 6px; text-shadow: 0 0 8px rgba(255,176,46,0.4); }
+  #infopanel #istatus { color: var(--holo-dim); font-size: 8px; margin-bottom: 8px; }
+
+  #qrpanel { left: 10px; bottom: 12px; text-align: center; display: none; }
+  #qrpanel img { display: block; margin: 6px auto; image-rendering: pixelated; border: 4px solid #fff; }
+  #qrpanel .code { color: var(--amber); font-size: 18px; letter-spacing: 4px; margin-top: 6px; text-shadow: 0 0 10px rgba(255,176,46,0.6); }
+  #qrpanel .url { color: var(--holo-dim); font-size: 7px; margin-top: 5px; word-break: break-all; max-width: 180px; }
+
+  #hint {
+    position: fixed; bottom: 8px; left: 50%; transform: translateX(-50%);
+    z-index: 45; font-size: 7px; color: var(--holo-dim); text-align: center;
+    pointer-events: none; display: none;
+  }
+
+  /* ---- toasts / banners ---- */
+  #toasts {
+    position: fixed; top: 64px; left: 50%; transform: translateX(-50%);
+    z-index: 60; display: flex; flex-direction: column; gap: 6px; align-items: center;
+    pointer-events: none;
+  }
+  .toast {
+    background: var(--panel); border: 2px solid var(--panel-border);
+    padding: 8px 16px; font-size: 9px; color: var(--holo);
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+    animation: toastIn 0.15s steps(3) both;
+    text-shadow: 0 0 8px rgba(55,224,255,0.5);
+  }
+  .toast.amber { color: var(--amber); border-color: rgba(255,176,46,0.5); }
+  .toast.red { color: var(--red); border-color: rgba(255,79,79,0.5); }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+  .toast.out { transition: opacity 0.4s; opacity: 0; }
+
+  /* ---- buttons ---- */
+  .btn {
+    display: block; width: 100%;
+    font-family: inherit; font-size: 10px; color: var(--text);
+    background: rgba(20, 60, 80, 0.7);
+    border: 2px solid var(--holo-dim);
+    padding: 12px 16px; margin: 8px 0; cursor: pointer;
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  .btn:hover, .btn:focus { border-color: var(--holo); color: var(--holo); background: rgba(30, 90, 115, 0.8); outline: none; }
+  .btn.amber { border-color: rgba(255,176,46,0.6); }
+  .btn.amber:hover { border-color: var(--amber); color: var(--amber); background: rgba(90, 60, 15, 0.6); }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+
+  input.field {
+    display: block; width: 100%;
+    font-family: inherit; font-size: 12px; color: var(--amber);
+    background: rgba(0, 10, 18, 0.9);
+    border: 2px solid var(--holo-dim);
+    padding: 10px; margin: 6px 0 12px; text-align: center;
+    text-transform: uppercase; letter-spacing: 3px;
+  }
+  input.field:focus { outline: none; border-color: var(--holo); }
+
+  /* ---- fullscreen overlays (menu / join / loading) ---- */
+  .overlay {
+    position: fixed; inset: 0; z-index: 70;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(3, 8, 15, 0.82);
+  }
+  .overlay.show { display: flex; }
+  .card {
+    background: var(--panel); border: 2px solid var(--panel-border);
+    padding: 26px 24px; width: min(420px, 92vw); text-align: center;
+    clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
+    box-shadow: 0 0 40px rgba(55,224,255,0.12);
+  }
+  .logo {
+    font-size: 26px; color: var(--holo); letter-spacing: 6px;
+    text-shadow: 0 0 18px rgba(55,224,255,0.8), 3px 3px 0 #0a2a3a;
+    margin-bottom: 6px;
+  }
+  .tagline { font-size: 7px; color: var(--holo-dim); letter-spacing: 2px; margin-bottom: 22px; }
+  .card label { display: block; font-size: 8px; color: var(--holo-dim); text-align: left; margin-top: 6px; }
+  .card .err { color: var(--red); font-size: 8px; min-height: 14px; margin-top: 8px; }
+
+  #loading .card { border-color: rgba(255,176,46,0.5); }
+  .blink { animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0.25; } }
+
+  @media (max-width: 600px) {
+    #roster { top: 48px; left: 6px; min-width: 130px; font-size: 8px; }
+    #infopanel { left: 6px; right: 6px; bottom: 8px; min-width: 0; }
+    #topbar { font-size: 8px; padding: 8px 10px; }
+    .logo { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="globe"></canvas>
+<div class="scanlines"></div>
+<div class="vignette"></div>
+
+<div id="topbar" style="display:none">
+  <div class="left">IMPERIUM // GEOSCAPE</div>
+  <div class="right" id="topright"></div>
+</div>
+
+<div id="roster" class="panel">
+  <div class="ptitle">&#9654; BEFÄLHAVARE</div>
+  <div id="rosterlist"></div>
+</div>
+
+<div id="infopanel" class="panel">
+  <div class="ptitle">&#9654; LAND</div>
+  <div id="iname"></div>
+  <div id="istatus"></div>
+  <button id="claimbtn" class="btn amber" style="display:none">GÖR TILL HEMLAND</button>
+</div>
+
+<div id="qrpanel" class="panel">
+  <div class="ptitle">&#9654; ANSLUT MED MOBIL</div>
+  <div id="qrimg"></div>
+  <div class="code" id="qrcodeTxt"></div>
+  <div class="url" id="qrurl"></div>
+</div>
+
+<div id="hint">DRA = ROTERA &nbsp;&#8226;&nbsp; SKROLLA/NYP = ZOOM &nbsp;&#8226;&nbsp; KLICKA PÅ ETT LAND</div>
+<div id="toasts"></div>
+
+<!-- MENY -->
+<div id="menu" class="overlay show">
+  <div class="card">
+    <div class="logo">IMPERIUM</div>
+    <div class="tagline">GEOSCAPE // ERÖVRA VÄRLDEN</div>
+    <button id="btnTV" class="btn">&#128250; STARTA TV-LÄGE</button>
+    <button id="btnJoin" class="btn">&#128241; GÅ MED I SPEL</button>
+    <button id="btnSolo" class="btn">&#127758; UTFORSKA JORDEN</button>
+    <div class="err" id="menuerr"></div>
+  </div>
+</div>
+
+<!-- GÅ MED -->
+<div id="join" class="overlay">
+  <div class="card">
+    <div class="logo" style="font-size:16px">ANSLUT</div>
+    <div class="tagline">GÅ MED I ETT SPEL PÅ TV:N</div>
+    <label>DITT NAMN</label>
+    <input id="joinname" class="field" maxlength="12" placeholder="NAMN">
+    <label>RUMSKOD</label>
+    <input id="joincode" class="field" maxlength="4" placeholder="ABCD" autocapitalize="characters">
+    <button id="btnJoinGo" class="btn amber">ANSLUT</button>
+    <button id="btnJoinBack" class="btn">TILLBAKA</button>
+    <div class="err" id="joinerr"></div>
+  </div>
+</div>
+
+<!-- LADDNING -->
+<div id="loading" class="overlay">
+  <div class="card">
+    <div class="logo" style="font-size:14px; color: var(--amber)">SATELLIT-UPPLÄNK</div>
+    <div class="tagline blink" id="loadingtxt">HÄMTAR VÄRLDSKARTA...</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
