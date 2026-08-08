@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>IMPERIUM V2 — Geoscape</title>
+<title>IMPERIUM V3 — Arméer & Strid</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -187,6 +187,37 @@
   .card a.v1link { display: block; font-size: 7px; color: var(--holo-dim); margin-top: 14px; text-decoration: none; }
   .card a.v1link:hover { color: var(--holo); }
 
+  .btn.warbtn { border-color: rgba(255,79,79,0.6); }
+  .btn.warbtn:hover { border-color: var(--red); color: var(--red); background: rgba(90, 18, 15, 0.6); }
+  .chdesc { font-size: 7px; color: var(--holo-dim); margin: -4px 0 10px; line-height: 1.6; }
+
+  /* ---- stridsläge ---- */
+  #battle {
+    position: fixed; inset: 0; z-index: 80; display: none;
+    background: #04080f;
+    flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    padding: 8px;
+  }
+  #battle.show { display: flex; }
+  #battlehud { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  #btitle { font-size: 9px; color: var(--holo); text-shadow: 0 0 8px rgba(55,224,255,0.5); margin-right: 8px; }
+  #bcanvas {
+    width: min(96vw, 152vh); height: auto;
+    image-rendering: pixelated;
+    border: 3px solid var(--panel-border);
+    background: #000;
+    touch-action: none;
+  }
+  #bstatus { color: var(--amber); font-size: 8px; min-height: 12px; text-align: center; }
+  #klinch {
+    position: fixed; inset: 0; display: none; z-index: 85;
+    align-items: center; justify-content: center;
+    background: rgba(3, 8, 15, 0.72);
+  }
+  #kcanvas { width: min(92vw, 680px); height: auto; image-rendering: pixelated; border: 3px solid var(--panel-border); }
+  #bresult { z-index: 90; }
+  #chooser { z-index: 75; }
+
   #loading .card { border-color: rgba(255,176,46,0.5); }
   .blink { animation: blink 1s steps(2) infinite; }
   @keyframes blink { 50% { opacity: 0.25; } }
@@ -208,7 +239,7 @@
 <div class="vignette"></div>
 
 <div id="topbar" style="display:none">
-  <div class="left">IMPERIUM V2 // GEOSCAPE</div>
+  <div class="left">IMPERIUM V3 // GEOSCAPE</div>
   <div class="right" id="topright"></div>
 </div>
 
@@ -229,6 +260,7 @@
   <div id="fres"></div>
   <div id="istatus"></div>
   <button id="claimbtn" class="btn amber" style="display:none">GÖR TILL HEMLAND</button>
+  <button id="attackbtn" class="btn warbtn" style="display:none">&#9876; ANFALL MED ARMÉN</button>
 </div>
 
 <div id="legendpanel" class="panel">
@@ -256,13 +288,12 @@
 <div id="menu" class="overlay show">
   <div class="card">
     <div class="logo">IMPERIUM</div>
-    <div class="tagline">V2 // STÄDER &#8226; TILLGÅNGAR &#8226; HANDEL</div>
+    <div class="tagline">V3 // ARMÉER &#8226; STRIDSPROTOTYPER</div>
+    <button id="btnSolo" class="btn amber">&#9876; ERÖVRA VÄRLDEN (PROTOTYP)</button>
     <button id="btnTV" class="btn">&#128250; STARTA TV-LÄGE</button>
     <button id="btnJoin" class="btn">&#128241; GÅ MED I SPEL</button>
-    <button id="btnSolo" class="btn">&#127758; UTFORSKA JORDEN</button>
     <div class="err" id="menuerr"></div>
-    <a class="v1link" href="../v3/">&#9876; NYA V3 — ARMÉER &amp; STRID &#8594;</a>
-    <a class="v1link" href="../">&#8592; KLASSISKA GLOBEN (V1)</a>
+    <a class="v1link" href="../v2/">&#8592; V2 — STÄDER &amp; HANDEL</a>
   </div>
 </div>
 
@@ -278,6 +309,41 @@
     <button id="btnJoinGo" class="btn amber">ANSLUT</button>
     <button id="btnJoinBack" class="btn">TILLBAKA</button>
     <div class="err" id="joinerr"></div>
+  </div>
+</div>
+
+<!-- STRIDSTYP-VÄLJAREN -->
+<div id="chooser" class="overlay">
+  <div class="card">
+    <div class="logo" style="font-size:14px">VÄLJ STRIDSTYP</div>
+    <div class="tagline" id="chooserTarget"></div>
+    <button id="chA" class="btn amber">&#9876; PROTOTYP A — TAKTIK</button>
+    <div class="chdesc">Turbaserat rutnät à la Advance Wars. Flytta enheter, anfall och se klinch-skärmen. Terräng ger försvarsbonus.</div>
+    <button id="chB" class="btn amber">&#127918; PROTOTYP B — REALTID</button>
+    <div class="chdesc">Realtidsstrid à la Red Alert i landets biom, utan basbygge. Markera enheter och beordra dem.</div>
+    <button id="chAuto" class="btn">&#127922; SNABBRESULTAT (AUTO)</button>
+    <div class="chdesc">Striden avgörs direkt av skadematrisen — för snabba erövringar.</div>
+    <button id="chCancel" class="btn">AVBRYT</button>
+  </div>
+</div>
+
+<!-- STRIDSLÄGE -->
+<div id="battle">
+  <div id="battlehud">
+    <span id="btitle"></span>
+    <button id="bEndTurn" class="tbtn on">AVSLUTA DRAG</button>
+    <button id="bSelAll" class="tbtn on">VÄLJ ALLA</button>
+    <button id="bRetreat" class="tbtn">RETRÄTT</button>
+  </div>
+  <canvas id="bcanvas"></canvas>
+  <div id="bstatus"></div>
+</div>
+<div id="klinch"><canvas id="kcanvas"></canvas></div>
+<div id="bresult" class="overlay">
+  <div class="card">
+    <div class="logo" style="font-size:16px" id="bresTitle"></div>
+    <div class="tagline" id="bresText" style="line-height:2"></div>
+    <button id="bresBtn" class="btn amber">FORTSÄTT</button>
   </div>
 </div>
 
