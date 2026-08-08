@@ -3,9 +3,9 @@
 import { resourcesOf } from './resources.js';
 
 export const UNIT_TYPES = {
-  INF:  { name: 'INFANTERI',  mv: 3, spd: 30, range: 58,  aggro: 110 },
-  TANK: { name: 'STRIDSVAGN', mv: 5, spd: 46, range: 74,  aggro: 130 },
-  FLYG: { name: 'FLYGPLAN',   mv: 6, spd: 80, range: 88,  aggro: 160 },
+  INF:  { name: 'INFANTERI',  baseName: 'INFANTERI',  mv: 3, spd: 30, range: 58,  aggro: 110 },
+  TANK: { name: 'STRIDSVAGN', baseName: 'STRIDSVAGN', mv: 5, spd: 46, range: 74,  aggro: 130 },
+  FLYG: { name: 'FLYGPLAN',   baseName: 'FLYGPLAN',   mv: 6, spd: 80, range: 88,  aggro: 160 },
 };
 
 // Basskada i % (Advance Wars-stil): rad = anfallare, kolumn = försvarare
@@ -232,7 +232,7 @@ export function drawUnit(ctx, type, color, x, y, s = 2, facing = 1) {
 export const WAR_SPRITES = {};
 const SPRITE_DEFS = {
   INF:  { fileP: 'apc-wheeled.png', tintP: '#ff5a4a', tintE: '#4fa8ff' }, // lätt mekaniserat (DANA)
-  TANK: { fileP: 'tank-tan.png', fileE: 'tank-blue.png', tintP: '#ff5a4a' },
+  TANK: { fileP: 'tank-tan.png', fileE: 'tank-blue.png', tintP: '#ff5a4a', tintE: '#4fa8ff', enemyPretinted: true },
   FLYG: { fileP: 'heli-gray.png', tintP: '#ff5a4a', tintE: '#4fa8ff' },
 };
 const spriteCache = new Map();
@@ -245,6 +245,21 @@ export function loadWarSprites(base = 'assets/sprites/') {
       img.src = base + file;
     }
   }
+}
+
+// Byt spelarens sprites + enhetsnamn till vald faktion (fiendens blå behålls)
+export function applyFaction(faction, base = 'assets/sprites/') {
+  for (const [type, file] of Object.entries(faction.sprites || {})) {
+    if (!SPRITE_DEFS[type]) SPRITE_DEFS[type] = { tintP: '#ff5a4a', tintE: '#4fa8ff' };
+    // fienden behåller standardspriten (blåtonad) — lås fast den innan bytet
+    if (!SPRITE_DEFS[type].fileE) SPRITE_DEFS[type].fileE = SPRITE_DEFS[type].fileP;
+    SPRITE_DEFS[type].fileP = file;
+  }
+  for (const [k, n] of Object.entries(faction.unitNames || {})) {
+    if (UNIT_TYPES[k]) UNIT_TYPES[k].name = n;
+  }
+  spriteCache.clear();
+  loadWarSprites(base);
 }
 
 export function warSprite(type, side, facing) {
@@ -262,7 +277,7 @@ export function warSprite(type, side, facing) {
   if (facing === 1) { c.translate(img.width, 0); c.scale(-1, 1); }
   c.drawImage(img, 0, 0);
   c.setTransform(1, 0, 0, 1, 0, 0);
-  const tintCol = side === 0 ? def.tintP : (def.fileE ? null : def.tintE);
+  const tintCol = side === 0 ? def.tintP : (def.enemyPretinted ? null : def.tintE);
   if (tintCol) {
     c.globalCompositeOperation = 'source-atop';
     c.globalAlpha = 0.28;

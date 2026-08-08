@@ -3,7 +3,7 @@ import { Net } from './net.js';
 import { loadWorld, loadCities, loadFacts } from './data.js';
 import { Globe } from './globe.js';
 import { RESOURCES, RECIPES, resourcesOf } from './resources.js';
-import { STARTER_ARMY, defenderArmy, compOf, autoResolve, biomeFor, BIOMES, mkUnit, loadWarSprites } from './units.js';
+import { STARTER_ARMY, defenderArmy, compOf, autoResolve, biomeFor, BIOMES, mkUnit, loadWarSprites, UNIT_TYPES } from './units.js';
 import { BattleA } from './battleA.js';
 import { BattleB } from './battleB.js';
 import { STATS, STAT_GROUPS, computeStats, statGoodness } from './stats.js';
@@ -11,6 +11,8 @@ import { LAWS, defaultLaws, lawMods, lawChangeCost, lawOption } from './laws.js'
 import { IDEOLOGIES, countryIdeology, ideologyMods, lawLockedBy, enforceRequirements, IDEOLOGY_COST, DOCTRINE_COST } from './ideologies.js';
 import { RESEARCH, TIER_COST, researchMods, combatBonus, hasUnlock } from './research.js';
 import { CASUS_BELLI, justifyDays, seizeAmount, FEDERATION_FORMS, HISTORICAL_EMPIRES, formableEmpires, empireProgress } from './war.js';
+import { FACTIONS } from './factions.js';
+import { applyFaction } from './units.js';
 
 const $ = (s) => document.querySelector(s);
 const PLAYER_COLORS = ['#ff4f4f', '#4fa8ff', '#ffd24f', '#b06bff', '#ff9f3e', '#3ee6c8', '#ff6fd8', '#a4e34a'];
@@ -280,7 +282,7 @@ $('#claimbtn').addEventListener('click', () => {
     spawnArmy(selectedCountry.id);
     applyState();
     toast(`${selectedCountry.name.toUpperCase()} ÄR DITT HEMLAND`, 'amber', 5000);
-    toast('BYGG DIN ARMÉ I \u{1F3DB}\u{FE0F} NATION-PANELEN — SEN KAN DU RÄTTFÄRDIGA KRIG', '', 6000);
+    openFactionPick();
     return;
   }
   if (state.mode !== 'player') return;
@@ -318,7 +320,7 @@ function recomputeNation() {
     laws: lawMods(s.nation.laws),
     ideology: ideologyMods(s.nation),
     research: researchMods(s.nation),
-    extra: mergeMods(s.extra, s.permMods),
+    extra: mergeMods(mergeMods(s.extra, s.permMods), s.factionMods),
   };
   s.stats = computeStats(s.nation, s.nationSources);
 }
@@ -333,8 +335,13 @@ function battleBoost() {
   const s = state.solo;
   if (!s?.stats) return { INF: 0, TANK: 0, FLYG: 0 };
   const cb = combatBonus(s.nation);
+  const fc = FACTIONS[s.faction]?.combat || {};
   const r = Math.round(Math.max(0, s.stats.readiness.total) / 25);
-  return { INF: cb.INF + r, TANK: cb.TANK + r, FLYG: cb.FLYG + r };
+  return {
+    INF: cb.INF + r + (fc.INF || 0),
+    TANK: cb.TANK + r + (fc.TANK || 0),
+    FLYG: cb.FLYG + r + (fc.FLYG || 0),
+  };
 }
 
 function renderResbar() {
@@ -592,26 +599,28 @@ function renderNationTab() {
   build.className = 'armybuild';
   for (const [type, b] of Object.entries(UNIT_BUILD)) {
     const missing = b.needs.filter((r) => !owned.has(r));
+    const fCost = Math.round(b.money * (FACTIONS[s.faction]?.cost?.[type] ?? 1));
+    const uName = UNIT_TYPES[type].name; // faktionens namn efter applyFaction
     const btn = document.createElement('button');
     btn.className = 'armybtn';
-    btn.innerHTML = `${b.name}<br>${b.money} \u{1F4B0} + ${b.man} \u{1F9CD}${b.needs.length ? '<br>KRÄVER ' + b.needs.map((r) => RESOURCES[r].icon).join('') : ''}`;
+    btn.innerHTML = `${uName}<br>${fCost} \u{1F4B0} + ${b.man} \u{1F9CD}${b.needs.length ? '<br>KRÄVER ' + b.needs.map((r) => RESOURCES[r].icon).join('') : ''}`;
     const resReq = b.research && (s.nation.research[b.research[0]] || 0) < b.research[1]
       ? `KRÄVER FORSKNING: ${RESEARCH[b.research[0]].name.toUpperCase()} T${b.research[1]}` : null;
     const blocked = !s.army ? 'INGEN ARMÉ'
       : resReq
       || (missing.length ? 'SAKNAR ' + missing.map((r) => RESOURCES[r].name.toUpperCase()).join(', ')
-      : s.res.money < b.money ? 'FÖR LITE PENGAR'
+      : s.res.money < fCost ? 'FÖR LITE PENGAR'
       : s.res.man < b.man ? 'FÖR LITE MANPOWER' : null);
     if (blocked) { btn.disabled = true; btn.title = blocked; }
     btn.addEventListener('click', () => {
-      if (blocked) { toast(blocked, 'red'); return; }
-      s.res.money -= b.money;
+      if (blocked) { warn(blocked); return; }
+      s.res.money -= fCost;
       s.res.man -= b.man;
       s.army.units.push(mkUnit(type, 0));
       updateArmyMarker();
       renderResbar();
       renderNationTab();
-      toast(`+1 ${b.name} TILL ARMÉN`, 'amber');
+      toast(`+1 ${uName} TILL ARMÉN`, 'amber');
     });
     build.appendChild(btn);
   }
@@ -917,6 +926,34 @@ document.querySelectorAll('.nattab').forEach((el) => el.addEventListener('click'
   natTab = el.dataset.tab;
   renderNationTab();
 }));
+
+// ---------- faktionsvalet (M9) ----------
+function openFactionPick() {
+  const list = $('#factionlist');
+  list.innerHTML = '';
+  for (const [fid, f] of Object.entries(FACTIONS)) {
+    const card = document.createElement('div');
+    card.className = 'cbcard';
+    const mods = Object.entries(f.mods).map(([k, v]) => `${STATS[k]?.name || k} ${v > 0 ? '+' : ''}${v}`).join(', ');
+    card.innerHTML = `<div class="cbn">${f.icon} ${f.name}</div>
+      <div>${f.desc}</div>
+      <div class="cbu">ENHETER: ${Object.values(f.unitNames).join(' · ')}</div>
+      <div class="cbu">BONUS: ${mods}</div>`;
+    card.addEventListener('click', () => {
+      const s = state.solo;
+      s.faction = fid;
+      s.factionMods = { ...f.mods };
+      applyFaction(f);
+      recomputeNation();
+      renderResbar();
+      overlay('#factionpick', false);
+      toast(`${f.icon} ${f.name} — DIN FAKTION`, 'amber', 5000);
+      toast('BYGG DIN ARMÉ I \u{1F3DB}\u{FE0F} NATION-PANELEN — SEN KAN DU RÄTTFÄRDIGA KRIG', '', 6000);
+    });
+    list.appendChild(card);
+  }
+  overlay('#factionpick', true);
+}
 
 // ---------- krigsrättfärdigande (M8) ----------
 $('#justifybtn').addEventListener('click', () => {

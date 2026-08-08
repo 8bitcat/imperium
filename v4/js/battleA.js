@@ -21,6 +21,16 @@ function mulberry(seed) {
 }
 function tileHash(x, y) { return Math.abs((x * 73856093) ^ (y * 19349663)) % 997; }
 
+// Kenney Tiny Battle (CC0) — 16px-tiles uppskalade till 32px-rutor.
+// Biomer får en färgtvätt ovanpå (snö/öken/djungel).
+const TILEIMG = new Image();
+TILEIMG.src = 'assets/tiles/tilemap.png';
+const BIOME_WASH = {
+  SNO: 'rgba(224,238,248,0.50)',
+  OKEN: 'rgba(216,178,104,0.45)',
+  DJUNGEL: 'rgba(16,86,40,0.35)',
+};
+
 export class BattleA {
   // opts: {canvas, klinchCanvas, klinchEl, biome, atk, def, seed, onEnd, setStatus}
   constructor(opts) {
@@ -30,6 +40,7 @@ export class BattleA {
     this.kcv = opts.klinchCanvas;
     this.kctx = this.kcv.getContext('2d');
     this.biome = BIOMES[opts.biome];
+    this.biomeKey = opts.biome;
     this.canvas.width = COLS * TILE;
     this.canvas.height = ROWS * TILE;
     this.kcv.width = 420; this.kcv.height = 170;
@@ -359,11 +370,12 @@ export class BattleA {
       c.fillText(String(Math.max(0, hpShown)), x0 + (facing === 1 ? 10 : 192) + 2, 12 + 2);
       c.fillStyle = hpShown > 6 ? '#fff' : hpShown > 3 ? '#ffd24f' : '#ff6b5e';
       c.fillText(String(Math.max(0, hpShown)), x0 + (facing === 1 ? 10 : 192), 12);
+      const uLabel = u.side === 0 ? UNIT_TYPES[u.type].name : UNIT_TYPES[u.type].baseName;
       c.font = '7px "Press Start 2P", monospace';
       c.fillStyle = '#0a0f16';
-      c.fillText(UNIT_TYPES[u.type].name, x0 + (facing === 1 ? 10 : 192) + 1, 35);
+      c.fillText(uLabel, x0 + (facing === 1 ? 10 : 192) + 1, 35);
       c.fillStyle = color;
-      c.fillText(UNIT_TYPES[u.type].name, x0 + (facing === 1 ? 10 : 192), 34);
+      c.fillText(uLabel, x0 + (facing === 1 ? 10 : 192), 34);
     };
 
     panel(leftU, hpOf(leftU), 0, 1, leftU.side === 0 ? P_COL : E_COL, flashingNow(leftU), firingNow(leftU));
@@ -418,7 +430,51 @@ export class BattleA {
     return this.terr[y][x] === 4 || this.terr[y][x] === 5;
   }
 
+  // Kenney-tiles när arket laddats; annars den gamla programmatiska ritningen
+  _drawTileKenney(c, x, y, t) {
+    const px = x * TILE, py = y * TILE;
+    const h = tileHash(x, y);
+    const T = (cx, cy) => c.drawImage(TILEIMG, cx * 16, cy * 16, 16, 16, px, py, TILE, TILE);
+    const water = t === 4 || t === 5;
+
+    if (water) {
+      T(1, 2); // öppet vatten
+    } else {
+      T(h % 11 === 0 ? 2 : h % 3 === 0 ? 1 : 0, 0); // gräs med varierad dekor
+    }
+
+    if (t === 1) { T(4, 6); }            // skog (två träd)
+    else if (t === 2) { T(5, 0); }       // berg
+    else if (t === 6) { T(8, 0); }       // stad (neutralt kvarter)
+
+    if (t === 3 || t === 5) {
+      const E = this._roadish(x + 1, y), Wn = this._roadish(x - 1, y);
+      const N = this._roadish(x, y - 1), S = this._roadish(x, y + 1);
+      const horiz = E || Wn || (!N && !S);
+      const vert = N || S;
+      if (horiz) T(1, 6);
+      if (vert) T(4, 7);
+      if (t === 5) { // broräcken
+        c.fillStyle = '#39424e';
+        if (horiz && !vert) { c.fillRect(px, py + 4, TILE, 2); c.fillRect(px, py + TILE - 6, TILE, 2); }
+        else { c.fillRect(px + 4, py, 2, TILE); c.fillRect(px + TILE - 6, py, 2, TILE); }
+      }
+    }
+
+    if (water) { // strandkanter mot land
+      c.fillStyle = 'rgba(20,60,90,0.55)';
+      if (!this._waterish(x - 1, y)) c.fillRect(px, py, 2, TILE);
+      if (!this._waterish(x + 1, y)) c.fillRect(px + TILE - 2, py, 2, TILE);
+      if (!this._waterish(x, y - 1)) c.fillRect(px, py, TILE, 2);
+      if (!this._waterish(x, y + 1)) c.fillRect(px, py + TILE - 2, TILE, 2);
+    }
+
+    const wash = BIOME_WASH[this.biomeKey];
+    if (wash) { c.fillStyle = wash; c.fillRect(px, py, TILE, TILE); }
+  }
+
   _drawTile(c, x, y, t) {
+    if (TILEIMG.complete && TILEIMG.naturalWidth) { this._drawTileKenney(c, x, y, t); return; }
     const B = this.biome;
     const px = x * TILE, py = y * TILE;
     const h = tileHash(x, y);

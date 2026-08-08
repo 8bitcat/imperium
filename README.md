@@ -58,8 +58,10 @@ Datafilerna byggs om med skripten i `tools/` (se nedan) — körs bara när käl
 ## Credits
 
 Fordonssprites i stridsvyerna (v3): **BerkleyToreno** (berkleytoreno.newgrounds.com),
-licens CC BY-NC-SA 3.0. Icke-kommersiellt projekt; spriteskällorna och full
-licensinfo finns i `D:\Sprites\berkleytoreno-advance-wars\README.md`.
+licens CC BY-NC-SA 3.0. Faktionssprites (v4): **umrex** (umrex.newgrounds.com),
+CC BY-NC-SA 3.0 — inofficiellt W40k-fanverk, se `D:\Sprites\umrex-w40k\README.md`.
+Taktikkartans tiles (v4): **Kenney "Tiny Battle"** (kenney.nl), CC0.
+Icke-kommersiellt projekt; full licensinfo i respektive sprite-mapp.
 
 ## Utveckling
 
