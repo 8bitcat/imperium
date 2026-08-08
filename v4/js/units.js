@@ -293,17 +293,20 @@ export function warSprite(type, side, facing) {
   return cv;
 }
 
-// HP-siffra (1–10) i Advance Wars-stil
+// HP-siffra (1–10) i Advance Wars-stil — större bricka med kant så den syns
 export function drawHpBadge(ctx, hp, x, y, s = 1) {
   const shown = Math.max(1, Math.ceil(hp));
-  const w = (shown >= 10 ? 9 : 6) * s;
-  ctx.fillStyle = 'rgba(8,12,18,0.92)';
-  ctx.fillRect(x, y, w, 7 * s);
+  const w = (shown >= 10 ? 12 : 8) * s;
+  const h = 9 * s;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(x - s, y - s, w + 2 * s, h + 2 * s);
+  ctx.fillStyle = '#0a0f14';
+  ctx.fillRect(x, y, w, h);
   ctx.fillStyle = hp > 6 ? '#ffffff' : hp > 3 ? '#ffd24f' : '#ff6b5e';
-  ctx.font = `${5 * s}px "Press Start 2P", monospace`;
+  ctx.font = `${6 * s}px "Press Start 2P", monospace`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillText(String(shown), x + s, y + s);
+  ctx.fillText(String(shown), x + s, y + 2 * s);
 }
 
 // ---------- terrängritning (delas av battleA/battleB) ----------

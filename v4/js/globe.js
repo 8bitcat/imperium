@@ -143,6 +143,11 @@ export class Globe {
   setClaims(claims) { this.claims = claims || {}; this.sceneDirty = true; }
   select(id) { this.selectedId = id; this.sceneDirty = true; }
   setArmy(army) { this.army = army; } // {ll:[lon,lat], comp:{INF,TANK,FLYG}, color} | null
+
+  // marscherande AI-arméer: {fromLL, toLL, start, dur, color, name, units}
+  setMovingArmies(list) {
+    this.movingArmies = (list || []).map((m) => ({ ...m, interp: d3.geoInterpolate(m.fromLL, m.toLL) }));
+  }
   setShowCities(on) { this.showCities = on; this.sceneDirty = true; }
   setShowTrade(on) { this.showTrade = on; }
 
@@ -263,9 +268,16 @@ export class Globe {
         const dt = performance.now() - this._down.t;
         if (this._down.moved < 10 && dt < 600) {
           const rect = cv.getBoundingClientRect();
-          const c = this.pickAt(e.clientX - rect.left, e.clientY - rect.top);
-          this.select(c ? c.id : null);
-          this.onSelect?.(c);
+          const px = e.clientX - rect.left, py = e.clientY - rect.top;
+          // marscherande arméer har klickprioritet (genskjutning)
+          const hit = (this._movingHits || []).find((h) => Math.hypot(h.x - px, h.y - py) < 16);
+          if (hit && this.onSelectArmy) {
+            this.onSelectArmy(hit.m);
+          } else {
+            const c = this.pickAt(px, py);
+            this.select(c ? c.id : null);
+            this.onSelect?.(c);
+          }
         }
         this._down = null;
       }
@@ -325,8 +337,40 @@ export class Globe {
 
     this._drawLabels(x);
     if (this.army) this._drawArmy(x, t);
+    this._drawMovingArmies(x, t);
 
     requestAnimationFrame((tt) => this._frame(tt));
+  }
+
+  // marscherande arméer: färgad markör som rör sig längs storcirkeln
+  _drawMovingArmies(x, t) {
+    this._movingHits = [];
+    const ps = this.pixelSize;
+    for (const m of this.movingArmies || []) {
+      const k = Math.max(0, Math.min(1, (performance.now() - m.start) / m.dur));
+      const ll = m.interp(k);
+      if (!this._front(ll, 1.5)) continue;
+      const p = this.proj(ll);
+      if (!p) continue;
+      const sx = p[0] * ps, sy = p[1] * ps;
+      // riktningsstreck mot målet
+      const p2 = this.proj(m.interp(Math.min(1, k + 0.06)));
+      if (p2) {
+        x.strokeStyle = 'rgba(255,255,255,0.35)';
+        x.lineWidth = 1;
+        x.beginPath(); x.moveTo(sx, sy); x.lineTo(p2[0] * ps, p2[1] * ps); x.stroke();
+      }
+      x.fillStyle = '#10151c';
+      x.fillRect(sx - 6, sy - 6, 12, 12);
+      x.fillStyle = m.color;
+      x.fillRect(sx - 4, sy - 4, 8, 8);
+      if (Math.floor(t / 400) % 2 === 0) {
+        x.font = '10px monospace';
+        x.textAlign = 'center';
+        x.fillText('\u{2694}', sx, sy - 10);
+      }
+      this._movingHits.push({ x: sx, y: sy, m });
+    }
   }
 
   // Armémarkör: pulserande ring + banér som visar truppslag och antal

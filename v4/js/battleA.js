@@ -244,14 +244,22 @@ export class BattleA {
     const d = this.units.some((u) => u.side === 1);
     if (a && d) return false;
     this.done = true;
-    this.o.onEnd?.({ winner: a ? 0 : 1, survivors: this.units.filter((u) => u.side === 0).map(({ type, hp }) => ({ type, hp })) });
+    this.o.onEnd?.({
+      winner: a ? 0 : 1,
+      survivors: this.units.filter((u) => u.side === 0).map(({ type, hp }) => ({ type, hp })),
+      defSurvivors: this.units.filter((u) => u.side === 1).map(({ type, hp }) => ({ type, hp })),
+    });
     return true;
   }
 
   retreat() {
     if (this.done) return;
     this.done = true;
-    this.o.onEnd?.({ winner: 1, retreat: true, survivors: this.units.filter((u) => u.side === 0).map(({ type, hp }) => ({ type, hp })) });
+    this.o.onEnd?.({
+      winner: 1, retreat: true,
+      survivors: this.units.filter((u) => u.side === 0).map(({ type, hp }) => ({ type, hp })),
+      defSurvivors: this.units.filter((u) => u.side === 1).map(({ type, hp }) => ({ type, hp })),
+    });
   }
 
   async _enemyTurn() {
