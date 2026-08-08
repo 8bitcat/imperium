@@ -571,7 +571,7 @@ export class BattleA {
       if (u.side === 0 && u.moved && this.turn === 0) c.globalAlpha = 0.5;
       if (TILEIMG.complete && TILEIMG.naturalWidth) {
         // Kenney-enheter: spelaren röd (rad 8), fienden blå (rad 7, speglad)
-        const col = KENNEY_UNIT[u.type], row = u.side === 0 ? 8 : 7;
+        const col = KENNEY_UNIT[u.type], row = u.side === 0 ? (this.o.kenneyRow ?? 8) : 7;
         if (u.side === 1) {
           c.save();
           c.translate(u.tx * TILE + TILE, u.ty * TILE);

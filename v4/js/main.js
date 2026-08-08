@@ -1282,6 +1282,7 @@ function startBattle(kind) {
     def,
     seed: seedFrom(target.id),
     atkBoost: battleBoost(),
+    kenneyRow: FACTIONS[state.solo.faction]?.kenneyRow ?? 8,
     setStatus: (s) => { $('#bstatus').textContent = s; },
     onEnd: (result) => finishBattle(result),
   };

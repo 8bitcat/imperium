@@ -255,6 +255,9 @@ export function applyFaction(faction, base = 'assets/sprites/') {
     if (!SPRITE_DEFS[type].fileE) SPRITE_DEFS[type].fileE = SPRITE_DEFS[type].fileP;
     SPRITE_DEFS[type].fileP = file;
   }
+  if (faction.color) {
+    for (const def of Object.values(SPRITE_DEFS)) def.tintP = faction.color;
+  }
   for (const [k, n] of Object.entries(faction.unitNames || {})) {
     if (UNIT_TYPES[k]) UNIT_TYPES[k].name = n;
   }
