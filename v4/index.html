@@ -191,6 +191,26 @@
   .btn.warbtn:hover { border-color: var(--red); color: var(--red); background: rgba(90, 18, 15, 0.6); }
   .chdesc { font-size: 7px; color: var(--holo-dim); margin: -4px 0 10px; line-height: 1.6; }
 
+  /* ---- casus belli + fredsvillkor ---- */
+  .cbcard {
+    border: 1px solid rgba(55,224,255,0.3); background: rgba(0, 12, 20, 0.6);
+    padding: 10px 12px; margin: 8px 0; cursor: pointer; text-align: left;
+    font-size: 7px; line-height: 1.9; color: var(--text);
+  }
+  .cbcard:hover { border-color: var(--amber); }
+  .cbcard .cbn { font-size: 9px; color: var(--amber); }
+  .cbcard .cbu { color: var(--holo-dim); }
+  .cbcard .cbx { color: var(--red); }
+  .demrow {
+    display: flex; align-items: center; gap: 8px; font-size: 8px;
+    padding: 7px 4px; border-bottom: 1px solid rgba(55,224,255,0.12);
+    cursor: pointer; line-height: 1.7;
+  }
+  .demrow input { accent-color: var(--amber); width: 14px; height: 14px; flex: 0 0 14px; }
+  .demrow .dd { color: var(--holo-dim); font-size: 7px; }
+  .seizeopt { display: flex; gap: 6px; margin: 8px 0; }
+  #cbchooser, #demands { z-index: 88; }
+
   /* ---- stridsläge ---- */
   #battle {
     position: fixed; inset: 0; z-index: 80; display: none;
@@ -317,6 +337,19 @@
     padding: 8px 12px; cursor: pointer;
   }
   .nattab.on { color: var(--amber); border-color: rgba(255,176,46,0.5); background: rgba(20, 14, 4, 0.6); }
+  #natstatus {
+    padding: 8px 16px; border-bottom: 1px solid var(--holo-faint);
+    background: rgba(0, 10, 18, 0.6);
+  }
+  #natres { font-size: 8px; color: var(--text); display: flex; gap: 14px; flex-wrap: wrap; }
+  #natres b { color: var(--amber); font-weight: normal; }
+  #natpreview {
+    font-size: 7px; color: var(--holo-dim); line-height: 1.9;
+    height: 30px; overflow: hidden; margin-top: 5px;
+  }
+  #natpreview .dp { color: #4ae37a; }
+  #natpreview .dn { color: var(--red); }
+  #natpreview .dc { color: var(--amber); }
   #natbody { overflow-y: auto; padding: 14px 16px 18px; }
   .natgroup { margin-bottom: 14px; }
   .natgroup .gtitle {
@@ -387,10 +420,14 @@
   <div class="frow" id="fpop"></div>
   <div class="frow" id="fcap"></div>
   <div class="frow" id="fcity"></div>
+  <div class="frow" id="fideo"></div>
+  <div class="frow" id="ftype"></div>
   <div id="fres"></div>
   <div id="istatus"></div>
   <button id="claimbtn" class="btn amber" style="display:none">GÖR TILL HEMLAND</button>
+  <button id="justifybtn" class="btn" style="display:none">&#9878;&#65039; RÄTTFÄRDIGA KRIG</button>
   <button id="attackbtn" class="btn warbtn" style="display:none">&#9876; ANFALL MED ARMÉN</button>
+  <button id="wpbtn" class="btn" style="display:none">&#128330; VIT FRED (AVBRYT)</button>
   <button id="nationbtn" class="btn" style="display:none">&#127963;&#65039; NATION</button>
 </div>
 
@@ -458,7 +495,31 @@
       <button class="nattab" data-tab="ideologi">IDEOLOGI</button>
       <button class="nattab" data-tab="forskning">FORSKNING</button>
     </div>
+    <div id="natstatus">
+      <div id="natres"></div>
+      <div id="natpreview">HOVRA ÖVER ETT ALTERNATIV FÖR ATT SE FÖRÄNDRINGEN MOT IDAG</div>
+    </div>
     <div id="natbody"></div>
+  </div>
+</div>
+
+<!-- CASUS BELLI-VÄLJAREN -->
+<div id="cbchooser" class="overlay">
+  <div class="card" style="width:min(520px,94vw)">
+    <div class="logo" style="font-size:14px">RÄTTFÄRDIGA KRIG</div>
+    <div class="tagline" id="cbTarget"></div>
+    <div id="cblist"></div>
+    <button id="cbCancel" class="btn">AVBRYT</button>
+  </div>
+</div>
+
+<!-- KRAVSKÄRMEN (efter seger) -->
+<div id="demands" class="overlay">
+  <div class="card" style="width:min(520px,94vw); text-align:left">
+    <div class="logo" style="font-size:14px; text-align:center">FREDSVILLKOR</div>
+    <div class="tagline" id="demTarget" style="text-align:center"></div>
+    <div id="demlist"></div>
+    <button id="demConfirm" class="btn amber">FASTSTÄLL KRAVEN</button>
   </div>
 </div>
 

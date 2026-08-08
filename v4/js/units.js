@@ -89,10 +89,29 @@ export function lighten(hex, f) {
 }
 
 // ---------- biom ----------
+// Tropikbandet (< ~16°) är djungel, oavsett tillgångar (Venezuela, Kongo, Indonesien…).
+// Kurerade undantag för länder där heuristiken slår fel.
+const BIOME_OVERRIDE = {
+  '818': 'OKEN',    // Egypten
+  '729': 'OKEN',    // Sudan
+  '478': 'OKEN',    // Mauretanien
+  '504': 'OKEN',    // Marocko
+  '148': 'OKEN',    // Tchad
+  '562': 'OKEN',    // Niger
+  '466': 'OKEN',    // Mali
+  '682': 'OKEN',    // Saudiarabien
+  '887': 'OKEN',    // Jemen
+  '036': 'OKEN',    // Australien (outback)
+  '496': 'GRAS',    // Mongoliet (stäpp)
+};
+
 export function biomeFor(country) {
+  const o = BIOME_OVERRIDE[String(country.id)];
+  if (o) return o;
   const lat = Math.abs(country.centroid[1]);
   const res = resourcesOf(country.id);
   if (lat > 55) return 'SNO';
+  if (lat < 16) return 'DJUNGEL';
   if (res.includes('OLJA') && lat < 38) return 'OKEN';
   if (lat < 25 && res.includes('TIMMER')) return 'DJUNGEL';
   return 'GRAS';
