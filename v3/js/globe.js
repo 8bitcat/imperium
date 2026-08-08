@@ -329,23 +329,23 @@ export class Globe {
 
     // banér ovanför
     const parts = Object.entries(a.comp).filter(([, n]) => n > 0);
-    const w = parts.length * 42 + 10;
-    const bx = sx - w / 2, by = sy - 52;
+    const w = parts.length * 48 + 10;
+    const bx = sx - w / 2, by = sy - 54;
     x.fillStyle = 'rgba(6,12,20,0.92)';
-    x.fillRect(bx, by, w, 30);
+    x.fillRect(bx, by, w, 32);
     x.strokeStyle = a.color;
     x.lineWidth = 2;
-    x.strokeRect(bx, by, w, 30);
-    x.beginPath(); x.moveTo(sx, by + 30); x.lineTo(sx, sy - 8); x.strokeStyle = a.color; x.stroke();
+    x.strokeRect(bx, by, w, 32);
+    x.beginPath(); x.moveTo(sx, by + 32); x.lineTo(sx, sy - 8); x.strokeStyle = a.color; x.stroke();
     let ox = bx + 5;
     for (const [type, n] of parts) {
-      drawUnit(x, type, a.color, ox, by + 5, 1.7, 1);
+      drawUnit(x, type, a.color, ox, by + 6, 1.5, 1);
       x.font = '9px "Press Start 2P", monospace';
       x.textAlign = 'left';
       x.textBaseline = 'middle';
       x.fillStyle = '#fff';
-      x.fillText(String(n), ox + 24, by + 16);
-      ox += 42;
+      x.fillText(String(n), ox + 28, by + 17);
+      ox += 48;
     }
   }
 

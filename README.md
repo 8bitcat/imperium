@@ -55,6 +55,12 @@ Datafilerna byggs om med skripten i `tools/` (se nedan) — körs bara när käl
   minimap för truppförflyttning + "två skärmar"-vy vid anfall
 - TV:n visar highlights/statistik medan striderna spelas på mobilerna
 
+## Credits
+
+Fordonssprites i stridsvyerna (v3): **BerkleyToreno** (berkleytoreno.newgrounds.com),
+licens CC BY-NC-SA 3.0. Icke-kommersiellt projekt; spriteskällorna och full
+licensinfo finns i `D:\Sprites\berkleytoreno-advance-wars\README.md`.
+
 ## Utveckling
 
 Ingen build — vanilla JS + ES-moduler. CDN: d3, topojson-client, peerjs, qrcode-generator.

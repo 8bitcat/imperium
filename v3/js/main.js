@@ -4,7 +4,7 @@ import { Net } from './net.js';
 import { loadWorld, loadCities, loadFacts } from './data.js';
 import { Globe } from './globe.js';
 import { RESOURCES, RECIPES, resourcesOf } from './resources.js';
-import { STARTER_ARMY, defenderArmy, compOf, autoResolve, biomeFor, BIOMES, mkUnit } from './units.js';
+import { STARTER_ARMY, defenderArmy, compOf, autoResolve, biomeFor, BIOMES, mkUnit, loadWarSprites } from './units.js';
 import { BattleA } from './battleA.js';
 import { BattleB } from './battleB.js';
 
@@ -31,6 +31,7 @@ const state = {
 window.IMPERIUM = state; // för test/debug
 
 document.fonts?.load('10px "Press Start 2P"').then(() => { globe.sceneDirty = true; }).catch(() => {});
+loadWarSprites();
 
 // ---------- hjälpare ----------
 function show(el, on = true) { el.style.display = on ? 'block' : 'none'; }
