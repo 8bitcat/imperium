@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>IMPERIUM — Geoscape</title>
+<title>IMPERIUM V2 — Geoscape</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -35,7 +35,6 @@
   }
   canvas#globe:active { cursor: grabbing; }
 
-  /* ---- scanlines + vignette (XCOM holo feel) ---- */
   .scanlines {
     position: fixed; inset: 0; pointer-events: none; z-index: 40;
     background: repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0 1px, transparent 1px 3px);
@@ -46,7 +45,6 @@
     background: radial-gradient(ellipse at center, transparent 55%, rgba(2,6,12,0.75) 100%);
   }
 
-  /* ---- angular HUD panels ---- */
   .panel {
     position: fixed; z-index: 50;
     background: var(--panel);
@@ -79,22 +77,52 @@
   #roster .chip { width: 10px; height: 10px; flex: 0 0 10px; border: 1px solid #000; }
   #roster .home { color: var(--holo-dim); }
 
-  #infopanel { right: 10px; bottom: 12px; min-width: 220px; max-width: 78vw; display: none; }
-  #infopanel #iname { color: var(--amber); font-size: 11px; margin-bottom: 6px; text-shadow: 0 0 8px rgba(255,176,46,0.4); }
-  #infopanel #istatus { color: var(--holo-dim); font-size: 8px; margin-bottom: 8px; }
+  /* ---- landsfakta ---- */
+  #infopanel { right: 10px; bottom: 66px; width: 265px; max-width: 88vw; display: none; }
+  #facthead { display: flex; align-items: center; gap: 9px; margin-bottom: 7px; }
+  #facthead img { width: 34px; height: auto; border: 2px solid rgba(255,255,255,0.7); image-rendering: auto; display: none; }
+  #iname { color: var(--amber); font-size: 10px; line-height: 1.5; text-shadow: 0 0 8px rgba(255,176,46,0.4); }
+  .frow { font-size: 7px; color: var(--text); margin: 3px 0; }
+  .frow b { color: var(--holo); font-weight: normal; }
+  #fres { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+  .reschip {
+    font-size: 7px; padding: 3px 6px; border: 1px solid; color: var(--text);
+    background: rgba(0, 12, 20, 0.8); white-space: nowrap;
+  }
+  #istatus { color: var(--holo-dim); font-size: 8px; margin: 6px 0 2px; }
 
-  #qrpanel { left: 10px; bottom: 12px; text-align: center; display: none; }
+  #qrpanel { left: 10px; bottom: 66px; text-align: center; display: none; }
   #qrpanel img { display: block; margin: 6px auto; image-rendering: pixelated; border: 4px solid #fff; }
   #qrpanel .code { color: var(--amber); font-size: 18px; letter-spacing: 4px; margin-top: 6px; text-shadow: 0 0 10px rgba(255,176,46,0.6); }
   #qrpanel .url { color: var(--holo-dim); font-size: 7px; margin-top: 5px; word-break: break-all; max-width: 180px; }
 
+  /* ---- togglar ---- */
+  #toggles {
+    position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%);
+    z-index: 55; display: none; gap: 6px;
+  }
+  .tbtn {
+    font-family: inherit; font-size: 8px; color: var(--holo-dim);
+    background: rgba(5, 18, 30, 0.88);
+    border: 2px solid rgba(55,224,255,0.25);
+    padding: 8px 10px; cursor: pointer; letter-spacing: 1px;
+    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  }
+  .tbtn.on { color: var(--holo); border-color: var(--panel-border); text-shadow: 0 0 8px rgba(55,224,255,0.5); }
+  .tbtn:hover { border-color: var(--holo); }
+
+  #legendpanel { right: 10px; top: 56px; width: 250px; max-width: 88vw; display: none; }
+  #legendpanel .lrow { display: flex; align-items: center; gap: 7px; font-size: 7px; margin: 4px 0; }
+  #legendpanel .dot { width: 8px; height: 8px; flex: 0 0 8px; border: 1px solid #000; }
+  #legendpanel .sub { color: var(--amber); font-size: 7px; margin: 9px 0 4px; letter-spacing: 1px; }
+  #legendpanel .needs { color: var(--holo-dim); }
+
   #hint {
     position: fixed; bottom: 8px; left: 50%; transform: translateX(-50%);
     z-index: 45; font-size: 7px; color: var(--holo-dim); text-align: center;
-    pointer-events: none; display: none;
+    pointer-events: none; display: none; width: 100%;
   }
 
-  /* ---- toasts / banners ---- */
   #toasts {
     position: fixed; top: 64px; left: 50%; transform: translateX(-50%);
     z-index: 60; display: flex; flex-direction: column; gap: 6px; align-items: center;
@@ -112,7 +140,6 @@
   @keyframes toastIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
   .toast.out { transition: opacity 0.4s; opacity: 0; }
 
-  /* ---- buttons ---- */
   .btn {
     display: block; width: 100%;
     font-family: inherit; font-size: 10px; color: var(--text);
@@ -137,7 +164,6 @@
   }
   input.field:focus { outline: none; border-color: var(--holo); }
 
-  /* ---- fullscreen overlays (menu / join / loading) ---- */
   .overlay {
     position: fixed; inset: 0; z-index: 70;
     display: none; align-items: center; justify-content: center;
@@ -158,6 +184,8 @@
   .tagline { font-size: 7px; color: var(--holo-dim); letter-spacing: 2px; margin-bottom: 22px; }
   .card label { display: block; font-size: 8px; color: var(--holo-dim); text-align: left; margin-top: 6px; }
   .card .err { color: var(--red); font-size: 8px; min-height: 14px; margin-top: 8px; }
+  .card a.v1link { display: block; font-size: 7px; color: var(--holo-dim); margin-top: 14px; text-decoration: none; }
+  .card a.v1link:hover { color: var(--holo); }
 
   #loading .card { border-color: rgba(255,176,46,0.5); }
   .blink { animation: blink 1s steps(2) infinite; }
@@ -165,8 +193,10 @@
 
   @media (max-width: 600px) {
     #roster { top: 48px; left: 6px; min-width: 130px; font-size: 8px; }
-    #infopanel { left: 6px; right: 6px; bottom: 8px; min-width: 0; }
+    #infopanel { left: 6px; right: 6px; bottom: 64px; width: auto; }
+    #legendpanel { left: 6px; right: 6px; top: 48px; width: auto; }
     #topbar { font-size: 8px; padding: 8px 10px; }
+    #qrpanel { bottom: 64px; }
     .logo { font-size: 20px; }
   }
 </style>
@@ -178,7 +208,7 @@
 <div class="vignette"></div>
 
 <div id="topbar" style="display:none">
-  <div class="left">IMPERIUM // GEOSCAPE</div>
+  <div class="left">IMPERIUM V2 // GEOSCAPE</div>
   <div class="right" id="topright"></div>
 </div>
 
@@ -188,10 +218,22 @@
 </div>
 
 <div id="infopanel" class="panel">
-  <div class="ptitle">&#9654; LAND</div>
-  <div id="iname"></div>
+  <div class="ptitle">&#9654; LANDSFAKTA</div>
+  <div id="facthead">
+    <img id="fflag" alt="">
+    <div id="iname"></div>
+  </div>
+  <div class="frow" id="fpop"></div>
+  <div class="frow" id="fcap"></div>
+  <div class="frow" id="fcity"></div>
+  <div id="fres"></div>
   <div id="istatus"></div>
   <button id="claimbtn" class="btn amber" style="display:none">GÖR TILL HEMLAND</button>
+</div>
+
+<div id="legendpanel" class="panel">
+  <div class="ptitle">&#9654; TILLGÅNGAR & BYGGEN</div>
+  <div id="legendlist"></div>
 </div>
 
 <div id="qrpanel" class="panel">
@@ -201,6 +243,12 @@
   <div class="url" id="qrurl"></div>
 </div>
 
+<div id="toggles">
+  <button class="tbtn on" id="tgCities">&#127961; STÄDER</button>
+  <button class="tbtn on" id="tgTrade">&#128230; HANDEL</button>
+  <button class="tbtn" id="tgLegend">&#128220; TILLGÅNGAR</button>
+</div>
+
 <div id="hint">DRA = ROTERA &nbsp;&#8226;&nbsp; SKROLLA/NYP = ZOOM &nbsp;&#8226;&nbsp; KLICKA PÅ ETT LAND</div>
 <div id="toasts"></div>
 
@@ -208,12 +256,12 @@
 <div id="menu" class="overlay show">
   <div class="card">
     <div class="logo">IMPERIUM</div>
-    <div class="tagline">GEOSCAPE // ERÖVRA VÄRLDEN</div>
+    <div class="tagline">V2 // STÄDER &#8226; TILLGÅNGAR &#8226; HANDEL</div>
     <button id="btnTV" class="btn">&#128250; STARTA TV-LÄGE</button>
     <button id="btnJoin" class="btn">&#128241; GÅ MED I SPEL</button>
     <button id="btnSolo" class="btn">&#127758; UTFORSKA JORDEN</button>
-    <a class="btn amber" style="text-decoration:none; font-size:9px" href="v2/">&#10024; NYA V2 — STÄDER &amp; HANDEL</a>
     <div class="err" id="menuerr"></div>
+    <a class="v1link" href="../">&#8592; KLASSISKA GLOBEN (V1)</a>
   </div>
 </div>
 

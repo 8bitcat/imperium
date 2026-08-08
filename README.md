@@ -4,7 +4,29 @@ Familjens strategispel #8: en hybrid av **XCOM** och **Rise of Nations**. En sto
 pixelerad jordglob (XCOM 2 Geoscape-stil) är centrum för hela spelet. TV:n är den
 centrala skärmen — spelarna ansluter med mobilen via QR-kod och spelar därifrån.
 
-**Live:** https://8bitcat.github.io/imperium/
+**Live:** https://8bitcat.github.io/imperium/ (klassisk V1) • https://8bitcat.github.io/imperium/v2/ (V2)
+
+## V2 — städer, tillgångar & handel
+
+`v2/` är den levande globen (V1 lämnas orörd som klassisk version):
+
+- **Skarpa etiketter** — lands- och stadsnamn ritas i full skärmupplösning (pixelfont)
+  ovanpå den pixelerade globen; V1:s oläsliga buffert-text är fixad
+- **Städer** (Rise of Nations-stil) — topp ~8 städer per land (12 för USA/Kina/Indien/
+  Ryssland/Brasilien) ur Natural Earth 10m, förbyggda till `v2/data/cities.json`;
+  huvudstäder får bärnstensfärgad fyr, stadsljus blinkar, radar-ping på storstäder
+- **Landsfakta-ruta** — flagga (flagcdn), invånare (Världsbanken), huvudstad,
+  antal städer och naturtillgångar; data i `v2/data/facts.json`
+- **Naturtillgångar** — 8 typer (olja, järn, guld, spannmål, timmer, fisk, uran,
+  diamanter); kurerade för ~50 kända länder, deterministisk fallback för resten.
+  Byggrecept definierade (INFANTERI=spannmål, STRIDSVAGN=järn+olja, …) för kommande
+  byggsystem. Tar du ett land får du dess tillgångar (visas i rostern).
+- **Levande handel** — resurspartiklar flödar mellan städer (huvudstad↔städer inrikes,
+  huvudstad↔2 närmaste utländska huvudstäder), färgade efter resurs; inrikesrutter
+  syns först vid inzoomning. Satelliter i omloppsbana. Allt togglingsbart:
+  STÄDER / HANDEL / TILLGÅNGAR-legend.
+
+Datafilerna byggs om med skripten i `tools/` (se nedan) — körs bara när källdata ändras.
 
 ## Så spelar ni
 
