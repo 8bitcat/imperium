@@ -77,6 +77,15 @@ export const RESEARCH = {
       { name: 'AI-Integrated Learning', mods: { research: 25, hdi: 8 } },
     ],
   },
+  logistics: {
+    name: 'Logistik', icon: '\u{1F69B}', group: 'militar',
+    tiers: [
+      { name: 'Fältkök & förrådslinjer', mods: { readiness: 3 } },
+      { name: 'Järnvägslogistik', mods: { readiness: 5, manpower: 3 } },
+      { name: 'Lufttransport & konvojer', mods: { readiness: 8, manpower: 5 } },
+      { name: 'Automatiserad försörjningskedja', mods: { readiness: 12, manpower: 8 } },
+    ],
+  },
   climate: {
     name: 'Climate', icon: '\u{1F331}', group: 'civil',
     tiers: [
@@ -157,6 +166,12 @@ export function combatBonus(nation) {
     }
   }
   return bonus;
+}
+
+// försörjningsräckvidd i radianer från eget territorium — logistikforskning
+// förlänger den. Bas ≈ två grannländer bort; varje tier ≈ ett land till.
+export function logisticsRange(nation) {
+  return 0.30 + 0.14 * (nation?.research?.logistics || 0);
 }
 
 export function hasUnlock(nation, key) {

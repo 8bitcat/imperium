@@ -122,7 +122,7 @@ export class BattleA {
       case 1: return type === 'TANK' ? 2 : 1;
       case 2: return type === 'TANK' ? Infinity : 2;
       case 3: case 5: return type === 'TANK' ? 0.5 : 1;
-      case 4: return type === 'TANK' ? Infinity : 2;
+      case 4: return Infinity; // vatten stoppar allt utom flyg — ta bron!
       default: return 1;
     }
   }
@@ -166,6 +166,7 @@ export class BattleA {
 
   async tapTile(tx, ty) {
     if (this.busy || this.done || this.turn !== 0) return;
+    if (tx >= 0 && ty >= 0 && tx < COLS && ty < ROWS) this.o.setTerrain?.(this.terr[ty][tx]);
     const target = this.unitAt(tx, ty);
     if (this.sel) {
       if (target && target.side === 1 && this.attackFrom.has(target)) {
@@ -455,19 +456,26 @@ export class BattleA {
     else if (t === 2) { T(5, 0); }       // berg
     else if (t === 6) { T(8, 0); }       // stad (neutralt kvarter)
 
-    if (t === 3 || t === 5) {
+    if (t === 5) {
+      // bro: Kenneys brotiles (horisontell/vertikal efter väggrannarna)
       const E = this._roadish(x + 1, y), Wn = this._roadish(x - 1, y);
-      const N = this._roadish(x, y - 1), S = this._roadish(x, y + 1);
-      const horiz = E || Wn || (!N && !S);
-      const vert = N || S;
-      if (horiz && vert) T(1, 8);      // korsning/böj: solid vägplatta
-      else if (horiz) T(1, 6);
-      else T(4, 7);
-      if (t === 5) { // broräcken
-        c.fillStyle = '#39424e';
-        if (horiz && !vert) { c.fillRect(px, py + 4, TILE, 2); c.fillRect(px, py + TILE - 6, TILE, 2); }
-        else { c.fillRect(px + 4, py, 2, TILE); c.fillRect(px + TILE - 6, py, 2, TILE); }
-      }
+      if (E || Wn) T(4, 7); else T(4, 9);
+    } else if (t === 3) {
+      // full autotiling: mask N=1 E=2 S=4 W=8 → rätt Kenney-tile
+      const mask = (this._roadish(x, y - 1) ? 1 : 0)
+        + (this._roadish(x + 1, y) ? 2 : 0)
+        + (this._roadish(x, y + 1) ? 4 : 0)
+        + (this._roadish(x - 1, y) ? 8 : 0);
+      const ROAD_TILES = {
+        0: [0, 6],                 // ensam vägplatta
+        2: [1, 6], 8: [3, 6], 10: [2, 6],   // väst-ände / öst-ände / rak horisontell
+        1: [0, 9], 4: [0, 7], 5: [0, 8],    // syd-ände / nord-ände / rak vertikal
+        3: [1, 9], 9: [3, 9], 6: [1, 7], 12: [3, 7],   // kurvor
+        11: [2, 9], 14: [2, 7], 7: [1, 8], 13: [3, 8], // T-korsningar
+        15: [2, 8],                // fyrvägskryss
+      };
+      const rt = ROAD_TILES[mask] || [2, 6];
+      T(rt[0], rt[1]);
     }
 
     if (water) { // strandkanter mot land

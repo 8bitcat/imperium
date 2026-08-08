@@ -9,7 +9,7 @@ import { BattleB } from './battleB.js';
 import { STATS, STAT_GROUPS, computeStats, statGoodness } from './stats.js';
 import { LAWS, defaultLaws, lawMods, lawChangeCost, lawOption } from './laws.js';
 import { IDEOLOGIES, countryIdeology, ideologyMods, lawLockedBy, enforceRequirements, IDEOLOGY_COST, DOCTRINE_COST } from './ideologies.js';
-import { RESEARCH, TIER_COST, researchMods, combatBonus, hasUnlock } from './research.js';
+import { RESEARCH, TIER_COST, researchMods, combatBonus, hasUnlock, logisticsRange } from './research.js';
 import { CASUS_BELLI, justifyDays, seizeAmount, FEDERATION_FORMS, HISTORICAL_EMPIRES, DYNAMIC_GOALS, formableEmpires, empireProgress } from './war.js';
 import { FACTIONS } from './factions.js';
 import { applyFaction } from './units.js';
@@ -155,8 +155,54 @@ function spawnArmy(countryId) {
 }
 
 function updateArmyMarker() {
-  const a = state.solo?.army;
-  globe.setArmy(a && a.units.length ? { ll: a.ll, comp: compOf(a.units), color: SOLO_COLOR } : null);
+  const s = state.solo;
+  const a = s?.army;
+  globe.setArmy(a && a.units.length
+    ? { ll: a.ll, comp: compOf(a.units), color: SOLO_COLOR, warn: !!s.supplyBad }
+    : null);
+  globe.setGarrison(s?.garrison?.length
+    ? { ll: capitalLL(s.home), comp: compOf(s.garrison), color: '#ff9f8a' }
+    : null);
+}
+
+// avstånd (radianer) från armén till närmaste eget territorium
+function supplyDistance() {
+  const s = state.solo;
+  if (!s?.army) return 0;
+  let min = Infinity;
+  for (const cid of [s.home, ...Object.keys(s.claims)]) {
+    const c = globe.getCountry(cid);
+    if (!c) continue;
+    min = Math.min(min, d3.geoDistance(s.army.ll, c.centroid));
+  }
+  return min === Infinity ? 0 : min;
+}
+
+// långt hemifrån utan logistik → trupperna börjar långsamt dö
+function supplyTick() {
+  const s = state.solo;
+  if (!s?.army?.units.length) { s.supplyBad = 0; return; }
+  const dist = supplyDistance();
+  const range = logisticsRange(s.nation);
+  if (dist <= range) {
+    if (s.supplyBad) { toast('\u{2705} FÖRSÖRJNINGSLINJERNA ÅTERUPPRÄTTADE', 'amber', 4000); }
+    s.supplyBad = 0;
+    return;
+  }
+  s.supplyBad = (s.supplyBad || 0) + 1;
+  if (s.supplyBad === 1) {
+    toast('\u{26A0}\u{FE0F} LOGISTIKEN SVIKTAR — TRUPPERNA BÖRJAR LÅNGSAMT DÖ. VÄND OM ELLER FORSKA LOGISTIK!', 'red', 9000);
+  }
+  // max 2 HP/dag — man hinner alltid vända om, men det KOSTAR
+  const excess = dist - range;
+  const dmg = Math.min(2, 0.4 + excess * 2);
+  for (const u of s.army.units) u.hp -= dmg;
+  const before = s.army.units.length;
+  s.army.units = s.army.units.filter((u) => u.hp > 0);
+  const lost = before - s.army.units.length;
+  if (lost > 0) toast(`\u{1F480} ${lost} ENHET${lost > 1 ? 'ER' : ''} FÖRLORAD${lost > 1 ? 'E' : ''} I FÄLT — LOGISTIKEN RÄCKER INTE`, 'red', 6000);
+  if (!s.army.units.length) toast('ARMÉN HAR SVULTIT IHJÄL — EN NY MÅSTE BYGGAS HEMMA', 'red', 8000);
+  updateArmyMarker();
 }
 
 // Arméer marscherar långsamt — restiden beror på avståndet
@@ -242,6 +288,7 @@ function refreshInfoPanel() {
   show(wpBtn, false);
   show($('#nukebtn'), false);
   show($('#interceptbtn'), false);
+  show($('#movebtn'), false);
 
   if (state.mode === 'solo' || (state.mode === 'player' && state.solo)) {
     const s = state.solo;
@@ -249,6 +296,10 @@ function refreshInfoPanel() {
       $('#istatus').textContent = s.claims[c.id].puppet ? 'DIN LYDSTAT' : 'DITT TERRITORIUM';
       $('#istatus').style.color = SOLO_COLOR;
       show(nationBtn, !!s.nation);
+      if (s.army?.units.length && s.army.at !== c.id && !state.battle) {
+        $('#movebtn').innerHTML = `\u{1F6A9} FLYTTA ARMÉN HIT${c.id === s.home && s.garrison?.length ? ' (SLÅ IHOP MED GARNISONEN)' : ''}`;
+        show($('#movebtn'), true);
+      }
     } else if (!s.home) {
       $('#istatus').textContent = 'FRITT TERRITORIUM';
       $('#istatus').style.color = '';
@@ -341,6 +392,7 @@ $('#interceptbtn').addEventListener('click', () => {
     atkBoost: battleBoost(),
     kenneyRow: FACTIONS[state.solo.faction]?.kenneyRow ?? 8,
     setStatus: (s) => { $('#bstatus').textContent = s; },
+    setTerrain: renderTerrBadge,
     onEnd: (result) => finishIntercept(m, result),
   };
   state.battle = new BattleA(opts);
@@ -569,17 +621,26 @@ function tickDay() {
     applyState();
   }
 
-  // byggkön: en enhet i taget, tar dagar att färdigställa
+  // byggkön: en enhet i taget, tar dagar att färdigställa.
+  // Är armén hemma ansluter enheten direkt — annars bildas en GARNISON hemma.
   if (s.buildQueue?.length) {
     const b = s.buildQueue[0];
     if (--b.left <= 0) {
       s.buildQueue.shift();
-      s.army?.units.push(mkUnit(b.type, 0));
+      if (s.army && s.army.at === s.home) {
+        s.army.units.push(mkUnit(b.type, 0));
+        toast(`\u{2705} ${b.name} FÄRDIGBYGGD — ANSLUTER TILL ARMÉN`, 'amber', 4500);
+      } else {
+        (s.garrison ||= []).push(mkUnit(b.type, 0));
+        toast(`\u{2705} ${b.name} FÄRDIGBYGGD — VÄNTAR I GARNISONEN HEMMA (FLYTTA ARMÉN HEM FÖR ATT SLÅ IHOP)`, 'amber', 6000);
+      }
       updateArmyMarker();
-      toast(`\u{2705} ${b.name} FÄRDIGBYGGD — ANSLUTER TILL ARMÉN`, 'amber', 4500);
     }
     renderBuildCorner();
   }
+
+  // försörjningskontroll varje dag
+  supplyTick();
 
   // ländernas stående arméer växer med tiden
   if (s.clock.day % 20 === 0) {
@@ -600,12 +661,16 @@ function renderBuildCorner() {
   const el = $('#buildcorner');
   const q = state.solo?.buildQueue || [];
   if (!q.length) { el.style.display = 'none'; return; }
-  const b = q[0];
-  const pct = Math.round(((b.total - b.left) / b.total) * 100);
-  el.innerHTML = `<div class="ptitle">&#9654; BYGGS NU</div>
-    <div style="font-size:8px">\u{1F528} ${b.name}</div>
-    <div class="pbar"><div class="pfill" style="width:${pct}%"></div></div>
-    <div style="font-size:7px;color:var(--holo-dim)">${b.left} DAGAR KVAR${q.length > 1 ? ` • ${q.length - 1} I KÖ` : ''}</div>`;
+  const rows = q.map((b, i) => {
+    const pct = i === 0 ? Math.round(((b.total - b.left) / b.total) * 100) : 0;
+    const sub = i === 0 ? `${b.left} DAGAR KVAR` : `I KÖ (${b.total} DAGAR)`;
+    return `<div style="margin-bottom:7px">
+      <div style="font-size:8px">\u{1F528} ${b.name}</div>
+      <div class="pbar"><div class="pfill" style="width:${pct}%"></div></div>
+      <div style="font-size:7px;color:var(--holo-dim)">${sub}</div>
+    </div>`;
+  }).join('');
+  el.innerHTML = `<div class="ptitle">&#9654; BYGGS NU</div>${rows}`;
   el.style.display = 'block';
 }
 
@@ -681,6 +746,7 @@ function aiWorldTick() {
   }
   tickVotes(ctx);
   tickAiWars(ctx);
+  tickDefenses(ctx);
 }
 
 // AI-länder RÖSTAR om sina ambitioner — historiska riken eller helt egna mål
@@ -773,6 +839,18 @@ function checkArrivals() {
   for (const m of [...world.moving]) {
     if (now < m.start + m.dur) continue;
     world.moving = world.moving.filter((x) => x !== m);
+    // försvarsvågor: förstärk garnisonen om landet fortfarande är imperiets
+    if (m.defensive) {
+      const stillHeld = world.aiOwned[m.target] === m.att || m.target === m.att;
+      if (stillHeld) {
+        const ca = countryArmy(m.target);
+        ca.units.push(...m.units.slice(0, Math.max(0, 14 - ca.units.length)));
+        toast(`\u{1F6E1}\u{FE0F} FÖRSTÄRKNINGAR FRAMME I ${cname(m.target)} — FÖRSVARET NU ${ca.units.length} ENHETER`, 'red', 6000);
+        if (selectedCountry?.id === m.target) refreshInfoPanel();
+      }
+      updateMovingMarkers();
+      continue;
+    }
     if (!countryFree(m.target, worldCtx())) { updateMovingMarkers(); continue; }
     const defA = countryArmy(m.target);
     const r = autoResolve(m.units, defA.units);
@@ -806,6 +884,7 @@ function updateMovingMarkers() {
     ...m,
     color: world.aiEmpires?.[m.att]?.color || '#c0392b',
     name: globe.getCountry(m.att)?.name || '?',
+    a2: state.facts[m.att]?.a2 || null,
   })));
 }
 
@@ -827,6 +906,7 @@ setInterval(() => {
     ticked = true;
   }
   if (ticked) renderResbar();
+  globe.setDayFloat(s.clock.day + s.clock.acc / s.clock.msPerDay);
 }, 250);
 
 $('#pausebtn').addEventListener('click', () => {
@@ -1249,6 +1329,76 @@ function openFactionPick() {
   overlay('#factionpick', true);
 }
 
+// flytta armén till eget territorium (reträtt/omgruppering); hemma slås
+// garnisonen ihop med armén — "två arméer blir en"
+$('#movebtn').addEventListener('click', () => {
+  const s = state.solo;
+  if (!selectedCountry || !s?.army?.units.length || state.battle) return;
+  const dest = selectedCountry.id;
+  show($('#movebtn'), false);
+  armyFlyTo(capitalLL(dest), 0, () => {
+    s.army.at = dest;
+    if (dest === s.home && s.garrison?.length) {
+      const n = s.garrison.length;
+      s.army.units.push(...s.garrison);
+      s.garrison = [];
+      toast(`\u{1F91D} ARMÉERNA SAMMANSLAGNA — +${n} ENHETER FRÅN GARNISONEN`, 'amber', 6000);
+    } else {
+      toast(`ARMÉN HAR OMGRUPPERAT TILL ${cname(dest)}`, '', 4000);
+    }
+    updateArmyMarker();
+    refreshInfoPanel();
+  });
+});
+
+// hotade AI-imperier mobiliserar: bygger och skickar förstärkningar från sina länder
+function empireDefense(targetId) {
+  const world = worldCtx().world;
+  const conq = world.aiOwned[targetId] || (world.aiEmpires[targetId]?.owned.length ? targetId : null);
+  if (!conq) return;
+  const emp = world.aiEmpires[conq];
+  if (!emp || !emp.owned.length) return;
+  world.defenses ||= [];
+  if (world.defenses.some((d) => d.target === targetId)) return;
+  world.defenses.push({ empire: conq, target: targetId, waves: Math.min(3, emp.owned.length + 1), ticks: 1 });
+  toast(`\u{1F6A8} ${emp.name.toUpperCase()} MOBILISERAR SITT FÖRSVAR — FÖRSTÄRKNINGAR ÄR PÅ VÄG!`, 'red', 8000);
+}
+
+function tickDefenses(ctx) {
+  const { world } = ctx;
+  for (const d of [...(world.defenses || [])]) {
+    if (--d.ticks > 0) continue;
+    const emp = world.aiEmpires[d.empire];
+    const stillHeld = world.aiOwned[d.target] === d.empire || d.target === d.empire;
+    if (!emp || !stillHeld || d.waves <= 0) {
+      world.defenses = world.defenses.filter((x) => x !== d);
+      continue;
+    }
+    // bygg upp i imperiets länder + skicka en våg mot det hotade landet
+    const sources = [d.empire, ...emp.owned].filter((cid) => cid !== d.target && (world.aiOwned[cid] === d.empire || cid === d.empire));
+    const src = sources[Math.floor(Math.random() * sources.length)];
+    if (src) {
+      const ca = countryArmy(src);
+      if (ca.units.length > 2) {
+        const units = ca.units.splice(0, Math.min(4, ca.units.length - 1)).map((u) => ({ ...u, side: 1 }));
+        const from = capitalLL(src), to = capitalLL(d.target);
+        world.moving.push({
+          id: Math.random().toString(36).slice(2, 8),
+          att: d.empire, target: d.target, units, defensive: true,
+          fromLL: from, toLL: to,
+          start: performance.now(), dur: 8000 + d3.geoDistance(from, to) * 120000,
+        });
+        toast(`\u{1F6A9} ${emp.name.toUpperCase()} SKICKAR FÖRSTÄRKNINGAR (${units.length} ENHETER) MOT ${cname(d.target)}`, 'red', 6000);
+        updateMovingMarkers();
+      } else {
+        ca.units.push(mkUnit('INF', 1), mkUnit('TANK', 1)); // bygger nytt inför nästa våg
+      }
+    }
+    d.waves--;
+    d.ticks = 2;
+  }
+}
+
 // ---------- krigsrättfärdigande (M8) ----------
 $('#justifybtn').addEventListener('click', () => {
   if (!selectedCountry || !state.solo?.nation) return;
@@ -1272,6 +1422,7 @@ $('#justifybtn').addEventListener('click', () => {
       renderResbar();
       refreshInfoPanel();
       toast(`RÄTTFÄRDIGAR ${cb.name.toUpperCase()} MOT ${selectedCountry.name.toUpperCase()} — ${days} DAGAR`, 'amber', 5000);
+      if (state.mode === 'solo') empireDefense(selectedCountry.id);
     });
     list.appendChild(card);
   }
@@ -1285,6 +1436,28 @@ $('#wpbtn').addEventListener('click', () => {
   toast(`VIT FRED — KONFLIKTEN MED ${selectedCountry.name.toUpperCase()} AVSLUTAD`, '', 4500);
   refreshInfoPanel();
 });
+
+// terrängbrickan uppe i stridshörnet: ikon + försvarsbonus för rutan man tryckt på
+const TERR_META = {
+  0: { icon: '\u{1F33E}', name: 'SLÄTT', def: 0 },
+  1: { icon: '\u{1F332}', name: 'SKOG', def: 1 },
+  2: { icon: '\u{26F0}\u{FE0F}', name: 'BERG', def: 2 },
+  3: { icon: '\u{1F6E3}\u{FE0F}', name: 'VÄG', def: 0 },
+  4: { icon: '\u{1F30A}', name: 'VATTEN', def: 0, note: 'ENDAST FLYG' },
+  5: { icon: '\u{1F309}', name: 'BRO', def: 0 },
+  6: { icon: '\u{1F3D9}\u{FE0F}', name: 'STAD', def: 3 },
+};
+
+function renderTerrBadge(t) {
+  const m = TERR_META[t];
+  const el = $('#terrbadge');
+  if (!m) { el.style.display = 'none'; return; }
+  el.innerHTML = `<div style="font-size:14px;text-align:center">${m.icon}</div>
+    <div style="font-size:8px;text-align:center">${m.name}</div>
+    ${m.def ? `<div style="font-size:7px;color:var(--green,#3ee6c8);text-align:center">FÖRSVAR +${m.def} ${'\u{2605}'.repeat(m.def)}</div>` : ''}
+    ${m.note ? `<div style="font-size:6px;color:var(--holo-dim);text-align:center">${m.note}</div>` : ''}`;
+  el.style.display = 'block';
+}
 
 // ---------- kravskärmen efter seger ----------
 let demandState = null; // {target, cbKey, result, choices}
@@ -1540,6 +1713,7 @@ function startBattle(kind) {
     atkBoost: battleBoost(),
     kenneyRow: FACTIONS[state.solo.faction]?.kenneyRow ?? 8,
     setStatus: (s) => { $('#bstatus').textContent = s; },
+    setTerrain: renderTerrBadge,
     onEnd: (result) => finishBattle(result),
   };
   state.battle = kind === 'A' ? new BattleA(opts) : new BattleB(opts);

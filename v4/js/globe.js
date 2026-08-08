@@ -144,9 +144,24 @@ export class Globe {
   select(id) { this.selectedId = id; this.sceneDirty = true; }
   setArmy(army) { this.army = army; } // {ll:[lon,lat], comp:{INF,TANK,FLYG}, color} | null
 
-  // marscherande AI-arméer: {fromLL, toLL, start, dur, color, name, units}
+  // marscherande AI-arméer: {fromLL, toLL, start, dur, color, name, units, a2}
   setMovingArmies(list) {
     this.movingArmies = (list || []).map((m) => ({ ...m, interp: d3.geoInterpolate(m.fromLL, m.toLL) }));
+  }
+
+  setGarrison(g) { this.garrison = g; }
+  setDayFloat(f) { this.dayFloat = f; }
+
+  _flagImg(a2) {
+    if (!a2) return null;
+    this._flags ||= {};
+    if (!this._flags[a2]) {
+      const img = new Image();
+      img.src = `https://flagcdn.com/w20/${a2.toLowerCase()}.png`;
+      this._flags[a2] = img;
+    }
+    const img = this._flags[a2];
+    return img.complete && img.naturalWidth ? img : null;
   }
   setShowCities(on) { this.showCities = on; this.sceneDirty = true; }
   setShowTrade(on) { this.showTrade = on; }
@@ -312,6 +327,7 @@ export class Globe {
     b.clearRect(0, 0, this.buf.width, this.buf.height);
     b.drawImage(this.scene, 0, 0);
 
+    this._drawNight(b);
     if (this.showTrade && this.routes.length) this._drawTrade(b, t);
     if (this.showCities) this._drawCityLife(b, t);
     this._drawSatellites(b, t);
@@ -337,12 +353,35 @@ export class Globe {
 
     this._drawLabels(x);
     if (this.army) this._drawArmy(x, t);
+    if (this.garrison) this._drawGarrison(x, t);
     this._drawMovingArmies(x, t);
 
     requestAnimationFrame((tt) => this._frame(tt));
   }
 
-  // marscherande arméer: färgad markör som rör sig längs storcirkeln
+  // garnisonen hemma (mindre banér i ljusare färg)
+  _drawGarrison(x, t) {
+    const g = this.garrison;
+    if (!this._front(g.ll, 1.5)) return;
+    const p = this.proj(g.ll);
+    if (!p) return;
+    const ps = this.pixelSize;
+    const sx = p[0] * ps, sy = p[1] * ps + 18;
+    const n = Object.values(g.comp).reduce((a, b) => a + b, 0);
+    x.fillStyle = 'rgba(10,16,24,0.92)';
+    x.fillRect(sx - 22, sy - 9, 44, 18);
+    x.strokeStyle = g.color;
+    x.lineWidth = 1;
+    x.strokeRect(sx - 22, sy - 9, 44, 18);
+    drawUnit(x, 'INF', g.color, sx - 18, sy - 7, 1, 1);
+    x.font = '8px "Press Start 2P", monospace';
+    x.textAlign = 'left';
+    x.textBaseline = 'middle';
+    x.fillStyle = '#fff';
+    x.fillText(`\u{1F3E0}${n}`, sx - 2, sy + 1);
+  }
+
+  // marscherande arméer: banér med landets FLAGGA + armébild + antal
   _drawMovingArmies(x, t) {
     this._movingHits = [];
     const ps = this.pixelSize;
@@ -353,22 +392,25 @@ export class Globe {
       const p = this.proj(ll);
       if (!p) continue;
       const sx = p[0] * ps, sy = p[1] * ps;
-      // riktningsstreck mot målet
-      const p2 = this.proj(m.interp(Math.min(1, k + 0.06)));
-      if (p2) {
-        x.strokeStyle = 'rgba(255,255,255,0.35)';
-        x.lineWidth = 1;
-        x.beginPath(); x.moveTo(sx, sy); x.lineTo(p2[0] * ps, p2[1] * ps); x.stroke();
-      }
+      const w = 52, h = 20;
       x.fillStyle = '#10151c';
-      x.fillRect(sx - 6, sy - 6, 12, 12);
-      x.fillStyle = m.color;
-      x.fillRect(sx - 4, sy - 4, 8, 8);
-      if (Math.floor(t / 400) % 2 === 0) {
-        x.font = '10px monospace';
-        x.textAlign = 'center';
-        x.fillText('\u{2694}', sx, sy - 10);
+      x.fillRect(sx - w / 2 - 1, sy - h / 2 - 1, w + 2, h + 2);
+      x.fillStyle = 'rgba(10,16,24,0.95)';
+      x.fillRect(sx - w / 2, sy - h / 2, w, h);
+      x.strokeStyle = m.color;
+      x.lineWidth = 2;
+      x.strokeRect(sx - w / 2, sy - h / 2, w, h);
+      const flag = this._flagImg(m.a2);
+      if (flag) {
+        x.imageSmoothingEnabled = false;
+        x.drawImage(flag, sx - w / 2 + 3, sy - 5, 15, 10);
       }
+      drawUnit(x, 'TANK', m.color, sx - w / 2 + 20, sy - 8, 1.1, 1);
+      x.font = '9px "Press Start 2P", monospace';
+      x.textAlign = 'left';
+      x.textBaseline = 'middle';
+      x.fillStyle = '#fff';
+      x.fillText(String(m.units?.length ?? ''), sx + w / 2 - 12, sy + 1);
       this._movingHits.push({ x: sx, y: sy, m });
     }
   }
@@ -411,6 +453,11 @@ export class Globe {
       x.fillText(String(n), ox + 28, by + 17);
       ox += 48;
     }
+    if (a.warn && Math.floor(t / 350) % 2 === 0) {
+      x.font = '14px monospace';
+      x.textAlign = 'center';
+      x.fillText('\u{26A0}\u{FE0F}', sx, by - 10);
+    }
   }
 
   // Flödande resurspartiklar längs handelsrutterna ("fram och tillbaka")
@@ -442,11 +489,57 @@ export class Globe {
     b.globalAlpha = 1;
   }
 
-  // Blinkande stadsljus + radar-ping på någon storstad
+  // Dag & natt: solen vandrar runt globen med speltiden — natthalvan mörknar
+  _drawNight(b) {
+    if (this.dayFloat == null) return;
+    const SUN_LAP_DAYS = 10; // ett soldygn = 10 speldagar (~20 sek)
+    const sunLon = -((this.dayFloat / SUN_LAP_DAYS) % 1) * 360 + 180;
+    this._sun = [sunLon, 0];
+    const center = this._viewCenter();
+    const cp = this.proj(center);
+    if (!cp) return;
+    const toward = d3.geoInterpolate(center, this._sun)(0.12);
+    const tp = this.proj(toward);
+    if (!tp) return;
+    let dx = cp[0] - tp[0], dy = cp[1] - tp[1]; // bort från solen
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len; dy /= len;
+    const R = this.proj.scale();
+    const lit = Math.cos(d3.geoDistance(center, this._sun)); // 1 = mitt på dagen
+    const off = -lit * R;
+    const g = b.createLinearGradient(
+      cp[0] + dx * (off - R * 0.45), cp[1] + dy * (off - R * 0.45),
+      cp[0] + dx * (off + R * 0.45), cp[1] + dy * (off + R * 0.45));
+    g.addColorStop(0, 'rgba(1,4,12,0)');
+    g.addColorStop(1, 'rgba(1,4,12,0.66)');
+    b.save();
+    b.beginPath();
+    b.arc(cp[0], cp[1], R + 2, 0, Math.PI * 2);
+    b.clip();
+    b.fillStyle = g;
+    b.fillRect(0, 0, this.buf.width, this.buf.height);
+    b.restore();
+  }
+
+  _isNight(ll) {
+    return this._sun ? Math.cos(d3.geoDistance(ll, this._sun)) < -0.03 : false;
+  }
+
+  // Blinkande stadsljus + NATTLJUS på mörka sidan + radar-ping
   _drawCityLife(b, t) {
     const slot = Math.floor(t / 300);
     for (let i = 0; i < this._visCities.length; i++) {
       const v = this._visCities[i];
+      if (this._isNight(v.city.ll)) {
+        b.fillStyle = v.city.c ? '#ffe9a8' : '#ffd98a';
+        b.fillRect(v.x, v.y, 1, 1);
+        if (v.city.tier === 0) {
+          b.fillStyle = 'rgba(255,217,138,0.4)';
+          b.fillRect(v.x - 1, v.y, 3, 1);
+          b.fillRect(v.x, v.y - 1, 1, 3);
+        }
+        continue;
+      }
       if ((hashId(i + '' + slot) % 19) === 0) {
         b.fillStyle = v.city.c ? '#fff3c4' : '#e8fbff';
         b.fillRect(v.x, v.y, 1, 1);

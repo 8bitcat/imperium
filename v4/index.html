@@ -124,7 +124,7 @@
   }
 
   #toasts {
-    position: fixed; top: 64px; left: 50%; transform: translateX(-50%);
+    position: fixed; top: 102px; left: 50%; transform: translateX(-50%);
     z-index: 95; display: flex; flex-direction: column; gap: 6px; align-items: center;
     pointer-events: none;
   }
@@ -428,6 +428,7 @@
   <div id="fres"></div>
   <div id="istatus"></div>
   <button id="claimbtn" class="btn amber" style="display:none">GÖR TILL HEMLAND</button>
+  <button id="movebtn" class="btn" style="display:none">&#128681; FLYTTA ARMÉN HIT</button>
   <button id="justifybtn" class="btn" style="display:none">&#9878;&#65039; RÄTTFÄRDIGA KRIG</button>
   <button id="attackbtn" class="btn warbtn" style="display:none">&#9876; ANFALL MED ARMÉN</button>
   <button id="nukebtn" class="btn warbtn" style="display:none">&#9762; ATOMSLAG (500 &#128176;)</button>
@@ -572,6 +573,7 @@
   </div>
   <canvas id="bcanvas"></canvas>
   <div id="bstatus"></div>
+  <div id="terrbadge" class="panel" style="position:absolute; top:44px; right:12px; display:none; min-width:110px"></div>
 </div>
 <div id="klinch"><canvas id="kcanvas"></canvas></div>
 <div id="bresult" class="overlay">
