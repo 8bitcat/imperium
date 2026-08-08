@@ -74,6 +74,10 @@ function claimsMap() {
       const emp = state.solo.aiEmpires[conq];
       m[cid] = { color: emp?.color || '#7f8c8d', playerName: emp?.name || (globe.getCountry(conq)?.name ?? 'AI') };
     }
+    // imperiets KÄRNLAND målas i samma färg som dess erövringar
+    for (const [conq, emp] of Object.entries(state.solo?.aiEmpires || {})) {
+      if (emp.owned.length && !m[conq]) m[conq] = { color: emp.color, playerName: emp.name };
+    }
     return m;
   }
   const claims = {};
@@ -442,7 +446,8 @@ function ensureAiEmpire(coreId, hist) {
 
 function countryFree(cid) {
   const s = state.solo;
-  return !!globe.getCountry(cid) && !s.claims[cid] && !s.aiOwned[cid] && cid !== s.home;
+  return !!globe.getCountry(cid) && !s.claims[cid] && !s.aiOwned[cid]
+    && !(s.aiEmpires[cid]?.owned.length) && cid !== s.home;
 }
 
 function aiWorldTick() {
