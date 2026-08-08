@@ -452,8 +452,9 @@ export class BattleA {
       const N = this._roadish(x, y - 1), S = this._roadish(x, y + 1);
       const horiz = E || Wn || (!N && !S);
       const vert = N || S;
-      if (horiz) T(1, 6);
-      if (vert) T(4, 7);
+      if (horiz && vert) T(1, 8);      // korsning/böj: solid vägplatta
+      else if (horiz) T(1, 6);
+      else T(4, 7);
       if (t === 5) { // broräcken
         c.fillStyle = '#39424e';
         if (horiz && !vert) { c.fillRect(px, py + 4, TILE, 2); c.fillRect(px, py + TILE - 6, TILE, 2); }
@@ -550,23 +551,49 @@ export class BattleA {
     for (let y = 0; y <= ROWS; y++) { c.beginPath(); c.moveTo(0, y * TILE); c.lineTo(COLS * TILE, y * TILE); c.stroke(); }
 
     if (this.sel) {
-      c.fillStyle = 'rgba(120,220,255,0.30)';
+      const useTiles = TILEIMG.complete && TILEIMG.naturalWidth;
       for (const key of this.reach.keys()) {
         const [x, y] = key.split(',').map(Number);
-        c.fillRect(x * TILE, y * TILE, TILE, TILE);
+        if (useTiles) {
+          c.globalAlpha = 0.75;
+          c.drawImage(TILEIMG, 7 * 16, 4 * 16, 16, 16, x * TILE, y * TILE, TILE, TILE);
+          c.globalAlpha = 1;
+        } else {
+          c.fillStyle = 'rgba(120,220,255,0.30)';
+          c.fillRect(x * TILE, y * TILE, TILE, TILE);
+        }
       }
     }
 
+    const KENNEY_UNIT = { INF: 16, TANK: 8, FLYG: 10 };
     for (const u of this.units) {
       const px = u.tx * TILE, py = u.ty * TILE + 2;
       if (u.side === 0 && u.moved && this.turn === 0) c.globalAlpha = 0.5;
-      drawUnit(c, u.type, u.side === 0 ? P_COL : E_COL, px, py, 2, u.side === 0 ? 1 : -1);
+      if (TILEIMG.complete && TILEIMG.naturalWidth) {
+        // Kenney-enheter: spelaren röd (rad 8), fienden blå (rad 7, speglad)
+        const col = KENNEY_UNIT[u.type], row = u.side === 0 ? 8 : 7;
+        if (u.side === 1) {
+          c.save();
+          c.translate(u.tx * TILE + TILE, u.ty * TILE);
+          c.scale(-1, 1);
+          c.drawImage(TILEIMG, col * 16, row * 16, 16, 16, 0, 0, TILE, TILE);
+          c.restore();
+        } else {
+          c.drawImage(TILEIMG, col * 16, row * 16, 16, 16, u.tx * TILE, u.ty * TILE, TILE, TILE);
+        }
+      } else {
+        drawUnit(c, u.type, u.side === 0 ? P_COL : E_COL, px, py, 2, u.side === 0 ? 1 : -1);
+      }
       c.globalAlpha = 1;
       drawHpBadge(c, u.hp, u.tx * TILE + TILE - 12, u.ty * TILE + TILE - 10, 1);
       if (u === this.sel) {
-        c.strokeStyle = Math.floor(t / 250) % 2 ? '#fff' : '#ffd24f';
-        c.lineWidth = 2;
-        c.strokeRect(u.tx * TILE + 1, u.ty * TILE + 1, TILE - 2, TILE - 2);
+        if (TILEIMG.complete && TILEIMG.naturalWidth && Math.floor(t / 250) % 2 === 0) {
+          c.drawImage(TILEIMG, 7 * 16, 3 * 16, 16, 16, u.tx * TILE, u.ty * TILE, TILE, TILE);
+        } else {
+          c.strokeStyle = Math.floor(t / 250) % 2 ? '#fff' : '#ffd24f';
+          c.lineWidth = 2;
+          c.strokeRect(u.tx * TILE + 1, u.ty * TILE + 1, TILE - 2, TILE - 2);
+        }
       }
     }
     if (this.sel) {
