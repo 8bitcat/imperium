@@ -13,6 +13,7 @@ import { RESEARCH, TIER_COST, researchMods, combatBonus, hasUnlock, logisticsRan
 import { CASUS_BELLI, justifyDays, seizeAmount, FEDERATION_FORMS, HISTORICAL_EMPIRES, DYNAMIC_GOALS, formableEmpires, empireProgress } from './war.js';
 import { FACTIONS } from './factions.js';
 import { applyFaction } from './units.js';
+import { pickLeader, leaderDesc } from './leaders.js';
 
 const $ = (s) => document.querySelector(s);
 const PLAYER_COLORS = ['#ff4f4f', '#4fa8ff', '#ffd24f', '#b06bff', '#ff9f3e', '#3ee6c8', '#ff6fd8', '#a4e34a'];
@@ -165,15 +166,18 @@ function updateArmyMarker() {
     : null);
 }
 
-// avstånd (radianer) från armén till närmaste eget territorium
+// avstånd (radianer) från armén till närmaste eget territorium.
+// Står armén INUTI ett eget land är försörjningen alltid tryggad (0).
 function supplyDistance() {
   const s = state.solo;
   if (!s?.army) return 0;
+  const inside = globe.countryAtLL(s.army.ll);
+  if (inside && (s.claims[inside.id] || inside.id === s.home)) return 0;
   let min = Infinity;
   for (const cid of [s.home, ...Object.keys(s.claims)]) {
     const c = globe.getCountry(cid);
     if (!c) continue;
-    min = Math.min(min, d3.geoDistance(s.army.ll, c.centroid));
+    min = Math.min(min, d3.geoDistance(s.army.ll, c.centroid), d3.geoDistance(s.army.ll, capitalLL(cid)));
   }
   return min === Infinity ? 0 : min;
 }
@@ -496,7 +500,7 @@ function recomputeNation() {
     laws: lawMods(s.nation.laws),
     ideology: ideologyMods(s.nation),
     research: researchMods(s.nation),
-    extra: mergeMods(mergeMods(s.extra, s.permMods), s.factionMods),
+    extra: mergeMods(mergeMods(mergeMods(s.extra, s.permMods), s.factionMods), s.leaderMods),
   };
   s.stats = computeStats(s.nation, s.nationSources);
 }
@@ -594,8 +598,22 @@ function tickDay() {
   }
   // val (om landet har rimligt fria val)
   if (['entirelyfree', 'free', 'mostlyfree', 'balanced'].includes(s.nation.laws.elections) && s.clock.day % 90 === 0) {
-    if (st.approval.total >= -5) { s.res.pp += 30; toast(`VALSEGER! +30 \u{2696}\u{FE0F}`, 'amber', 5000); }
-    else { s.res.pp = Math.max(0, s.res.pp - 40); toast(`VALFÖRLUST... \u{2212}40 \u{2696}\u{FE0F}`, 'red', 5000); }
+    if (st.approval.total >= -5) {
+      s.res.pp += 30;
+      toast(`VALSEGER! +30 \u{2696}\u{FE0F}`, 'amber', 5000);
+      // ibland tar en historisk gestalt ledningen och ger sin buff
+      if (Math.random() < 0.6) {
+        const l = pickLeader(s.home);
+        s.leader = l;
+        s.leaderMods = { ...l.m };
+        recomputeNation();
+        toast(`\u{1F3A9} ${l.n.toUpperCase()} LEDER NU LANDET — ${leaderDesc(l)}`, 'amber', 8000);
+      }
+    } else {
+      s.res.pp = Math.max(0, s.res.pp - 40);
+      if (s.leader) { toast(`${s.leader.n.toUpperCase()} AVGÅR EFTER VALFÖRLUSTEN`, 'red', 5000); s.leader = null; s.leaderMods = {}; recomputeNation(); }
+      toast(`VALFÖRLUST... \u{2212}40 \u{2696}\u{FE0F}`, 'red', 5000);
+    }
   }
   // krigsrättfärdiganden tickar ner
   for (const [tid, w] of Object.entries(s.wars)) {
@@ -605,6 +623,7 @@ function tickDay() {
       if (selectedCountry?.id === tid) refreshInfoPanel();
     }
   }
+  renderBuildCorner();
   // krigsskadestånd flödar in
   for (const rep of s.reparations) { s.res.money += rep.daily; rep.days--; }
   s.reparations = s.reparations.filter((r) => {
@@ -639,6 +658,19 @@ function tickDay() {
     renderBuildCorner();
   }
 
+  // forskning tar tid — en åt gången
+  if (s.researchQueue?.length) {
+    const rq = s.researchQueue[0];
+    if (--rq.left <= 0) {
+      s.researchQueue.shift();
+      s.nation.research[rq.branch] = rq.tier;
+      recomputeNation();
+      toast(`\u{1F52C} FORSKNING KLAR: ${rq.name.toUpperCase()}`, 'amber', 5000);
+      if (rq.unlock === 'nuke') toast('\u{2622}\u{FE0F} KÄRNVAPEN UPPLÅST — NY KNAPP VID RÄTTFÄRDIGAT KRIG', 'red', 7000);
+    }
+    renderBuildCorner();
+  }
+
   // försörjningskontroll varje dag
   supplyTick();
 
@@ -657,20 +689,28 @@ function tickDay() {
 }
 
 // ---------- byggkö-widgeten i hörnet ----------
+// samlad progress-kö: byggen + forskning + krigsrättfärdiganden
 function renderBuildCorner() {
+  const s = state.solo;
   const el = $('#buildcorner');
-  const q = state.solo?.buildQueue || [];
-  if (!q.length) { el.style.display = 'none'; return; }
-  const rows = q.map((b, i) => {
-    const pct = i === 0 ? Math.round(((b.total - b.left) / b.total) * 100) : 0;
-    const sub = i === 0 ? `${b.left} DAGAR KVAR` : `I KÖ (${b.total} DAGAR)`;
+  if (!s) { el.style.display = 'none'; return; }
+  const row = (icon, name, left, total, active) => {
+    const pct = active ? Math.round(((total - left) / total) * 100) : 0;
+    const sub = active ? `${Math.max(0, left)} DAGAR KVAR` : `I KÖ (${total} DAGAR)`;
     return `<div style="margin-bottom:7px">
-      <div style="font-size:8px">\u{1F528} ${b.name}</div>
+      <div style="font-size:8px">${icon} ${name}</div>
       <div class="pbar"><div class="pfill" style="width:${pct}%"></div></div>
       <div style="font-size:7px;color:var(--holo-dim)">${sub}</div>
     </div>`;
-  }).join('');
-  el.innerHTML = `<div class="ptitle">&#9654; BYGGS NU</div>${rows}`;
+  };
+  const rows = [];
+  (s.buildQueue || []).forEach((b, i) => rows.push(row('\u{1F528}', b.name, b.left, b.total, i === 0)));
+  (s.researchQueue || []).forEach((r, i) => rows.push(row('\u{1F52C}', r.name, r.left, r.total, i === 0)));
+  for (const [tid, w] of Object.entries(s.wars || {})) {
+    if (w.status === 'justifying') rows.push(row('\u{2696}\u{FE0F}', `KRIG: ${cname(tid)}`, w.days, w.total || w.days, true));
+  }
+  if (!rows.length) { el.style.display = 'none'; return; }
+  el.innerHTML = `<div class="ptitle">&#9654; PÅGÅR</div>${rows.join('')}`;
   el.style.display = 'block';
 }
 
@@ -721,8 +761,13 @@ function aiWorldTick() {
   const ctx = worldCtx();
   const { world, blocked } = ctx;
   world.aiWars ||= []; world.moving ||= []; world.aiGoals ||= {}; world.votes ||= [];
+  world.leaders ||= {}; world.dev ||= {}; world.known ||= new Set();
   const r = Math.random();
-  if (r < 0.35) {
+  if (r < 0.12) {
+    aiElectLeader(ctx);
+  } else if (r < 0.24) {
+    aiDevTick(ctx);
+  } else if (r < 0.42) {
     // lagdrift utifrån ländernas verkliga grundideologier
     const others = globe.countries.filter((c) => !blocked.has(c.id));
     if (others.length) {
@@ -739,7 +784,7 @@ function aiWorldTick() {
         toast(`${c.name.toUpperCase()}: ${LAWS[cat].name.toUpperCase()} \u{2192} ${opts[next].name.toUpperCase()}`, '', 4000);
       }
     }
-  } else if (r < 0.6) {
+  } else if (r < 0.62) {
     maybeStartVote(ctx);
   } else {
     advanceGoals(ctx);
@@ -747,6 +792,72 @@ function aiWorldTick() {
   tickVotes(ctx);
   tickAiWars(ctx);
   tickDefenses(ctx);
+  updateCountryArmyMarkers();
+}
+
+// AI-länder väljer historiska ledare som ger dem buffar
+function aiElectLeader(ctx) {
+  const { blocked } = ctx;
+  const world = ctx.world;
+  const others = globe.countries.filter((c) => !blocked.has(c.id));
+  const c = others[Math.floor(Math.random() * others.length)];
+  if (!c || (world.leaders[c.id] && Math.random() < 0.7)) return;
+  const l = pickLeader(c.id);
+  world.leaders[c.id] = l;
+  toast(`\u{1F3A9} ${c.name.toUpperCase()} HAR VALT ${l.n.toUpperCase()} — ${leaderDesc(l)}`, '', 7000);
+}
+
+// varje land har en miniekonomi och forskar utifrån sin läggning
+const MIL_IDEOLOGIES = new Set(['nationalism', 'fascism', 'imperialism', 'communism', 'natsoc', 'monarchism']);
+function aiDevTick(ctx) {
+  const { blocked } = ctx;
+  const world = ctx.world;
+  const others = globe.countries.filter((c) => !blocked.has(c.id));
+  const c = others[Math.floor(Math.random() * others.length)];
+  if (!c) return;
+  const ideo = (state.world?.[c.id] || countryIdeology(c.id)).ideology;
+  const hasGoal = !!world.aiGoals[c.id];
+  const focus = hasGoal || MIL_IDEOLOGIES.has(ideo) ? 'mil'
+    : (ideo === 'socialdemocracy' || ideo === 'socialism') ? (Math.random() < 0.6 ? 'wel' : 'eco')
+    : (Math.random() < 0.6 ? 'eco' : 'wel');
+  const d = (world.dev[c.id] ||= { mil: 0, eco: 0, wel: 0 });
+  if (d[focus] >= 4) return;
+  d[focus]++;
+  const label = { mil: 'KRIGSINDUSTRI', eco: 'EKONOMI', wel: 'VÄLFÄRD' }[focus];
+  toast(`\u{1F52C} ${c.name.toUpperCase()} SATSAR PÅ ${label} — NIVÅ ${d[focus]}`, '', 5000);
+  if (focus === 'mil') {
+    const ca = countryArmy(c.id);
+    if (ca.units.length < armyCap(c.id)) ca.units.push(mkUnit(d.mil >= 2 ? 'TANK' : 'INF', 1));
+  }
+}
+
+// synliga stående arméer i länder man känner till (krig, marscher, imperier)
+function markKnown(...cids) {
+  const world = worldCtx().world;
+  world.known ||= new Set();
+  for (const cid of cids) if (cid) world.known.add(cid);
+}
+
+function updateCountryArmyMarkers() {
+  const world = worldCtx().world;
+  if (!world?.known) { globe.setCountryArmies([]); return; }
+  const list = [];
+  for (const cid of world.known) {
+    if (state.solo?.claims[cid]) continue;
+    const c = globe.getCountry(cid);
+    if (!c) continue;
+    const n = (world.countryArmies?.[cid]?.units || []).length;
+    if (!n) continue;
+    const conq = world.aiOwned[cid];
+    list.push({
+      ll: capitalLL(cid),
+      a2: state.facts[cid]?.a2 || null,
+      color: conq ? (world.aiEmpires[conq]?.color || '#7f8c8d') : '#8a97a5',
+      n,
+    });
+    if (list.length >= 40) break;
+  }
+  globe.setCountryArmies(list);
 }
 
 // AI-länder RÖSTAR om sina ambitioner — historiska riken eller helt egna mål
@@ -804,6 +915,7 @@ function advanceGoals(ctx) {
     return;
   }
   world.aiWars.push({ att: cid, target: next, ticks: 2 + Math.floor(Math.random() * 3), goal });
+  markKnown(cid, next);
   toast(`\u{2696}\u{FE0F} ${cname(cid)} RÄTTFÄRDIGAR KRIG MOT ${cname(next)} (${goal.name.toUpperCase()})`, 'red', 7000);
 }
 
@@ -825,6 +937,7 @@ function tickAiWars(ctx) {
       fromLL: from, toLL: to,
       start: performance.now(), dur: 10000 + dist * 120000,
     });
+    markKnown(w.att, w.target);
     toast(`\u{1F6A9} ${cname(w.att)}S ARMÉ (${n} ENHETER) MARSCHERAR MOT ${cname(w.target)}`, 'red', 7000);
     updateMovingMarkers();
   }
@@ -964,9 +1077,10 @@ function renderNationTab() {
   const comp = s.army ? compOf(s.army.units) : null;
   const info = document.createElement('div');
   info.style.cssText = 'font-size:7px;color:var(--holo-dim);margin-bottom:4px;line-height:1.8';
-  info.innerHTML = s.army
+  info.innerHTML = (s.army
     ? `NUVARANDE STYRKA: \u{1FA96}${comp.INF} \u{1F6E1}\u{FE0F}${comp.TANK} \u{2708}\u{FE0F}${comp.FLYG} &nbsp;•&nbsp; DINA TILLGÅNGAR: ${[...owned].map((r) => RESOURCES[r].icon).join(' ') || '–'}`
-    : 'INGEN ARMÉ — EN NY MOBILISERAS EFTER NEDERLAG';
+    : 'INGEN ARMÉ — EN NY MOBILISERAS EFTER NEDERLAG')
+    + (s.leader ? `<br>\u{1F3A9} LEDARE: ${s.leader.n.toUpperCase()} (${leaderDesc(s.leader)})` : '');
   armyDiv.appendChild(info);
   const build = document.createElement('div');
   build.className = 'armybuild';
@@ -1269,23 +1383,27 @@ function renderResearchTab(body) {
       row.appendChild(nm);
       const done = s.nation.research[bid] || 0;
       branch.tiers.forEach((t, i) => {
+        const active = (s.researchQueue || []).find((r) => r.branch === bid && r.tier === i + 1);
         const box = document.createElement('button');
         box.className = 'tierbox ' + (i < done ? 'done' : i === done ? 'avail' : 'locked');
-        box.innerHTML = `T${i + 1} ${i < done ? '\u{2713}' : `(${TIER_COST[i]} \u{1F52C})`}<br>${t.name}`;
+        box.innerHTML = active
+          ? `T${i + 1} \u{23F3} PÅGÅR (${active.left}d)<br>${t.name}`
+          : `T${i + 1} ${i < done ? '\u{2713}' : `(${TIER_COST[i]} \u{1F52C})`}<br>${t.name}`;
         box.addEventListener('mouseenter', () => {
           const extra = t.unlock === 'nuke' ? ' <span class="dn">\u{2622}\u{FE0F} LÅSER UPP KÄRNVAPEN</span>' : '';
           setPreview(`<span class="dc">T${i + 1} ${t.name.toUpperCase()} — ${TIER_COST[i]} \u{1F52C}</span> &nbsp; ` + deltaHtml(t.mods || {}) + extra);
         });
         box.addEventListener('mouseleave', () => setPreview());
         box.addEventListener('click', () => {
-          if (i < done) return;
+          if (i < done || active) return;
           if (i > done) { warn('KRÄVER FÖREGÅENDE NIVÅ'); return; }
+          if (s.researchQueue?.length) { warn('ETT FORSKNINGSPROJEKT I TAGET — SE KÖN I HÖRNET'); return; }
           if (s.res.rp < TIER_COST[i]) { warn(`KRÄVER ${TIER_COST[i]} \u{1F52C} — DU HAR ${s.res.rp}`); return; }
           s.res.rp -= TIER_COST[i];
-          s.nation.research[bid] = i + 1;
-          recomputeNation(); renderResbar(); renderNationTab();
-          toast(`FORSKNING KLAR: ${t.name.toUpperCase()}`, 'amber', 4500);
-          if (t.unlock === 'nuke') toast('\u{2622}\u{FE0F} KÄRNVAPEN UPPLÅST — NYTT VAL VID ANFALL', 'red', 6000);
+          const days = [6, 10, 15, 20][i];
+          (s.researchQueue ||= []).push({ branch: bid, tier: i + 1, name: t.name, left: days, total: days, unlock: t.unlock });
+          renderBuildCorner(); renderResbar(); renderNationTab();
+          toast(`\u{1F52C} FORSKNING STARTAD: ${t.name.toUpperCase()} — KLAR OM ${days} DAGAR`, 'amber', 5000);
         });
         row.appendChild(box);
       });
@@ -1417,12 +1535,17 @@ $('#justifybtn').addEventListener('click', () => {
     card.addEventListener('click', () => {
       if (s.res.pp < cb.ppCost) { toast(`KRÄVER ${cb.ppCost} \u{2696}\u{FE0F} POLITICAL POWER`, 'red'); return; }
       s.res.pp -= cb.ppCost;
-      s.wars[selectedCountry.id] = { cb: key, status: 'justifying', days };
+      s.wars[selectedCountry.id] = { cb: key, status: 'justifying', days, total: days };
+      renderBuildCorner();
       overlay('#cbchooser', false);
       renderResbar();
       refreshInfoPanel();
       toast(`RÄTTFÄRDIGAR ${cb.name.toUpperCase()} MOT ${selectedCountry.name.toUpperCase()} — ${days} DAGAR`, 'amber', 5000);
-      if (state.mode === 'solo') empireDefense(selectedCountry.id);
+      if (state.mode === 'solo') {
+        markKnown(selectedCountry.id);
+        empireDefense(selectedCountry.id);
+        updateCountryArmyMarkers();
+      }
     });
     list.appendChild(card);
   }
@@ -2305,6 +2428,7 @@ function startSolo() {
     aiEmpires: {},     // conquerorId -> {name, color, owned: [], empireId}
     permMods: {},      // permanenta effekter (riken/förbund)
     buildQueue: [],    // {type, name, left, total}
+    researchQueue: [], // {branch, tier, name, left, total}
     countryArmies: {}, // stående arméer per land
     aiWars: [], moving: [], aiGoals: {}, votes: [],
   };

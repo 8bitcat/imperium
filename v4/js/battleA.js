@@ -337,7 +337,7 @@ export class BattleA {
     // Spelaren står ALLTID till vänster (röd), fienden till höger (blå).
     // Vem som skjuter först styrs av vem som anfaller — på fiendens tur
     // skjuter fienden först och dina trupper tar skadan först.
-    const hpOf = (u) => (u === k.att
+    const hpOf = (u) => Math.floor(u === k.att
       ? u.hp - Math.round((k.dD || 0) * phase2)
       : u.hp - Math.round(k.dA * phase1));
     const firingNow = (u) => (u === k.att ? attackerFiring : defenderFiring);

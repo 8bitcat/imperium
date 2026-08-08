@@ -151,6 +151,7 @@ export class Globe {
 
   setGarrison(g) { this.garrison = g; }
   setDayFloat(f) { this.dayFloat = f; }
+  setCountryArmies(list) { this.countryArmies = list || []; }
 
   _flagImg(a2) {
     if (!a2) return null;
@@ -354,6 +355,7 @@ export class Globe {
     this._drawLabels(x);
     if (this.army) this._drawArmy(x, t);
     if (this.garrison) this._drawGarrison(x, t);
+    this._drawCountryArmies(x);
     this._drawMovingArmies(x, t);
 
     requestAnimationFrame((tt) => this._frame(tt));
@@ -379,6 +381,33 @@ export class Globe {
     x.textBaseline = 'middle';
     x.fillStyle = '#fff';
     x.fillText(`\u{1F3E0}${n}`, sx - 2, sy + 1);
+  }
+
+  // stående AI-arméer i kända länder: liten flaggbricka + antal vid huvudstaden
+  _drawCountryArmies(x) {
+    if (this.zoom < 1.2) return;
+    const ps = this.pixelSize;
+    for (const a of this.countryArmies || []) {
+      if (!this._front(a.ll, 1.5)) continue;
+      const p = this.proj(a.ll);
+      if (!p) continue;
+      const sx = p[0] * ps, sy = p[1] * ps - 14;
+      x.fillStyle = 'rgba(10,16,24,0.92)';
+      x.fillRect(sx - 19, sy - 8, 38, 16);
+      x.strokeStyle = a.color;
+      x.lineWidth = 1;
+      x.strokeRect(sx - 19, sy - 8, 38, 16);
+      const flag = this._flagImg(a.a2);
+      if (flag) {
+        x.imageSmoothingEnabled = false;
+        x.drawImage(flag, sx - 16, sy - 4, 12, 8);
+      }
+      x.font = '8px "Press Start 2P", monospace';
+      x.textAlign = 'left';
+      x.textBaseline = 'middle';
+      x.fillStyle = '#fff';
+      x.fillText(`\u{2694}${a.n}`, sx - 1, sy + 1);
+    }
   }
 
   // marscherande arméer: banér med landets FLAGGA + armébild + antal
@@ -453,10 +482,12 @@ export class Globe {
       x.fillText(String(n), ox + 28, by + 17);
       ox += 48;
     }
-    if (a.warn && Math.floor(t / 350) % 2 === 0) {
-      x.font = '14px monospace';
+    if (a.warn) {
+      const blink = Math.floor(t / 350) % 2 === 0;
+      x.font = '8px "Press Start 2P", monospace';
       x.textAlign = 'center';
-      x.fillText('\u{26A0}\u{FE0F}', sx, by - 10);
+      x.fillStyle = blink ? '#ff4f4f' : '#7a2020';
+      x.fillText('\u{26A0} LOGISTIK!', sx, by - 8);
     }
   }
 
@@ -518,6 +549,17 @@ export class Globe {
     b.clip();
     b.fillStyle = g;
     b.fillRect(0, 0, this.buf.width, this.buf.height);
+    // sol-glint: varmt sken där solen träffar klotet
+    if (this._front(this._sun, 1.4)) {
+      const sp = this.proj(this._sun);
+      if (sp) {
+        const g2 = b.createRadialGradient(sp[0], sp[1], 0, sp[0], sp[1], R * 0.5);
+        g2.addColorStop(0, 'rgba(255,238,190,0.20)');
+        g2.addColorStop(1, 'rgba(255,238,190,0)');
+        b.fillStyle = g2;
+        b.fillRect(0, 0, this.buf.width, this.buf.height);
+      }
+    }
     b.restore();
   }
 

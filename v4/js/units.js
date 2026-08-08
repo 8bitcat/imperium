@@ -295,7 +295,7 @@ export function warSprite(type, side, facing) {
 
 // HP-siffra (1–10) i Advance Wars-stil — större bricka med kant så den syns
 export function drawHpBadge(ctx, hp, x, y, s = 1) {
-  const shown = Math.max(1, Math.ceil(hp));
+  const shown = Math.max(1, Math.floor(hp)); // aldrig decimaler, avrunda nedåt
   const w = (shown >= 10 ? 12 : 8) * s;
   const h = 9 * s;
   ctx.fillStyle = '#ffffff';
