@@ -212,11 +212,75 @@
   #klinch {
     position: fixed; inset: 0; display: none; z-index: 85;
     align-items: center; justify-content: center;
-    background: rgba(3, 8, 15, 0.72);
+    background: rgba(2, 5, 10, 0.92);
   }
   #kcanvas { width: min(92vw, 680px); height: auto; image-rendering: pixelated; border: 3px solid var(--panel-border); }
   #bresult { z-index: 90; }
   #chooser { z-index: 75; }
+
+  /* ---- resursraden + tid ---- */
+  #resbar {
+    position: fixed; top: 38px; left: 50%; transform: translateX(-50%);
+    z-index: 52; display: none; gap: 12px; align-items: center;
+    background: var(--panel); border: 2px solid var(--panel-border);
+    padding: 6px 14px; font-size: 8px; color: var(--text);
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+    white-space: nowrap;
+  }
+  #resbar span b { color: var(--amber); font-weight: normal; }
+  #pausebtn {
+    font-family: inherit; font-size: 8px; color: var(--holo);
+    background: none; border: 1px solid var(--holo-dim); padding: 3px 8px; cursor: pointer;
+  }
+
+  /* ---- lag-flikens pillrar ---- */
+  .lawcat { margin-bottom: 12px; }
+  .lawcat .lname { font-size: 8px; color: var(--text); letter-spacing: 1px; margin-bottom: 5px; }
+  .lawcat .lname small { color: var(--holo-dim); }
+  .lawopts { display: flex; flex-wrap: wrap; gap: 4px; }
+  .lawopt {
+    font-family: inherit; font-size: 7px; letter-spacing: 0.5px;
+    color: var(--holo-dim); background: rgba(0, 12, 20, 0.6);
+    border: 1px solid rgba(55,224,255,0.25);
+    padding: 5px 8px; cursor: pointer;
+  }
+  .lawopt:hover { border-color: var(--holo); color: var(--holo); }
+  .lawopt.cur { color: var(--amber); border-color: var(--amber); background: rgba(30, 20, 4, 0.7); }
+  .lawopt.locked { opacity: 0.35; cursor: not-allowed; }
+
+  /* ---- ideologi-fliken ---- */
+  .ideogrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px; }
+  .ideocard {
+    border: 1px solid rgba(55,224,255,0.25); background: rgba(0, 12, 20, 0.55);
+    padding: 8px 10px; cursor: pointer; font-size: 7px; line-height: 1.8;
+  }
+  .ideocard:hover { border-color: var(--holo); }
+  .ideocard.cur { border-color: var(--amber); background: rgba(30, 20, 4, 0.7); }
+  .ideocard .iname { font-size: 8px; color: var(--text); }
+  .ideocard.cur .iname { color: var(--amber); }
+  .ideocard .imods { color: var(--holo-dim); }
+  .docrow { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 12px; }
+
+  /* ---- forskningsfliken ---- */
+  .resrow { display: flex; align-items: center; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
+  .resrow .rname { flex: 0 0 150px; font-size: 7px; color: var(--text); }
+  .tierbox {
+    font-family: inherit; font-size: 6px; padding: 5px 6px; cursor: pointer;
+    border: 1px solid rgba(55,224,255,0.25); background: rgba(0, 12, 20, 0.6);
+    color: var(--holo-dim); max-width: 130px; text-align: left; line-height: 1.6;
+  }
+  .tierbox.done { border-color: rgba(62,230,200,0.6); color: var(--green, #3ee6c8); cursor: default; }
+  .tierbox.avail { border-color: var(--amber); color: var(--amber); }
+  .tierbox.locked { opacity: 0.35; cursor: not-allowed; }
+
+  /* ---- armésektionen ---- */
+  .armybuild { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .armybtn {
+    font-family: inherit; font-size: 7px; padding: 7px 9px; cursor: pointer;
+    border: 1px solid rgba(255,176,46,0.45); background: rgba(30, 20, 4, 0.5);
+    color: var(--amber); line-height: 1.7;
+  }
+  .armybtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
   /* ---- NATION-panelen ---- */
   #nation {
@@ -298,6 +362,15 @@
 <div id="topbar" style="display:none">
   <div class="left">IMPERIUM V4 // GEOSCAPE</div>
   <div class="right" id="topright"></div>
+</div>
+
+<div id="resbar">
+  <span id="rday">DAG 1</span>
+  <span>&#128176; <b id="rmoney">500</b></span>
+  <span>&#129686; <b id="rman">20</b></span>
+  <span>&#128300; <b id="rrp">0</b></span>
+  <span>&#9878;&#65039; <b id="rpp">100</b></span>
+  <button id="pausebtn">&#9208; PAUS</button>
 </div>
 
 <div id="roster" class="panel">
@@ -400,6 +473,7 @@
     <div class="chdesc">Realtidsstrid à la Red Alert i landets biom, utan basbygge. Markera enheter och beordra dem.</div>
     <button id="chAuto" class="btn">&#127922; SNABBRESULTAT (AUTO)</button>
     <div class="chdesc">Striden avgörs direkt av skadematrisen — för snabba erövringar.</div>
+    <button id="chNuke" class="btn warbtn" style="display:none">&#9762; ATOMSLAG (500 &#128176;)</button>
     <button id="chCancel" class="btn">AVBRYT</button>
   </div>
 </div>

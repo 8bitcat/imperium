@@ -210,10 +210,13 @@ export class BattleA {
   async _attack(att, def) {
     this.busy = true;
     att.moved = true;
-    const dA = attackDamage(att, def, this.terrDef(def));
+    const boost = this.o.atkBoost || {};
+    const dA = Math.min(10, attackDamage(att, def, this.terrDef(def)) + (att.side === 0 ? (boost[att.type] || 0) : 0));
     const hpAfter = def.hp - dA;
     const adjacent = Math.abs(att.tx - def.tx) + Math.abs(att.ty - def.ty) === 1;
-    const dD = hpAfter > 0 && adjacent ? attackDamage({ ...def, hp: hpAfter }, att, this.terrDef(att)) : 0;
+    const dD = hpAfter > 0 && adjacent
+      ? Math.min(10, attackDamage({ ...def, hp: hpAfter }, att, this.terrDef(att)) + (def.side === 0 ? (boost[def.type] || 0) : 0))
+      : 0;
     await this._playKlinch(att, def, dA, dD);
     def.hp = Math.max(0, def.hp - dA);
     if (def.hp > 0 && dD) att.hp = Math.max(0, att.hp - dD);
@@ -323,7 +326,7 @@ export class BattleA {
     const rightU = leftU === k.att ? k.def : k.att;
 
     const panel = (u, hpShown, x0, facing, color, flashing, firing) => {
-      const ws = u.type !== 'INF' ? warSprite(u.type, u.side, facing) : null;
+      const ws = warSprite(u.type, u.side, facing);
       if (ws) {
         // riktiga sprites (BerkleyToreno): 1–3 fordon beroende på HP
         const n2 = Math.max(hpShown > 0 ? 1 : 0, Math.min(3, Math.ceil(hpShown / 4)));

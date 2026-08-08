@@ -212,6 +212,7 @@ export function drawUnit(ctx, type, color, x, y, s = 2, facing = 1) {
 // en äkta blå livery. Arken pekar åt vänster — facing 1 speglas.
 export const WAR_SPRITES = {};
 const SPRITE_DEFS = {
+  INF:  { fileP: 'apc-wheeled.png', tintP: '#ff5a4a', tintE: '#4fa8ff' }, // lätt mekaniserat (DANA)
   TANK: { fileP: 'tank-tan.png', fileE: 'tank-blue.png', tintP: '#ff5a4a' },
   FLYG: { fileP: 'heli-gray.png', tintP: '#ff5a4a', tintE: '#4fa8ff' },
 };

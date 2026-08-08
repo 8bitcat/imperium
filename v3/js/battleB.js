@@ -198,7 +198,8 @@ export class BattleB {
           u.cd -= dt;
           if (u.cd <= 0) {
             u.cd = 800;
-            const loss = attackDamage(u, u.target, this._inForest(u.target) ? 1 : 0) / 2.4;
+            const boost = u.side === 0 ? (this.o.atkBoost?.[u.type] || 0) : 0;
+            const loss = (attackDamage(u, u.target, this._inForest(u.target) ? 1 : 0) + boost) / 2.4;
             u.target.hp -= loss;
             this.tracers.push({ x0: u.x + u.face * 12, y0: u.y - 4, x1: u.target.x, y1: u.target.y - 3, ttl: 120 });
             if (u.target.hp <= 0) {

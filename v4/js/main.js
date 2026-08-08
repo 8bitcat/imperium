@@ -6,7 +6,10 @@ import { RESOURCES, RECIPES, resourcesOf } from './resources.js';
 import { STARTER_ARMY, defenderArmy, compOf, autoResolve, biomeFor, BIOMES, mkUnit, loadWarSprites } from './units.js';
 import { BattleA } from './battleA.js';
 import { BattleB } from './battleB.js';
-import { STATS, STAT_GROUPS, computeStats, freshNation, statGoodness } from './stats.js';
+import { STATS, STAT_GROUPS, computeStats, statGoodness } from './stats.js';
+import { LAWS, defaultLaws, lawMods, lawChangeCost, lawOption } from './laws.js';
+import { IDEOLOGIES, countryIdeology, ideologyMods, lawLockedBy, enforceRequirements, IDEOLOGY_COST, DOCTRINE_COST } from './ideologies.js';
+import { RESEARCH, TIER_COST, researchMods, combatBonus, hasUnlock } from './research.js';
 
 const $ = (s) => document.querySelector(s);
 const PLAYER_COLORS = ['#ff4f4f', '#4fa8ff', '#ffd24f', '#b06bff', '#ff9f3e', '#3ee6c8', '#ff6fd8', '#a4e34a'];
@@ -82,7 +85,7 @@ function renderRoster() {
     const home = document.createElement('span');
     home.className = 'home';
     home.textContent = p.home
-      ? `— ${globe.getCountry(p.home)?.name || '?'} ${resIcons(p.home)}`
+      ? `— ${globe.getCountry(p.home)?.name || '?'} ${IDEOLOGIES[countryIdeology(p.home).ideology].icon} ${resIcons(p.home)}`
       : '— väljer land…';
     row.append(chip, name, home);
     list.appendChild(row);
@@ -186,7 +189,9 @@ function refreshInfoPanel() {
       show(claimBtn, true);
     } else {
       const def = defenderArmy(c, state.facts[c.id]);
-      $('#istatus').textContent = `FÖRSVAR: ${def.length} ENHETER • BIOM: ${BIOMES[biomeFor(c)].name}`;
+      const wi = state.world?.[c.id] || countryIdeology(c.id);
+      const ideo = IDEOLOGIES[wi.ideology];
+      $('#istatus').textContent = `${ideo.icon} ${ideo.name.toUpperCase()} • FÖRSVAR: ${def.length} ENHETER • ${BIOMES[biomeFor(c)].name}`;
       $('#istatus').style.color = '';
       if (s.army && !state.battle) show(attackBtn, true);
     }
@@ -215,7 +220,7 @@ $('#claimbtn').addEventListener('click', () => {
     if (s.home) return;
     s.home = selectedCountry.id;
     s.claims[selectedCountry.id] = { color: SOLO_COLOR, playerName: 'DU' };
-    s.nation = freshNation();
+    initNation(selectedCountry.id);
     spawnArmy(selectedCountry.id);
     applyState();
     toast(`${selectedCountry.name.toUpperCase()} ÄR DITT HEMLAND — DIN ARMÉ ÄR MOBILISERAD`, 'amber', 5000);
@@ -228,7 +233,134 @@ $('#claimbtn').addEventListener('click', () => {
   net.send('claim', { country: selectedCountry.id });
 });
 
-// ---------- NATION-panelen (M1: översikt; lagar/ideologi/forskning i M2/M3/M5) ----------
+// ---------- nationsmotorn: init, beräkning, resurser, tid ----------
+const UNIT_BUILD = {
+  INF: { name: 'INFANTERI', man: 3, money: 50, needs: [] },
+  TANK: { name: 'STRIDSVAGN', man: 5, money: 120, needs: ['JARN', 'OLJA'] },
+  FLYG: { name: 'FLYGPLAN', man: 4, money: 200, needs: ['JARN', 'OLJA', 'GULD'] },
+};
+
+function initNation(countryId) {
+  const s = state.solo;
+  const start = countryIdeology(countryId);
+  s.nation = { laws: defaultLaws(), ideology: start.ideology, doctrine: start.doctrine, research: {} };
+  enforceRequirements(s.nation);
+  s.res = { money: 500, man: 20, rp: 0, pp: 100 };
+  s.extra = {};
+  s.clock = { day: 1, paused: false, acc: 0, msPerDay: 2000 };
+  recomputeNation();
+  $('#resbar').style.display = 'flex';
+  renderResbar();
+  const ideo = IDEOLOGIES[s.nation.ideology];
+  toast(`GRUNDIDEOLOGI: ${ideo.icon} ${ideo.name.toUpperCase()}`, '', 5000);
+}
+
+function recomputeNation() {
+  const s = state.solo;
+  if (!s?.nation) return;
+  s.nationSources = {
+    laws: lawMods(s.nation.laws),
+    ideology: ideologyMods(s.nation),
+    research: researchMods(s.nation),
+    extra: s.extra,
+  };
+  s.stats = computeStats(s.nation, s.nationSources);
+}
+
+function ownedResources() {
+  const set = new Set();
+  for (const cid of Object.keys(state.solo?.claims || {})) for (const r of resourcesOf(cid)) set.add(r);
+  return set;
+}
+
+function battleBoost() {
+  const s = state.solo;
+  if (!s?.stats) return { INF: 0, TANK: 0, FLYG: 0 };
+  const cb = combatBonus(s.nation);
+  const r = Math.round(Math.max(0, s.stats.readiness.total) / 25);
+  return { INF: cb.INF + r, TANK: cb.TANK + r, FLYG: cb.FLYG + r };
+}
+
+function renderResbar() {
+  const s = state.solo;
+  if (!s?.res) return;
+  $('#rday').textContent = 'DAG ' + s.clock.day;
+  $('#rmoney').textContent = s.res.money;
+  $('#rman').textContent = s.res.man;
+  $('#rrp').textContent = s.res.rp;
+  $('#rpp').textContent = s.res.pp;
+  $('#pausebtn').innerHTML = s.clock.paused ? '&#9654; SPELA' : '&#9208; PAUS';
+}
+
+function tickDay() {
+  const s = state.solo;
+  s.clock.day++;
+  const st = s.stats;
+  s.res.money = Math.max(0, s.res.money + Math.round(10 + st.income.total * 0.3));
+  s.res.man += Math.max(0, Math.round(2 + st.manpower.total * 0.06));
+  s.res.rp += Math.max(0, Math.round(1 + Math.max(0, st.research.total) * 0.08));
+  s.res.pp += Math.max(0, Math.round(2 + st.polpower.total * 0.04));
+
+  // tillfälliga effekter (händelser, atomslag) klingar av
+  let decayed = false;
+  for (const k of Object.keys(s.extra)) {
+    s.extra[k] -= Math.sign(s.extra[k]) * 0.5;
+    if (Math.abs(s.extra[k]) < 0.5) delete s.extra[k];
+    decayed = true;
+  }
+  if (decayed) recomputeNation();
+
+  // oro får konsekvenser
+  if (st.unrest.total > 40 && s.clock.day % 12 === 0) {
+    s.res.money = Math.max(0, s.res.money - 120);
+    toast('STREJKER! ORON KOSTAR 120 \u{1F4B0}', 'red', 5000);
+  }
+  // val (om landet har rimligt fria val)
+  if (['entirelyfree', 'free', 'mostlyfree', 'balanced'].includes(s.nation.laws.elections) && s.clock.day % 90 === 0) {
+    if (st.approval.total >= -5) { s.res.pp += 30; toast(`VALSEGER! +30 \u{2696}\u{FE0F}`, 'amber', 5000); }
+    else { s.res.pp = Math.max(0, s.res.pp - 40); toast(`VALFÖRLUST... \u{2212}40 \u{2696}\u{FE0F}`, 'red', 5000); }
+  }
+  if (s.clock.day % 4 === 0) aiWorldTick();
+}
+
+// AI-världen lever: länder byter lagar utifrån sina verkliga grundideologier
+function aiWorldTick() {
+  const others = globe.countries.filter((c) => !state.solo.claims[c.id]);
+  if (!others.length) return;
+  const c = others[Math.floor(Math.random() * others.length)];
+  const cats = Object.keys(LAWS);
+  const cat = cats[Math.floor(Math.random() * cats.length)];
+  const world = (state.world ||= {});
+  const wn = (world[c.id] ||= { laws: defaultLaws(), ...countryIdeology(c.id) });
+  const opts = LAWS[cat].options;
+  const cur = opts.findIndex((o) => o.id === wn.laws[cat]);
+  const next = Math.max(0, Math.min(opts.length - 1, cur + (Math.random() < 0.5 ? -1 : 1)));
+  if (next === cur) return;
+  wn.laws[cat] = opts[next].id;
+  toast(`${c.name.toUpperCase()}: ${LAWS[cat].name.toUpperCase()} \u{2192} ${opts[next].name.toUpperCase()}`, '', 4000);
+}
+
+setInterval(() => {
+  const s = state.solo;
+  if (!s?.clock || s.clock.paused || state.battle || document.hidden) return;
+  s.clock.acc += 250;
+  let ticked = false;
+  while (s.clock.acc >= s.clock.msPerDay) {
+    s.clock.acc -= s.clock.msPerDay;
+    tickDay();
+    ticked = true;
+  }
+  if (ticked) renderResbar();
+}, 250);
+
+$('#pausebtn').addEventListener('click', () => {
+  const s = state.solo;
+  if (!s?.clock) return;
+  s.clock.paused = !s.clock.paused;
+  renderResbar();
+});
+
+// ---------- NATION-panelen ----------
 let natTab = 'oversikt';
 
 function openNation() {
@@ -244,16 +376,62 @@ function openNation() {
   $('#nation').classList.add('show');
 }
 
+function modSummary(mods, max = 4) {
+  return Object.entries(mods).slice(0, max)
+    .map(([k, v]) => `${STATS[k]?.name || k} ${v > 0 ? '+' : ''}${v}`)
+    .join(', ');
+}
+
 function renderNationTab() {
   const body = $('#natbody');
   document.querySelectorAll('.nattab').forEach((el) => el.classList.toggle('on', el.dataset.tab === natTab));
-  if (natTab !== 'oversikt') {
-    const label = { lagar: 'LAGARNA KOMMER I NÄSTA STEG (M2)', ideologi: 'IDEOLOGIERNA KOMMER I M3', forskning: 'FORSKNINGSTRÄDET KOMMER I M5' }[natTab];
-    body.innerHTML = `<div class="natplaceholder">&#9203; ${label}<br>ALLT STARTAR BALANSERAT — DINA VAL HÄR KOMMER ATT FLYTTA VÄRDENA I ÖVERSIKTEN.</div>`;
-    return;
-  }
-  const stats = computeStats(state.solo.nation, state.solo.nationSources || {});
+  recomputeNation();
+  if (natTab === 'lagar') return renderLawsTab(body);
+  if (natTab === 'ideologi') return renderIdeologyTab(body);
+  if (natTab === 'forskning') return renderResearchTab(body);
+  const stats = state.solo.stats;
   body.innerHTML = '';
+
+  // ARMÉ-sektionen: bygg enheter med pengar + manpower + tillgångskrav
+  const s = state.solo;
+  const armyDiv = document.createElement('div');
+  armyDiv.className = 'natgroup';
+  const at = document.createElement('div');
+  at.className = 'gtitle';
+  at.textContent = '▸ ARMÉ & PRODUKTION';
+  armyDiv.appendChild(at);
+  const owned = ownedResources();
+  const comp = s.army ? compOf(s.army.units) : null;
+  const info = document.createElement('div');
+  info.style.cssText = 'font-size:7px;color:var(--holo-dim);margin-bottom:4px;line-height:1.8';
+  info.innerHTML = s.army
+    ? `NUVARANDE STYRKA: \u{1FA96}${comp.INF} \u{1F6E1}\u{FE0F}${comp.TANK} \u{2708}\u{FE0F}${comp.FLYG} &nbsp;•&nbsp; DINA TILLGÅNGAR: ${[...owned].map((r) => RESOURCES[r].icon).join(' ') || '–'}`
+    : 'INGEN ARMÉ — EN NY MOBILISERAS EFTER NEDERLAG';
+  armyDiv.appendChild(info);
+  const build = document.createElement('div');
+  build.className = 'armybuild';
+  for (const [type, b] of Object.entries(UNIT_BUILD)) {
+    const missing = b.needs.filter((r) => !owned.has(r));
+    const btn = document.createElement('button');
+    btn.className = 'armybtn';
+    btn.innerHTML = `${b.name}<br>${b.money} \u{1F4B0} + ${b.man} \u{1F9CD}${b.needs.length ? '<br>KRÄVER ' + b.needs.map((r) => RESOURCES[r].icon).join('') : ''}`;
+    const blocked = !s.army ? 'INGEN ARMÉ' : missing.length ? 'SAKNAR ' + missing.map((r) => RESOURCES[r].name.toUpperCase()).join(', ') : s.res.money < b.money ? 'FÖR LITE PENGAR' : s.res.man < b.man ? 'FÖR LITE MANPOWER' : null;
+    if (blocked) { btn.disabled = true; btn.title = blocked; }
+    btn.addEventListener('click', () => {
+      if (blocked) { toast(blocked, 'red'); return; }
+      s.res.money -= b.money;
+      s.res.man -= b.man;
+      s.army.units.push(mkUnit(type, 0));
+      updateArmyMarker();
+      renderResbar();
+      renderNationTab();
+      toast(`+1 ${b.name} TILL ARMÉN`, 'amber');
+    });
+    build.appendChild(btn);
+  }
+  armyDiv.appendChild(build);
+  body.appendChild(armyDiv);
+
   for (const g of STAT_GROUPS) {
     const div = document.createElement('div');
     div.className = 'natgroup';
@@ -291,6 +469,146 @@ function renderNationTab() {
   }
 }
 
+// ---------- LAGAR-fliken ----------
+function renderLawsTab(body) {
+  const s = state.solo;
+  body.innerHTML = `<div style="font-size:7px;color:var(--holo-dim);margin-bottom:10px">BYTE KOSTAR 15 \u{2696}\u{FE0F} PER STEG • DU HAR <span style="color:var(--amber)">${s.res.pp} \u{2696}\u{FE0F}</span> • L\u{00C5}STA ALTERNATIV BLOCKERAS AV DIN IDEOLOGI</div>`;
+  for (const [cat, def] of Object.entries(LAWS)) {
+    const div = document.createElement('div');
+    div.className = 'lawcat';
+    const cur = lawOption(cat, s.nation.laws[cat]);
+    const ln = document.createElement('div');
+    ln.className = 'lname';
+    ln.innerHTML = `${def.icon} ${def.name.toUpperCase()} <small>— ${cur?.name.toUpperCase() || ''}</small>`;
+    div.appendChild(ln);
+    const opts = document.createElement('div');
+    opts.className = 'lawopts';
+    for (const o of def.options) {
+      const btn = document.createElement('button');
+      btn.className = 'lawopt';
+      const isCur = s.nation.laws[cat] === o.id;
+      const locked = !isCur && lawLockedBy(s.nation, cat, o.id);
+      if (isCur) btn.classList.add('cur');
+      if (locked) btn.classList.add('locked');
+      const cost = lawChangeCost(cat, s.nation.laws[cat], o.id);
+      btn.textContent = (locked ? '\u{1F512} ' : '') + o.name.toUpperCase();
+      btn.title = locked || (isCur ? 'NUVARANDE LAG' : `KOSTAR ${cost} \u{2696}\u{FE0F} — ${modSummary(o.mods, 8) || 'inga effekter'}`);
+      btn.addEventListener('click', () => {
+        if (isCur) return;
+        if (locked) { toast(locked.toUpperCase(), 'red', 4000); return; }
+        if (s.res.pp < cost) { toast(`KRÄVER ${cost} \u{2696}\u{FE0F} POLITICAL POWER`, 'red'); return; }
+        s.res.pp -= cost;
+        s.nation.laws[cat] = o.id;
+        recomputeNation();
+        renderResbar();
+        renderNationTab();
+        toast(`${def.name.toUpperCase()}: ${o.name.toUpperCase()} (\u{2212}${cost} \u{2696}\u{FE0F})`, 'amber');
+      });
+      opts.appendChild(btn);
+    }
+    div.appendChild(opts);
+    body.appendChild(div);
+  }
+}
+
+// ---------- IDEOLOGI-fliken ----------
+function renderIdeologyTab(body) {
+  const s = state.solo;
+  const cur = IDEOLOGIES[s.nation.ideology];
+  body.innerHTML = '';
+  const head = document.createElement('div');
+  head.className = 'natgroup';
+  head.innerHTML = `<div class="gtitle">▸ NUVARANDE: ${cur.icon} ${cur.name.toUpperCase()}${s.nation.doctrine && cur.doctrines ? ' — ' + cur.doctrines[s.nation.doctrine]?.name.toUpperCase() : ''}</div>
+    <div style="font-size:7px;color:var(--holo-dim);line-height:1.9">${modSummary(ideologyMods(s.nation), 10) || 'inga effekter'}</div>`;
+  if (cur.doctrines) {
+    const dr = document.createElement('div');
+    dr.className = 'docrow';
+    for (const [did, d] of Object.entries(cur.doctrines)) {
+      const b = document.createElement('button');
+      b.className = 'lawopt' + (s.nation.doctrine === did ? ' cur' : '');
+      b.textContent = d.name.toUpperCase();
+      b.title = `DOKTRIN (${DOCTRINE_COST} \u{2696}\u{FE0F}) — ${modSummary(d.mods, 8)}`;
+      b.addEventListener('click', () => {
+        if (s.nation.doctrine === did) return;
+        if (s.res.pp < DOCTRINE_COST) { toast(`KRÄVER ${DOCTRINE_COST} \u{2696}\u{FE0F}`, 'red'); return; }
+        s.res.pp -= DOCTRINE_COST;
+        s.nation.doctrine = did;
+        recomputeNation(); renderResbar(); renderNationTab();
+        toast(`DOKTRIN: ${d.name.toUpperCase()}`, 'amber');
+      });
+      dr.appendChild(b);
+    }
+    head.appendChild(dr);
+  }
+  body.appendChild(head);
+
+  const gt = document.createElement('div');
+  gt.className = 'gtitle';
+  gt.textContent = `▸ BYT IDEOLOGI (${IDEOLOGY_COST} \u{2696}\u{FE0F} + TILLFÄLLIG ORO)`;
+  body.appendChild(gt);
+  const grid = document.createElement('div');
+  grid.className = 'ideogrid';
+  for (const [iid, ideo] of Object.entries(IDEOLOGIES)) {
+    const card = document.createElement('div');
+    card.className = 'ideocard' + (s.nation.ideology === iid ? ' cur' : '');
+    card.innerHTML = `<div class="iname">${ideo.icon} ${ideo.name.toUpperCase()}</div><div class="imods">${modSummary(ideo.mods, 4)}</div>`;
+    card.addEventListener('click', () => {
+      if (s.nation.ideology === iid) return;
+      if (s.res.pp < IDEOLOGY_COST) { toast(`KRÄVER ${IDEOLOGY_COST} \u{2696}\u{FE0F} POLITICAL POWER`, 'red'); return; }
+      s.res.pp -= IDEOLOGY_COST;
+      s.nation.ideology = iid;
+      s.nation.doctrine = ideo.doctrines ? Object.keys(ideo.doctrines)[0] : null;
+      const forced = enforceRequirements(s.nation);
+      s.extra.unrest = (s.extra.unrest || 0) + 30;
+      recomputeNation(); renderResbar(); renderNationTab();
+      toast(`NY IDEOLOGI: ${ideo.icon} ${ideo.name.toUpperCase()} (+30 ORO ETT TAG)`, 'amber', 5000);
+      if (forced.length) toast('LAGAR TVINGADES OM: ' + forced.map((c) => LAWS[c].name.toUpperCase()).join(', '), 'red', 6000);
+    });
+    grid.appendChild(card);
+  }
+  body.appendChild(grid);
+}
+
+// ---------- FORSKNING-fliken ----------
+function renderResearchTab(body) {
+  const s = state.solo;
+  body.innerHTML = `<div style="font-size:7px;color:var(--holo-dim);margin-bottom:10px">DU HAR <span style="color:var(--amber)">${s.res.rp} \u{1F52C}</span> FORSKNINGSPOÄNG — RESEARCH OUTPUT GER FLER PER DAG</div>`;
+  for (const [gname, gid] of [['CIVIL FORSKNING', 'civil'], ['MILITÄR FORSKNING', 'militar']]) {
+    const gt = document.createElement('div');
+    gt.className = 'gtitle';
+    gt.textContent = '▸ ' + gname;
+    body.appendChild(gt);
+    for (const [bid, branch] of Object.entries(RESEARCH)) {
+      if (branch.group !== gid) continue;
+      const row = document.createElement('div');
+      row.className = 'resrow';
+      const nm = document.createElement('div');
+      nm.className = 'rname';
+      nm.textContent = `${branch.icon} ${branch.name.toUpperCase()}`;
+      row.appendChild(nm);
+      const done = s.nation.research[bid] || 0;
+      branch.tiers.forEach((t, i) => {
+        const box = document.createElement('button');
+        box.className = 'tierbox ' + (i < done ? 'done' : i === done ? 'avail' : 'locked');
+        box.innerHTML = `T${i + 1} ${i < done ? '\u{2713}' : `(${TIER_COST[i]} \u{1F52C})`}<br>${t.name}`;
+        box.title = modSummary(t.mods, 8) + (t.unlock === 'nuke' ? ' • LÅSER UPP KÄRNVAPEN' : '');
+        box.addEventListener('click', () => {
+          if (i < done) return;
+          if (i > done) { toast('KRÄVER FÖREGÅENDE NIVÅ', 'red'); return; }
+          if (s.res.rp < TIER_COST[i]) { toast(`KRÄVER ${TIER_COST[i]} \u{1F52C}`, 'red'); return; }
+          s.res.rp -= TIER_COST[i];
+          s.nation.research[bid] = i + 1;
+          recomputeNation(); renderResbar(); renderNationTab();
+          toast(`FORSKNING KLAR: ${t.name.toUpperCase()}`, 'amber', 4500);
+          if (t.unlock === 'nuke') toast('\u{2622}\u{FE0F} KÄRNVAPEN UPPLÅST — NYTT VAL VID ANFALL', 'red', 6000);
+        });
+        row.appendChild(box);
+      });
+      body.appendChild(row);
+    }
+  }
+}
+
 $('#nationbtn').addEventListener('click', openNation);
 $('#natclose').addEventListener('click', () => $('#nation').classList.remove('show'));
 document.querySelectorAll('.nattab').forEach((el) => el.addEventListener('click', () => {
@@ -311,6 +629,7 @@ $('#attackbtn').addEventListener('click', () => {
   armyFlyTo(dest, 1500, () => {
     state.solo.army.at = target.id;
     $('#chooserTarget').textContent = `ANFALL MOT ${target.name.toUpperCase()}`;
+    $('#chNuke').style.display = hasUnlock(state.solo.nation, 'nuke') ? 'block' : 'none';
     overlay('#chooser', true);
   });
 });
@@ -320,6 +639,21 @@ function closeChooser() { overlay('#chooser', false); }
 $('#chCancel').addEventListener('click', () => {
   closeChooser();
   refreshInfoPanel();
+});
+$('#chNuke').addEventListener('click', () => {
+  const s = state.solo;
+  if (s.res.money < 500) { toast('KRÄVER 500 \u{1F4B0}', 'red'); return; }
+  closeChooser();
+  s.res.money -= 500;
+  s.extra.approval = (s.extra.approval || 0) - 25;
+  s.extra.unrest = (s.extra.unrest || 0) + 25;
+  recomputeNation();
+  renderResbar();
+  finishBattle({
+    winner: 0,
+    survivors: s.army.units.map(({ type, hp }) => ({ type, hp })),
+    nuke: true,
+  });
 });
 $('#chA').addEventListener('click', () => { closeChooser(); startBattle('A'); });
 $('#chB').addEventListener('click', () => { closeChooser(); startBattle('B'); });
@@ -358,6 +692,7 @@ function startBattle(kind) {
     atk,
     def,
     seed: seedFrom(target.id),
+    atkBoost: battleBoost(),
     setStatus: (s) => { $('#bstatus').textContent = s; },
     onEnd: (result) => finishBattle(result),
   };
@@ -380,9 +715,11 @@ function finishBattle(result) {
     s.army.at = target.id;
     s.army.ll = capitalLL(target.id);
     const res = resourcesOf(target.id).map((r) => `${RESOURCES[r].icon} ${RESOURCES[r].name.toUpperCase()}`).join(' + ');
-    $('#bresTitle').textContent = 'SEGER!';
-    $('#bresTitle').style.color = 'var(--amber)';
-    $('#bresText').innerHTML = `${target.name.toUpperCase()} ÄR ERÖVRAT${result.auto ? ` (AUTO, ${result.rounds} RONDER)` : ''}<br>NYA TILLGÅNGAR: ${res}<br>+1 INFANTERI I FÖRSTÄRKNING`;
+    $('#bresTitle').textContent = result.nuke ? '\u{2622}\u{FE0F} ATOMSLAG' : 'SEGER!';
+    $('#bresTitle').style.color = result.nuke ? 'var(--red)' : 'var(--amber)';
+    $('#bresText').innerHTML = result.nuke
+      ? `${target.name.toUpperCase()} KAPITULERAR OMEDELBART.<br>VÄRLDEN FÖRDÖMER DIG: APPROVAL \u{2212}25, ORO +25 (ETT TAG)<br>NYA TILLGÅNGAR: ${res}`
+      : `${target.name.toUpperCase()} ÄR ERÖVRAT${result.auto ? ` (AUTO, ${result.rounds} RONDER)` : ''}<br>NYA TILLGÅNGAR: ${res}<br>+1 INFANTERI I FÖRSTÄRKNING`;
   } else if (result.retreat) {
     s.army.units = result.survivors.map((u) => ({ ...u }));
     s.army.at = s.prevAt;
