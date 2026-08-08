@@ -186,8 +186,9 @@ function refreshInfoPanel() {
     docName = wi.doctrine && ideoObj?.doctrines?.[wi.doctrine]?.name || '';
   }
   $('#fideo').innerHTML = ideoObj
-    ? `<b>IDEOLOGI:</b> ${ideoObj.icon} ${ideoObj.name.toUpperCase()}${docName ? ` &nbsp;<b>DOKTRIN:</b> ${docName.toUpperCase()}` : ''}`
+    ? `<b>IDEOLOGI:</b> ${ideoObj.icon} ${ideoObj.name.toUpperCase()}`
     : '';
+  $('#fdoc').innerHTML = docName ? `<b>DOKTRIN:</b> ${docName.toUpperCase()}` : '';
   const BIOME_ICON = { GRAS: '\u{1F33E}', SNO: '\u{2744}\u{FE0F}', OKEN: '\u{1F3DC}\u{FE0F}', DJUNGEL: '\u{1F334}' };
   const bio = biomeFor(c);
   $('#ftype').innerHTML = `<b>LANDSTYP:</b> ${BIOME_ICON[bio]} ${BIOMES[bio].name}`;
