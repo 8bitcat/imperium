@@ -2562,7 +2562,7 @@ function generateTowns() {
     while (i < list.length && performance.now() - t0 < 24) {
       const c = list[i++];
       const pop = state.facts[c.id]?.p || 3e6;
-      const n = Math.max(1, Math.min(35, Math.round(pop / 6e6)));
+      const n = Math.max(2, Math.min(90, Math.round(pop / 2.2e6)));
       let h = ((parseInt(c.id, 10) || 7) * 2654435761) % 2147483647;
       const rnd = () => { h = (h * 1103515245 + 12345) % 2147483648; return h / 2147483648; };
       const [[x0, y0], [x1, y1]] = c.bounds;
