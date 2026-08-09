@@ -11,6 +11,7 @@ import { LAWS, defaultLaws, lawMods, lawChangeCost, lawOption } from './laws.js'
 import { IDEOLOGIES, countryIdeology, ideologyMods, lawLockedBy, enforceRequirements, IDEOLOGY_COST, DOCTRINE_COST } from './ideologies.js';
 import { RESEARCH, TIER_COST, researchMods, combatBonus, hasUnlock, logisticsRange, satCoverage, espionageTier } from './research.js';
 import { BUILDINGS, CITY_SLOTS, UNIT_NEEDS_BUILDING, TRADE_PRICES, TRADE_DEFAULT } from './buildings.js';
+import { countryIncomeOf, armySizeOf } from './economy.js';
 import { CASUS_BELLI, justifyDays, seizeAmount, FEDERATION_FORMS, HISTORICAL_EMPIRES, DYNAMIC_GOALS, formableEmpires, empireProgress } from './war.js';
 import { FACTIONS } from './factions.js';
 import { applyFaction } from './units.js';
@@ -277,6 +278,9 @@ function refreshInfoPanel() {
   const BIOME_ICON = { GRAS: '\u{1F33E}', SNO: '\u{2744}\u{FE0F}', OKEN: '\u{1F3DC}\u{FE0F}', DJUNGEL: '\u{1F334}' };
   const bio = biomeFor(c);
   $('#ftype').innerHTML = `<b>LANDSTYP:</b> ${BIOME_ICON[bio]} ${BIOMES[bio].name}`;
+  const inc = countryIncomeOf(fact.p, c.id);
+  const mineInc = state.mode === 'solo' && state.solo?.claims[c.id];
+  $('#finc').innerHTML = `<b>INKOMST:</b> +${inc} \u{1F4B0}/DAG${mineInc ? '' : ' <span style="color:var(--holo-dim)">VID ERÖVRING</span>'}`;
 
   const fres = $('#fres');
   fres.innerHTML = '';
@@ -770,8 +774,7 @@ function countryArmy(cid) {
 }
 
 function armyCap(cid) {
-  const pop = state.facts[cid]?.p || 5e6;
-  return Math.min(12, 4 + Math.floor(pop / 25e6));
+  return armySizeOf(state.facts[cid]?.p || 5e6, cid);
 }
 
 function initNation(countryId) {
@@ -911,6 +914,10 @@ function tickDay() {
   s.clock.day++;
   const st = s.stats;
   s.res.money = Math.max(0, s.res.money + Math.round(10 + st.income.total * 0.3));
+  // varje ägt land bidrar med inkomst efter sin ekonomiska tyngd — rika länder är feta byten
+  for (const cid of Object.keys(s.claims)) {
+    s.res.money += countryIncomeOf(state.facts[cid]?.p, cid);
+  }
   s.res.man += Math.max(0, Math.round(2 + st.manpower.total * 0.06));
   s.res.rp += Math.max(0, Math.round(1 + Math.max(0, st.research.total) * 0.08));
   s.res.pp += Math.max(0, Math.round(2 + st.polpower.total * 0.04));

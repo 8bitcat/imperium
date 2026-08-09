@@ -1,6 +1,7 @@
 // IMPERIUM v3 — enheter, skadematris, detaljerade pixelsprites och biom
 // (delas av båda stridsprototyperna och klinch-skärmen)
 import { resourcesOf } from './resources.js';
+import { WEALTH_TIER, armySizeOf } from './economy.js';
 
 export const UNIT_TYPES = {
   INF:  { name: 'INFANTERI',  baseName: 'INFANTERI',  mv: 3, spd: 30, range: 58,  aggro: 110 },
@@ -28,15 +29,18 @@ export const STARTER_ARMY = () => [
   mkUnit('TANK', 0), mkUnit('TANK', 0), mkUnit('FLYG', 0),
 ];
 
+// Försvarsarmén skalar med landets EKONOMI: rika länder är feta byten
+// men startar med mycket mer militär — och modernare vapenslag.
 export function defenderArmy(country, facts) {
   const pop = facts?.p || 5e6;
-  const n = Math.max(3, Math.min(8, 2 + Math.floor(pop / 25e6) + (pop > 5e6 ? 1 : 0)));
+  const n = armySizeOf(pop, country.id);
   const res = resourcesOf(country.id);
+  const rich = (WEALTH_TIER[country.id] || 1) >= 2.5;
   const units = [];
   for (let i = 0; i < n; i++) {
     let t = 'INF';
-    if (i % 3 === 2 && (res.includes('JARN') || res.includes('OLJA'))) t = 'TANK';
-    else if (i % 4 === 3 && res.includes('GULD')) t = 'FLYG';
+    if (i % 3 === 2 && (rich || res.includes('JARN') || res.includes('OLJA'))) t = 'TANK';
+    else if (i % 4 === 3 && (rich || res.includes('GULD'))) t = 'FLYG';
     else if (i % 5 === 4) t = 'TANK';
     units.push(mkUnit(t, 1));
   }
