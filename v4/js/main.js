@@ -161,10 +161,11 @@ function updateArmyMarker() {
   globe.setArmy(a && a.units.length
     ? { ll: a.ll, comp: compOf(a.units), color: SOLO_COLOR, warn: !!s.supplyBad }
     : null);
-  // garnisoner i alla länder man bygger i — banér med landets flagga
+  // garnisoner i alla länder man bygger i — banér med BYGGARENS flagga (ditt hemland)
+  const homeA2 = s?.home ? state.facts[s.home]?.a2 || null : null;
   const gl = Object.entries(s?.garrisons || {})
     .filter(([, units]) => units.length)
-    .map(([cid, units]) => ({ ll: capitalLL(cid), comp: compOf(units), color: '#ff9f8a', a2: state.facts[cid]?.a2 || null }));
+    .map(([cid, units]) => ({ ll: capitalLL(cid), comp: compOf(units), color: '#ff9f8a', a2: homeA2 }));
   globe.setGarrisons(gl);
 }
 
@@ -987,7 +988,8 @@ function updateCountryArmyMarkers() {
     const conq = world.aiOwned[cid];
     list.push({
       ll,
-      a2: state.facts[cid]?.a2 || null,
+      // erövrade länders arméer byggs av imperiet → imperiets flagga, inte landets
+      a2: state.facts[conq || cid]?.a2 || null,
       color: conq ? (world.aiEmpires[conq]?.color || '#7f8c8d') : '#8a97a5',
       n,
     });
