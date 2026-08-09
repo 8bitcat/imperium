@@ -189,6 +189,8 @@ export class Globe {
   }
   setShowCities(on) { this.showCities = on; this.sceneDirty = true; }
   setShowTrade(on) { this.showTrade = on; }
+  setShowTerrain(on) { this.showTerrain = on; this.sceneDirty = true; }
+  setTerrainColors(map) { this.terrainColors = map || {}; this.sceneDirty = true; } // cid → naturfärg
 
   animateTo(lonlat, zoom, dur = 1600, cb = null) {
     const from = [this.rot[0], this.rot[1], this.zoom];
@@ -1044,13 +1046,22 @@ export class Globe {
 
     for (const c of this.countries) {
       const claim = this.claims[c.id];
+      const terr = this.showTerrain ? this.terrainColors?.[c.id] : null;
       s.beginPath(); this.spath(c.feature);
       if (claim) {
-        s.fillStyle = shade(claim.color, 0.45);
-        s.fill();
+        if (terr) {
+          // terrängläge: naturfärg i botten + halvgenomskinlig ägartint ovanpå
+          s.fillStyle = terr; s.fill();
+          s.globalAlpha = 0.32;
+          s.fillStyle = claim.color; s.fill();
+          s.globalAlpha = 1;
+        } else {
+          s.fillStyle = shade(claim.color, 0.45);
+          s.fill();
+        }
         s.strokeStyle = claim.color; s.lineWidth = 1; s.stroke();
       } else {
-        s.fillStyle = LAND_SHADES[hashId(c.id) % LAND_SHADES.length];
+        s.fillStyle = terr || LAND_SHADES[hashId(c.id) % LAND_SHADES.length];
         s.fill();
         s.strokeStyle = BORDER; s.lineWidth = 0.55; s.stroke();
       }

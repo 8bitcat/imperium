@@ -1374,6 +1374,39 @@ function renderNationTab() {
 function renderLawsTab(body) {
   const s = state.solo;
   body.innerHTML = `<div style="font-size:7px;color:var(--holo-dim);margin-bottom:10px">BYTE KOSTAR 15 \u{2696}\u{FE0F} PER STEG • DU HAR <span style="color:var(--amber)">${s.res.pp} \u{2696}\u{FE0F}</span> • L\u{00C5}STA ALTERNATIV BLOCKERAS AV DIN IDEOLOGI</div>`;
+  // vald lag väntar på godkännande: grön bock / rött kryss högst upp
+  const pend = state.pendingLaw;
+  if (pend) {
+    const pDef = LAWS[pend.cat];
+    const pOpt = pDef.options.find((o) => o.id === pend.oid);
+    const row = document.createElement('div');
+    row.id = 'lawconfirm';
+    row.innerHTML = `<span class="lctxt">${pDef.icon} ${pDef.name.toUpperCase()} \u{2192} <b>${pOpt.name.toUpperCase()}</b> — ${pend.cost} \u{2696}\u{FE0F}</span>`;
+    const ok = document.createElement('button');
+    ok.className = 'lcbtn ok';
+    ok.textContent = '\u{2705} GODKÄNN LAGEN';
+    ok.addEventListener('click', () => {
+      if (s.res.pp < pend.cost) { warn(`KRÄVER ${pend.cost} \u{2696}\u{FE0F} — DU HAR ${s.res.pp}`); return; }
+      s.res.pp -= pend.cost;
+      s.nation.laws[pend.cat] = pend.oid;
+      state.pendingLaw = null;
+      recomputeNation();
+      renderResbar();
+      renderNationTab();
+      toast(`${pDef.name.toUpperCase()}: ${pOpt.name.toUpperCase()} (\u{2212}${pend.cost} \u{2696}\u{FE0F})`, 'amber');
+    });
+    const no = document.createElement('button');
+    no.className = 'lcbtn no';
+    no.textContent = '\u{274C} GE TILLBAKA';
+    no.addEventListener('click', () => {
+      state.pendingLaw = null;
+      renderNationTab();
+      toast('LAGFÖRSLAGET DROGS TILLBAKA', '', 3000);
+    });
+    row.appendChild(ok);
+    row.appendChild(no);
+    body.appendChild(row);
+  }
   for (const [cat, def] of Object.entries(LAWS)) {
     const div = document.createElement('div');
     div.className = 'lawcat';
@@ -1391,6 +1424,7 @@ function renderLawsTab(body) {
       const locked = !isCur && lawLockedBy(s.nation, cat, o.id);
       if (isCur) btn.classList.add('cur');
       if (locked) btn.classList.add('locked');
+      if (pend && pend.cat === cat && pend.oid === o.id) btn.classList.add('pend');
       const cost = lawChangeCost(cat, s.nation.laws[cat], o.id);
       btn.textContent = (locked ? '\u{1F512} ' : '') + o.name.toUpperCase();
       btn.addEventListener('mouseenter', () => {
@@ -1400,15 +1434,13 @@ function renderLawsTab(body) {
       });
       btn.addEventListener('mouseleave', () => setPreview());
       btn.addEventListener('click', () => {
-        if (isCur) return;
+        if (isCur) { state.pendingLaw = null; renderNationTab(); return; }
         if (locked) { toast(locked.toUpperCase(), 'red', 4000); return; }
         if (s.res.pp < cost) { warn(`KRÄVER ${cost} \u{2696}\u{FE0F} POLITICAL POWER — DU HAR ${s.res.pp}`); return; }
-        s.res.pp -= cost;
-        s.nation.laws[cat] = o.id;
-        recomputeNation();
-        renderResbar();
+        // lagen träder inte i kraft direkt — den väntar på godkännande högst upp
+        state.pendingLaw = { cat, oid: o.id, cost };
         renderNationTab();
-        toast(`${def.name.toUpperCase()}: ${o.name.toUpperCase()} (\u{2212}${cost} \u{2696}\u{FE0F})`, 'amber');
+        $('#natbody').scrollTop = 0;
       });
       opts.appendChild(btn);
     }
@@ -2053,12 +2085,36 @@ $('#bSelAll').addEventListener('click', () => state.battle?.selectAll?.());
 $('#bRetreat').addEventListener('click', () => state.battle?.retreat?.());
 
 // ---------- togglar + legend ----------
+// terrängläge: globen färgas som en riktig jordglob — öken gul, djungel grön, polerna vita
+let terrainColorMap = null;
+function buildTerrainColors() {
+  const BIOME_COLORS = {
+    GRAS: ['#6b9e57', '#749c54', '#5f9351', '#7ba35e'],
+    SNO: ['#e6ecf2', '#dde6ee', '#d3dfe8'],
+    OKEN: ['#d9c078', '#d4b96c', '#cdb670', '#e0c983'],
+    DJUNGEL: ['#3f8a4f', '#37814a', '#468f52'],
+  };
+  const map = {};
+  for (const c of globe.countries) {
+    const shades = BIOME_COLORS[biomeFor(c)] || BIOME_COLORS.GRAS;
+    map[c.id] = shades[(parseInt(c.id, 10) || 0) % shades.length];
+  }
+  return map;
+}
+
 function wireToggles() {
   const tgC = $('#tgCities'), tgT = $('#tgTrade'), tgL = $('#tgLegend');
   tgC.addEventListener('click', () => {
     const on = !globe.showCities;
     globe.setShowCities(on);
     tgC.classList.toggle('on', on);
+  });
+  const tgTe = $('#tgTerrain');
+  tgTe.addEventListener('click', () => {
+    const on = !globe.showTerrain;
+    if (on) globe.setTerrainColors(terrainColorMap ||= buildTerrainColors());
+    globe.setShowTerrain(on);
+    tgTe.classList.toggle('on', on);
   });
   tgT.addEventListener('click', () => {
     const on = !globe.showTrade;
