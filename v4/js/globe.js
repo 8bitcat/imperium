@@ -240,9 +240,13 @@ export class Globe {
     const colors = [...new Set(Object.values(this.claims).map((c) => c.color))];
     for (const col of colors) {
       const mine = (g) => owner(g) === col;
+      const geoms = obj.geometries.filter(mine);
       this._ownerMeshes.push({
         color: col,
         mesh: topojson.mesh(this.topology, obj, (a, b) => (a === b ? mine(a) : mine(a) !== mine(b))),
+        // rikets landmassa som EN yta — då finns ingen söm mellan provinserna
+        fill: geoms.length ? topojson.merge(this.topology, geoms) : null,
+        ids: geoms.map((g) => String(g.id ?? g.properties?.name ?? '')),
       });
     }
   }
@@ -1006,7 +1010,8 @@ export class Globe {
     if (!c || !c.tier || c.ang === Infinity || !c.center) return;
     // LineString, inte Polygon — annars stänger d3:s clipping ringen med
     // falska bågar längs globkanten när cirkeln korsar horisonten
-    const ring = { type: 'LineString', coordinates: d3.geoCircle().center(c.center).radius(c.ang * 180 / Math.PI)().coordinates[0] };
+    const ring0 = d3.geoCircle().center(c.center).radius(c.ang * 180 / Math.PI)().coordinates[0];
+    const ring = { type: 'LineString', coordinates: ring0 };
     b.save();
     b.setLineDash([3, 4]);
     b.lineDashOffset = -(t / 200) % 7;
@@ -1016,6 +1021,24 @@ export class Globe {
     b.lineWidth = 1;
     b.stroke();
     b.restore();
+
+    // dina egna satelliter patrullerar längs täckningsgränsen
+    const path = ring0 || [];
+    if (path.length > 3) {
+      const n = Math.min(8, 2 + c.tier * 2);
+      for (let i = 0; i < n; i++) {
+        const k = ((t / 26000) + i / n) % 1;
+        const pt = path[Math.floor(k * path.length) % path.length];
+        if (!pt || !this._front(pt, 1.2)) continue;
+        const p = this.proj(pt);
+        if (!p) continue;
+        b.fillStyle = Math.floor(t / 300 + i) % 4 ? '#cfe8ff' : '#39d7ff';
+        b.fillRect(Math.round(p[0]), Math.round(p[1]), 1, 1);
+        b.globalAlpha = 0.4;
+        b.fillRect(Math.round(p[0]) - 1, Math.round(p[1]), 1, 1);
+        b.globalAlpha = 1;
+      }
+    }
   }
 
   // Krigsrök: stigande rökpuffar + eldflimmer över länder som invaderas
@@ -1306,13 +1329,9 @@ export class Globe {
           s.fillStyle = shade(claim.color, 0.45);
           s.fill();
         }
-        // med mesh ritas ägarens kontur i ett svep efteråt — inga inre gränser.
-        // En tunn stroke i FILLFÄRGEN täcker antialias-sömmen mellan grannländer med samma ägare.
-        if (!useMesh) {
-          s.strokeStyle = claim.color; s.lineWidth = 1; s.stroke();
-        } else {
-          s.strokeStyle = terr || shade(claim.color, 0.45); s.lineWidth = 0.7; s.stroke();
-        }
+        // med mesh fylls hela riket som EN yta efteråt (se _ownerMeshes.fill),
+        // så inga inre gränser eller sömmar syns mellan provinserna
+        if (!useMesh) { s.strokeStyle = claim.color; s.lineWidth = 1; s.stroke(); }
       } else {
         s.fillStyle = terr || LAND_SHADES[hashId(c.id) % LAND_SHADES.length];
         s.fill();
@@ -1336,6 +1355,18 @@ export class Globe {
     // gränsmesh: kuster + gränser mellan OLIKA ägare (inre gränser är utsuddade),
     // sedan varje ägares yttre kontur i ägarfärgen
     if (useMesh) {
+      // rikets landmassa fylls som EN sammanhängande yta → sömlöst inuti
+      for (const om of this._ownerMeshes) {
+        if (!om.fill) continue;
+        s.beginPath(); this.spath(om.fill);
+        if (this.showTerrain) {
+          s.globalAlpha = 0.32;
+          s.fillStyle = om.color; s.fill();
+          s.globalAlpha = 1;
+        } else {
+          s.fillStyle = shade(om.color, 0.45); s.fill();
+        }
+      }
       s.beginPath(); this.spath(this._borderMesh);
       s.strokeStyle = BORDER; s.lineWidth = 0.55; s.stroke();
       for (const om of this._ownerMeshes) {

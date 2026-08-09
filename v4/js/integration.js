@@ -136,14 +136,28 @@ export function pushCost(pop, pct, researchTier) {
 }
 
 // daglig integrationstakt
-export function dailyRate({ researchTier = 0, office = false, armyHere = false, sameIdeo = false, adjacent = true }) {
-  // Grundtakten ensam räcker inte för att hinna ur ockupationen innan oron
-  // kokar över — man måste satsa på kontor, trupp, forskning eller pengar.
-  let r = 0.6;                        // grundtakt
-  r += 0.15 * researchTier;           // forskning
-  if (office) r += 0.5;               // integrationskontor (upkeep)
-  if (armyHere) r += 0.4;             // trupp på plats håller ordning
-  if (sameIdeo) r += 0.2;
-  if (!adjacent) r *= 0.4;            // exklav: allt går trögt utan landförbindelse
-  return r;                           // 0.24–2.3 %/dag
+// Hur stor ockupationsstyrka landet KRÄVER för att alls hålla ihop. Stora
+// länder kräver mer, och ju längre ifrån varandra ideologi och religion ligger
+// desto fler soldater behövs för att hålla ordning.
+export function garrisonNeeded(pop, myIdeo, theirIdeo, myRel, theirRel, adjacent = true) {
+  const size = Math.max(3, Math.round(Math.sqrt((pop || 5e6) / 1e6) * 1.4));
+  const gap = Math.abs((IDEO_AXIS[myIdeo] ?? 0) - (IDEO_AXIS[theirIdeo] ?? 0));
+  const relDiff = myRel !== theirRel
+    ? (RELIGIONS[myRel]?.fam === RELIGIONS[theirRel]?.fam ? 0.12 : 0.3)
+    : 0;
+  return Math.max(2, Math.round(size * (1 + gap * 0.14 + relDiff + (adjacent ? 0 : 0.4))));
+}
+
+export function dailyRate({ researchTier = 0, office = false, armyUnits = 0, needed = 0, sameIdeo = false, adjacent = true }) {
+  // Utan tillräcklig ockupationsstyrka BACKAR integrationen — landet glider ur
+  // händerna. Med rätt styrka går den framåt, och överskott snabbar på.
+  const deficit = Math.max(0, needed - armyUnits);
+  let r = deficit > 0
+    ? -0.1 - 0.22 * Math.min(8, deficit)              // för lite trupp → tydligt nedåt
+    : 0.55 + 0.05 * Math.min(12, armyUnits - needed); // full styrka → uppåt
+  // bonusarna hjälper, men kan inte ersätta soldater på marken
+  const help = 0.15 * researchTier + (office ? 0.5 : 0) + (sameIdeo ? 0.2 : 0);
+  r += deficit > 0 ? help * 0.35 : help;
+  if (!adjacent) r = r > 0 ? r * 0.4 : r * 1.4;       // exklav: trögt och skörare
+  return r;
 }

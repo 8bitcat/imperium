@@ -16,7 +16,7 @@ import { CASUS_BELLI, justifyDays, seizeAmount, FEDERATION_FORMS, HISTORICAL_EMP
 import { FACTIONS } from './factions.js';
 import { applyFaction } from './units.js';
 import { pickLeader, leaderDesc } from './leaders.js';
-import { RELIGIONS, religionOf, startPercent, PHASES, phaseOf, phaseIndex, pushCost, dailyRate } from './integration.js';
+import { RELIGIONS, religionOf, startPercent, PHASES, phaseOf, phaseIndex, pushCost, dailyRate, garrisonNeeded } from './integration.js';
 import { STANCES, stanceOf, setStance } from './stance.js';
 
 const $ = (s) => document.querySelector(s);
@@ -25,9 +25,9 @@ const SOLO_COLOR = '#ff4f4f';
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '4.13.0';
+export const VERSION = '4.14.0';
 export const VERSION_DATE = '2026-08-10';
-export const VERSION_NAME = 'HÅLLNINGAR & LEVANDE VÄRLD';
+export const VERSION_NAME = 'OCKUPATIONSSTYRKA';
 
 const globe = new Globe($('#globe'));
 
@@ -484,13 +484,30 @@ function renderFactIntegration(c) {
   const cost = pushCost(state.facts[c.id]?.p, pct, tier);
   const myRel = religionFor(s.home), theirRel = religionFor(c.id);
   const theirIdeo = (state.world?.[c.id] || countryIdeology(c.id)).ideology;
+  const adj = isAdjacentToRealm(c.id);
+  const troops = forcesIn(c.id);
+  const needed = neededIn(c.id);
+  const rate = integRate(c.id);
+  const daysLeft = rate > 0.02 ? Math.ceil((100 - pct) / rate) : null;
 
+  const up = rate > 0.02, down = rate < -0.02;
+  const arrow = up ? '\u{2B06}\u{FE0F}' : down ? '\u{2B07}\u{FE0F}' : '\u{27A1}\u{FE0F}';
+  const col = up ? '#4ae37a' : down ? 'var(--red)' : 'var(--holo-dim)';
   const head = document.createElement('div');
   head.className = 'ihead';
   head.innerHTML = pct >= 100
     ? `\u{2705} FULLT INTEGRERAT — 100%`
-    : `\u{1F91D} INTEGRATION ${Math.floor(pct)}% \u{2022} FAS ${idx + 1} AV 3: ${ph.name}`;
+    : `\u{1F91D} INTEGRATION ${Math.floor(pct)}% <span style="color:${col}">${arrow} ${rate > 0 ? '+' : ''}${rate.toFixed(2)}%/DAG</span>`
+      + `<br>FAS ${idx + 1} AV 3: ${ph.name}`;
   el.appendChild(head);
+
+  // ockupationsstyrkan: den viktigaste knappen på hela panelen
+  const gar = document.createElement('div');
+  gar.className = 'igar ' + (troops >= needed ? 'ok' : 'bad');
+  gar.innerHTML = troops >= needed
+    ? `\u{2694} OCKUPATIONSSTYRKA ${troops}/${needed} \u{2713} TILLRÄCKLIG`
+    : `\u{26A0}\u{FE0F} OCKUPATIONSSTYRKA ${troops}/${needed} — SKICKA ${needed - troops} FÖRBAND TILL, ANNARS TAPPAR DU LANDET`;
+  el.appendChild(gar);
 
   const bar = document.createElement('div');
   bar.className = 'ibar';
@@ -512,12 +529,11 @@ function renderFactIntegration(c) {
 
   const sub = document.createElement('div');
   sub.className = 'isub';
-  const adj = isAdjacentToRealm(c.id);
   const bonuses = [];
-  if (forcesIn(c.id)) bonuses.push('\u{2694} TRUPP +0.4%/DAG');
   if (hasOfficeIn(c.id)) bonuses.push('\u{1F3DB}\u{FE0F} KONTOR +0.5%/DAG');
   if (tier) bonuses.push(`\u{1F52C} FORSKNING +${(0.15 * tier).toFixed(2)}%/DAG`);
   sub.innerHTML = `${ph.desc}<br>`
+    + `<span style="color:${col}">${daysLeft ? `KLART OM CA ${daysLeft} DAGAR` : down ? 'LANDET GLIDER UR HÄNDERNA — MER TRUPP KRÄVS' : 'STÅR STILL'}</span><br>`
     + `IDEOLOGI: ${IDEOLOGIES[theirIdeo]?.name.toUpperCase() || '?'} MOT DIN ${IDEOLOGIES[s.nation.ideology]?.name.toUpperCase() || '?'}<br>`
     + `RELIGION: ${RELIGIONS[theirRel]?.icon || ''} ${RELIGIONS[theirRel]?.name.toUpperCase() || '?'} MOT DIN ${RELIGIONS[myRel]?.icon || ''} ${RELIGIONS[myRel]?.name.toUpperCase() || '?'}<br>`
     + (adj ? '' : `<span style="color:var(--red)">\u{2757} INGEN LANDGRÄNS TILL DITT RIKE — STÖRSTA HINDRET (TAKTEN \u{2212}60%)</span><br>`)
@@ -1088,14 +1104,39 @@ function startIntegration(cid) {
 function integOf(cid) { return state.solo?.integ?.[cid] || null; }
 
 // har jag trupp i landet? (armén på plats eller en garnison)
+// hur MÅNGA förband står i landet? (armén på plats + garnisonen) — fler trupper
+// pacificerar snabbare, så en riktig ockupationsstyrka gör tydlig skillnad
 function forcesIn(cid) {
   const s = state.solo;
-  if (!s) return false;
-  if (s.army?.units.length && s.army.at === cid && !s.armyMoving) return true;
-  return (s.garrisons?.[cid] || []).length > 0;
+  if (!s) return 0;
+  const army = s.army?.units.length && s.army.at === cid && !s.armyMoving ? s.army.units.length : 0;
+  return army + (s.garrisons?.[cid] || []).length;
 }
 
 function hasOfficeIn(cid) { return cityBuildingsIn(cid).includes('integration'); }
+
+// hur stor ockupationsstyrka landet kräver för att integrationen ska gå framåt
+function neededIn(cid) {
+  const s = state.solo;
+  if (!s?.nation) return 0;
+  const theirIdeo = (state.world?.[cid] || countryIdeology(cid)).ideology;
+  return garrisonNeeded(state.facts[cid]?.p, s.nation.ideology, theirIdeo,
+    religionFor(s.home), religionFor(cid), isAdjacentToRealm(cid));
+}
+
+// dagens integrationstakt för ett land (negativ = landet glider ur händerna)
+function integRate(cid) {
+  const s = state.solo;
+  const theirIdeo = (state.world?.[cid] || countryIdeology(cid)).ideology;
+  return dailyRate({
+    researchTier: s.nation?.research?.integration || 0,
+    office: hasOfficeIn(cid),
+    armyUnits: forcesIn(cid),
+    needed: neededIn(cid),
+    sameIdeo: theirIdeo === s.nation?.ideology,
+    adjacent: isAdjacentToRealm(cid),
+  });
+}
 
 // daglig integration + oro + risk för uppror
 function tickIntegration() {
@@ -1105,14 +1146,9 @@ function tickIntegration() {
   for (const [cid, it] of Object.entries(s.integ)) {
     if (!s.claims[cid]) { delete s.integ[cid]; continue; }
     if (it.pct >= 100) continue;
-    const theirIdeo = (state.world?.[cid] || countryIdeology(cid)).ideology;
-    it.pct = Math.min(100, it.pct + dailyRate({
-      researchTier: tier,
-      office: hasOfficeIn(cid),
-      armyHere: forcesIn(cid),
-      sameIdeo: theirIdeo === s.nation?.ideology,
-      adjacent: isAdjacentToRealm(cid),
-    }));
+    const before = it.pct;
+    it.pct = Math.max(-95, Math.min(100, it.pct + integRate(cid)));
+    it.trend = it.pct > before ? 1 : it.pct < before ? -1 : 0;
     if (it.pct >= 100) {
       toast(`\u{1F389} ${cname(cid)} ÄR FULLT INTEGRERAT — FULL INKOMST`, 'amber', 9000);
       applyState();
