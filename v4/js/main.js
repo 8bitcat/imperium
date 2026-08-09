@@ -22,6 +22,11 @@ const PLAYER_COLORS = ['#ff4f4f', '#4fa8ff', '#ffd24f', '#b06bff', '#ff9f3e', '#
 const SOLO_COLOR = '#ff4f4f';
 
 const net = new Net();
+// Version: höj vid varje release så alla ser vilken version de spelar
+export const VERSION = '4.9.0';
+export const VERSION_DATE = '2026-08-10';
+export const VERSION_NAME = 'PvP-STRIDER & SMART AI';
+
 const globe = new Globe($('#globe'));
 
 const state = {
@@ -133,6 +138,7 @@ function renderRoster() {
 }
 
 function renderTopbar() {
+  $('#topleft').textContent = `IMPERIUM V${VERSION} // GEOSCAPE`;
   const el = $('#topright');
   if (state.mode === 'tv') el.textContent = `RUM ${net.code} • ${state.players.length} SPELARE`;
   else if (state.mode === 'player') el.textContent = `${state.me?.name || ''} • RUM ${net.code || ''}`;
@@ -2769,6 +2775,7 @@ function startTV() {
   state.battles = { active: [], queued: [] };
   overlay('#menu', false);
   startWorldLoad();
+  announceVersion();
   globe.autoRotate = true;
   $('#tgSpin').classList.add('on'); // TV:n snurrar från start — knappen ska visa det
   // AI-världen lever på TV:n i multiplayer
@@ -3150,6 +3157,7 @@ function startPlayer(name, code) {
         overlay('#join', false);
         overlay('#menu', false);
         startWorldLoad();
+        announceVersion();
         applyState();
         toast(d.resume
           ? '\u{21BB} DU ÄR TILLBAKA — DIN SESSION ÅTERUPPTAS'
@@ -3418,10 +3426,17 @@ function startSolo() {
   overlay('#menu', false);
   startWorldLoad();
   renderTopbar();
+  announceVersion();
   toast('VÄLJ DITT HEMLAND — KLICKA PÅ ETT LAND', 'amber', 6000);
 }
 
 // ---------- meny + start ----------
+$('#menuversion').innerHTML = `VERSION ${VERSION} \u{2022} ${VERSION_DATE}<br><span class="vname">${VERSION_NAME}</span>`;
+// versionen syns också när partiet startar, så alla kan jämföra på TV och mobil
+function announceVersion() {
+  toast(`\u{1F4E6} IMPERIUM V${VERSION} — ${VERSION_NAME}`, 'amber', 6000);
+}
+
 wireToggles();
 renderLegend();
 

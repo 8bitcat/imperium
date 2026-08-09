@@ -194,7 +194,13 @@
     text-shadow: 0 0 18px rgba(55,224,255,0.8), 3px 3px 0 #0a2a3a;
     margin-bottom: 6px;
   }
-  .tagline { font-size: 7px; color: var(--holo-dim); letter-spacing: 2px; margin-bottom: 22px; }
+  .tagline { font-size: 7px; color: var(--holo-dim); letter-spacing: 2px; margin-bottom: 8px; }
+  #menuversion {
+    font-size: 7px; color: var(--amber); letter-spacing: 1px; margin: 4px auto 20px;
+    border: 1px solid rgba(255, 176, 46, 0.35); padding: 7px 10px;
+    display: inline-block; line-height: 2.1;
+  }
+  #menuversion .vname { color: var(--holo-dim); }
   .card label { display: block; font-size: 8px; color: var(--holo-dim); text-align: left; margin-top: 6px; }
   .card .err { color: var(--red); font-size: 8px; min-height: 14px; margin-top: 8px; }
   .card a.v1link { display: block; font-size: 7px; color: var(--holo-dim); margin-top: 14px; text-decoration: none; }
@@ -467,7 +473,7 @@
 <div class="vignette"></div>
 
 <div id="topbar" style="display:none">
-  <div class="left">IMPERIUM V4 // GEOSCAPE</div>
+  <div class="left" id="topleft">IMPERIUM V4 // GEOSCAPE</div>
   <div class="right" id="topright"></div>
 </div>
 
@@ -556,6 +562,7 @@
   <div class="card">
     <div class="logo">IMPERIUM</div>
     <div class="tagline">V4 // NATIONER &#8226; LAGAR &#8226; IDEOLOGI</div>
+    <div id="menuversion"></div>
     <button id="btnSolo" class="btn amber">&#9876; ERÖVRA VÄRLDEN (PROTOTYP)</button>
     <button id="btnTV" class="btn">&#128250; STARTA TV-LÄGE</button>
     <button id="btnJoin" class="btn">&#128241; GÅ MED I SPEL</button>
