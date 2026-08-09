@@ -2,7 +2,7 @@
 // Kostnad i forskningspoäng; varje nivå kräver föregående. mods = permanenta
 // effekter på nationsvärden. unlock = specialförmågor (t.ex. kärnvapen).
 
-export const TIER_COST = [50, 120, 250, 500];
+export const TIER_COST = [50, 120, 250, 500, 900];
 
 export const RESEARCH = {
   political: {
@@ -140,6 +140,25 @@ export const RESEARCH = {
       { name: 'Hypersonic Glide & Shield', mods: { milpower: 25, statepower: 8 } },
     ],
   },
+  satellites: {
+    name: 'Satellitcoverage', icon: '\u{1F6F0}\u{FE0F}', group: 'militar',
+    tiers: [
+      { name: 'Spaningssatelliter', desc: 'SER FRÄMMANDE ARMÉER TVÅ LÄNDER BORT', mods: { research: 3 } },
+      { name: 'Satellitkonstellation', desc: 'SER ARMÉER FEM LÄNDER BORT', mods: { research: 5, milpower: 3 } },
+      { name: 'Regional täckning', desc: '40% AV JORDEN BEVAKAS FRÅN HEMLANDET', mods: { research: 8, milpower: 5 } },
+      { name: 'Interkontinental täckning', desc: '70% AV JORDEN BEVAKAS', mods: { research: 10, milpower: 7 } },
+      { name: 'Globalt satellitnätverk', desc: 'TOTAL TÄCKNING — HELA JORDEN BEVAKAS', mods: { research: 14, milpower: 10 } },
+    ],
+  },
+  espionage: {
+    name: 'Espionage & Intelligence', icon: '\u{1F575}\u{FE0F}', group: 'militar',
+    tiers: [
+      { name: 'Signalspaning', desc: 'AVSLÖJAR VART FRÄMMANDE ARMÉER ÄR PÅ VÄG', mods: { safety: 3 } },
+      { name: 'Agentnätverk', desc: 'AVSLÖJAR VEMS ARMÉN ÄR (NATIONALITET + FLAGGA)', mods: { safety: 5, polpower: 3 } },
+      { name: 'Underrättelsebyrå', desc: 'AVSLÖJAR HUR MÅNGA ENHETER ARMÉN HAR', mods: { safety: 8, milpower: 4 } },
+      { name: 'Total informationsöverlägsenhet', desc: 'AVSLÖJAR EXAKT VILKA ENHETER ARMÉN HAR', mods: { safety: 10, milpower: 8 } },
+    ],
+  },
 };
 
 // nation.research = { grenId: högsta klara tier (1-4) }
@@ -172,6 +191,19 @@ export function combatBonus(nation) {
 // förlänger den. Bas ≈ två grannländer bort; varje tier ≈ ett land till.
 export function logisticsRange(nation) {
   return 0.30 + 0.14 * (nation?.research?.logistics || 0);
+}
+
+// satellittäckning i radianer från hemlandets huvudstad.
+// Bas = grannländerna; T1 ≈ 2 länder bort; T2 ≈ 5 länder bort;
+// T3 = 40% av jordytan; T4 = 70%; T5 = total täckning.
+export function satCoverage(nation) {
+  const t = nation?.research?.satellites || 0;
+  return [0.25, 0.5, 0.9, 1.3694, 1.9823, Infinity][Math.min(t, 5)];
+}
+
+// spionagenivå: 1 = destination, 2 = nationalitet, 3 = antal, 4 = sammansättning
+export function espionageTier(nation) {
+  return nation?.research?.espionage || 0;
 }
 
 export function hasUnlock(nation, key) {

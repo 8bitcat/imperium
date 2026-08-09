@@ -151,9 +151,30 @@ export class Globe {
 
   setGarrisons(list) { this.garrisons = list || []; }
   setGarrison(g) { this.garrisons = g ? [g] : []; } // bakåtkompatibelt
-  setDayFloat(f) { this.dayFloat = f; }
   setCountryArmies(list) { this.countryArmies = list || []; }
   setWarZones(list) { this.warZones = list || []; } // {ll} — krigsrök över anfallna länder
+  setPlayerLaunch(ll) { this.playerLaunch = ll; } // spelarens ramp när rymdforskning finns
+  setSatCoverage(c) { this.satCov = c; } // {center, ang (rad), tier 0-5} — satellitforskningen
+
+  // fyrverkerier över en punkt (valsegrar, rikesutrop)
+  addFireworks(ll, durMs = 6000) {
+    (this._fireworks ||= []).push({ ll, until: performance.now() + durMs, born: performance.now() });
+  }
+
+  // Årstider: snötäcket vandrar med kalendern (1 spelår = 120 dagar, dag 0 = midvinter)
+  setDayFloat(f) {
+    this.dayFloat = f;
+    const YEAR = 120;
+    const phase = ((f % YEAR) + YEAR) % YEAR / YEAR;
+    const wN = 0.5 + 0.5 * Math.cos(phase * Math.PI * 2); // 1 = midvinter i norr
+    const snowN = 68 - 26 * wN;
+    const snowS = -68 + 26 * (1 - wN);
+    if (this._snowN == null || Math.abs(snowN - this._snowN) > 0.75) {
+      this._snowN = snowN;
+      this._snowS = snowS;
+      this.sceneDirty = true;
+    }
+  }
 
   _flagImg(a2) {
     if (!a2) return null;
@@ -339,6 +360,11 @@ export class Globe {
     this._drawAurora(b, t);
     this._drawShootingStars(b, t);
     this._drawMoon(b, t);
+    this._drawLightning(b, t);
+    this._drawShipLights(b, t);
+    this._drawRockets(b, t);
+    this._drawFireworks(b, t);
+    this._drawSatCoverage(b, t);
     if (this.showTrade && this.routes.length) this._drawTrade(b, t);
     if (this.showCities) this._drawCityLife(b, t);
     this._drawSatellites(b, t);
@@ -451,13 +477,20 @@ export class Globe {
       if (flag) {
         x.imageSmoothingEnabled = false;
         x.drawImage(flag, sx - w / 2 + 3, sy - 5, 15, 10);
+      } else if (m.intel && !m.intel.nat) {
+        // okänd nationalitet utan spionage T2
+        x.font = '9px "Press Start 2P", monospace';
+        x.textAlign = 'center';
+        x.textBaseline = 'middle';
+        x.fillStyle = '#8a97a5';
+        x.fillText('?', sx - w / 2 + 10, sy + 1);
       }
       drawUnit(x, 'TANK', m.color, sx - w / 2 + 20, sy - 8, 1.1, 1);
       x.font = '9px "Press Start 2P", monospace';
       x.textAlign = 'left';
       x.textBaseline = 'middle';
       x.fillStyle = '#fff';
-      x.fillText(String(m.units?.length ?? ''), sx + w / 2 - 12, sy + 1);
+      x.fillText(!m.intel || m.intel.num ? String(m.units?.length ?? '') : '?', sx + w / 2 - 12, sy + 1);
       this._movingHits.push({ x: sx, y: sy, m });
     }
   }
@@ -530,10 +563,23 @@ export class Globe {
         b.globalAlpha = alpha;
         b.fillStyle = r.kind === 'air' ? '#f2fbff' : r.color;
         b.fillRect(Math.round(p[0]), Math.round(p[1]), 1, 1);
-        // liten svans
-        const ll2 = r.interp(Math.max(0, Math.min(1, f - 0.025 * (r.intl && alpha < 1 ? -1 : 1))));
-        const p2 = this._front(ll2) ? this.proj(ll2) : null;
-        if (p2) { b.globalAlpha = alpha * 0.35; b.fillRect(Math.round(p2[0]), Math.round(p2[1]), 1, 1); }
+        const dir = r.intl && alpha < 1 ? -1 : 1;
+        if (r.kind === 'air') {
+          // contrail: avtagande kondensstrimma bakom planet
+          for (let j = 1; j <= 4; j++) {
+            const llc = r.interp(Math.max(0, Math.min(1, f - 0.016 * j * dir)));
+            const pc = this._front(llc) ? this.proj(llc) : null;
+            if (!pc) break;
+            b.globalAlpha = alpha * 0.5 * (1 - j / 5);
+            b.fillStyle = '#dff4ff';
+            b.fillRect(Math.round(pc[0]), Math.round(pc[1]), 1, 1);
+          }
+        } else {
+          // liten svans
+          const ll2 = r.interp(Math.max(0, Math.min(1, f - 0.025 * dir)));
+          const p2 = this._front(ll2) ? this.proj(ll2) : null;
+          if (p2) { b.globalAlpha = alpha * 0.35; b.fillRect(Math.round(p2[0]), Math.round(p2[1]), 1, 1); }
+        }
       }
     }
     b.globalAlpha = 1;
@@ -679,6 +725,150 @@ export class Globe {
     b.fillRect(Math.round(mx) - 1, Math.round(my) + 1, 1, 1);
   }
 
+  // Raketuppskjutningar: rymdnationernas ramper + spelarens (vid rymdforskning)
+  _drawRockets(b, t) {
+    const SITES = [
+      [-80.6, 28.5],  // Cape Canaveral
+      [63.3, 45.9],   // Bajkonur
+      [100.3, 41.1],  // Jiuquan
+      [80.2, 13.7],   // Sriharikota
+      [131.0, 30.4],  // Tanegashima
+      [-52.8, 5.2],   // Kourou
+      [21.1, 67.9],   // Esrange
+    ];
+    const cyc = 26000, dur = 4200;
+    const idx = Math.floor(t / cyc);
+    const k = (t % cyc) / dur;
+    if (k > 1) return;
+    // rampvalet fryses per cykel så en pågående raket aldrig byter plats
+    if (this._rk?.idx !== idx) {
+      const sites = this.playerLaunch ? [...SITES, this.playerLaunch] : SITES;
+      this._rk = { idx, site: sites[hashId('rk' + idx) % sites.length] };
+    }
+    const site = this._rk.site;
+    if (!this._front(site, 1.15)) return;
+    const p = this.proj(site);
+    if (!p) return;
+    const [cx, cy] = this.proj.translate();
+    let dx = p[0] - cx, dy = p[1] - cy; // radiellt utåt = "uppåt"
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len; dy /= len;
+    const ease = k * k * (3 - 2 * k);
+    const h = ease * 17;
+    const rx = p[0] + dx * h, ry = p[1] + dy * h;
+    // rökpelare kvar på rampen + bakom raketen
+    for (let i = 1; i <= 3; i++) {
+      const hh = Math.max(0, h - i * 2.4);
+      b.globalAlpha = 0.4 * (1 - k) * (1 - i / 4);
+      b.fillStyle = '#c9cdd4';
+      b.fillRect(Math.round(p[0] + dx * hh), Math.round(p[1] + dy * hh), 1, 1);
+    }
+    // raket + flamma
+    b.globalAlpha = k > 0.85 ? (1 - k) / 0.15 : 1;
+    b.fillStyle = '#ffffff';
+    b.fillRect(Math.round(rx), Math.round(ry), 1, 2);
+    b.fillStyle = Math.floor(t / 90) % 2 ? '#ff9b3d' : '#ffd23d';
+    b.fillRect(Math.round(rx - dx * 2), Math.round(ry - dy * 2), 1, 1);
+    b.globalAlpha = 1;
+  }
+
+  // Fyrverkerier: expanderande färgringar över huvudstaden vid segrar och utrop
+  _drawFireworks(b, t) {
+    if (!this._fireworks?.length) return;
+    this._fireworks = this._fireworks.filter((f) => t < f.until);
+    for (const f of this._fireworks) {
+      if (!this._front(f.ll, 1.2)) continue;
+      const p = this.proj(f.ll);
+      if (!p) continue;
+      // två samtidiga skurar med olika fas och offset
+      for (let s = 0; s < 2; s++) {
+        const cyc = 800;
+        const local = (t - f.born + s * 400) % cyc;
+        const burst = Math.floor((t - f.born + s * 400) / cyc);
+        const k = local / cyc;
+        const bh = hashId('fw' + burst + '_' + s);
+        const ox = (bh % 11) - 5, oy = ((bh >> 3) % 7) - 6;
+        const r = 1 + k * 7;
+        const colors = ['#ffd23d', '#ff5a7a', '#59ffa8', '#6db4ff', '#ffffff'];
+        b.globalAlpha = (1 - k) * 0.95;
+        b.fillStyle = colors[bh % colors.length];
+        const n = 12;
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2 + (bh % 10) / 10;
+          b.fillRect(Math.round(p[0] + ox + Math.cos(a) * r), Math.round(p[1] + oy - 5 + Math.sin(a) * r), 1, 1);
+        }
+        if (k < 0.25) { // ljus kärna i explosionsögonblicket
+          b.globalAlpha = 1 - k * 4;
+          b.fillStyle = '#ffffff';
+          b.fillRect(Math.round(p[0] + ox) - 1, Math.round(p[1] + oy - 5) - 1, 2, 2);
+        }
+      }
+    }
+    b.globalAlpha = 1;
+  }
+
+  // Åskväder: korta dubbelblixtar i tropikbandet
+  _drawLightning(b, t) {
+    const cyc = 3400;
+    const idx = Math.floor(t / cyc);
+    const local = t % cyc;
+    if (local > 320) return;
+    const on = local < 90 || (local > 150 && local < 260);
+    if (!on) return;
+    const h = hashId('li' + idx);
+    const ll = [(h % 360) - 180, ((h >> 5) % 36) - 18];
+    if (!this._front(ll, 1.1)) return;
+    const p = this.proj(ll);
+    if (!p) return;
+    const bx = Math.round(p[0]), by = Math.round(p[1]);
+    b.globalAlpha = 0.35;
+    b.fillStyle = '#9db8ff';
+    b.fillRect(bx - 2, by - 2, 5, 5);
+    b.globalAlpha = 0.95;
+    b.fillStyle = '#ffffff';
+    b.fillRect(bx, by - 1, 1, 3);
+    b.fillRect(bx - 1, by, 3, 1);
+    b.globalAlpha = 1;
+  }
+
+  // Fartygsljus: varma punkter som glider längs sjörutterna på natthalvan
+  _drawShipLights(b, t) {
+    if (this.dayFloat == null || !this.routes?.length) return;
+    for (const r of this.routes) {
+      if (r.kind !== 'sea') continue;
+      const frac = ((t / 70000) + (r.phase % 1000) / 1000) % 1;
+      const ll = r.interp(frac);
+      if (!this._front(ll) || !this._isNight(ll)) continue;
+      const p = this.proj(ll);
+      if (!p) continue;
+      b.globalAlpha = 0.85;
+      b.fillStyle = '#ffd9a0';
+      b.fillRect(Math.round(p[0]), Math.round(p[1]), 1, 1);
+      const ll2 = r.interp(Math.max(0, frac - 0.02));
+      const p2 = this._front(ll2) ? this.proj(ll2) : null;
+      if (p2) { b.globalAlpha = 0.3; b.fillRect(Math.round(p2[0]), Math.round(p2[1]), 1, 1); }
+    }
+    b.globalAlpha = 1;
+  }
+
+  // Satellittäckningens gräns: diskret streckad cirkel runt hemlandet
+  _drawSatCoverage(b, t) {
+    const c = this.satCov;
+    if (!c || !c.tier || c.ang === Infinity || !c.center) return;
+    // LineString, inte Polygon — annars stänger d3:s clipping ringen med
+    // falska bågar längs globkanten när cirkeln korsar horisonten
+    const ring = { type: 'LineString', coordinates: d3.geoCircle().center(c.center).radius(c.ang * 180 / Math.PI)().coordinates[0] };
+    b.save();
+    b.setLineDash([3, 4]);
+    b.lineDashOffset = -(t / 200) % 7;
+    b.beginPath();
+    this.bpath(ring);
+    b.strokeStyle = 'rgba(57,215,255,0.5)';
+    b.lineWidth = 1;
+    b.stroke();
+    b.restore();
+  }
+
   // Krigsrök: stigande rökpuffar + eldflimmer över länder som invaderas
   _drawWarSmoke(b, t) {
     for (const z of this.warZones || []) {
@@ -752,6 +942,62 @@ export class Globe {
       b.fillStyle = blink ? '#ffffff' : '#39d7ff';
       b.fillRect(Math.round(p[0]), Math.round(p[1]) - 2, 1, 1); // strax "ovanför" ytan
     }
+    // extra spaningssatelliter per forskningsnivå
+    const tier = this.satCov?.tier || 0;
+    for (let i = 0; i < tier * 2 && tier < 5; i++) {
+      const inc = 24 + ((i * 37) % 50);
+      const dir = i % 2 ? 1 : -1;
+      const lon = ((t * (0.006 + (i % 5) * 0.002) * dir + i * 47) % 360 + 540) % 360 - 180;
+      const lat = inc * Math.sin(t * 0.0013 + i * 1.7);
+      const ll = [lon, lat];
+      if (!this._front(ll, 1.35)) continue;
+      const p = this.proj(ll);
+      if (!p) continue;
+      b.fillStyle = Math.floor(t / 400 + i) % 3 ? '#cfe8ff' : '#39d7ff';
+      b.fillRect(Math.round(p[0]), Math.round(p[1]) - 2, 1, 1);
+    }
+    // T5: globalt satellitnätverk — en kedja i bana runt hela jorden
+    if (tier >= 5) {
+      const N = 12, inc = 53 * Math.PI / 180, node = t * 0.0045;
+      const pts = [];
+      for (let k = 0; k < N; k++) {
+        const u = t * 0.0011 + (k / N) * Math.PI * 2;
+        const lat = Math.asin(Math.sin(inc) * Math.sin(u)) * 180 / Math.PI;
+        const lon = ((node + Math.atan2(Math.cos(inc) * Math.sin(u), Math.cos(u)) * 180 / Math.PI) % 360 + 540) % 360 - 180;
+        const ll = [lon, lat];
+        pts.push(this._front(ll, 1.3) ? this.proj(ll) : null);
+      }
+      b.strokeStyle = 'rgba(57,215,255,0.22)';
+      b.lineWidth = 0.5;
+      for (let k = 0; k < N; k++) {
+        const a = pts[k], c = pts[(k + 1) % N];
+        if (a && c && Math.hypot(a[0] - c[0], a[1] - c[1]) < this.buf.width / 2) {
+          b.beginPath(); b.moveTo(a[0], a[1] - 2); b.lineTo(c[0], c[1] - 2); b.stroke();
+        }
+        if (a) {
+          b.fillStyle = Math.floor(t / 300 + k) % 4 ? '#e8f7ff' : '#39d7ff';
+          b.fillRect(Math.round(a[0]), Math.round(a[1]) - 2, 1, 1);
+        }
+      }
+    }
+    // ISS: snabb flyover med cyan släpljus
+    const issAt = (tt) => [((tt * 0.011) % 360 + 540) % 360 - 180, 51.6 * Math.sin(tt * 0.00045)];
+    for (let i = 5; i >= 0; i--) {
+      const ll = issAt(t - i * 300);
+      if (!this._front(ll, 1.35)) continue;
+      const p = this.proj(ll);
+      if (!p) continue;
+      if (i === 0) {
+        b.globalAlpha = 1;
+        b.fillStyle = '#ffffff';
+        b.fillRect(Math.round(p[0]), Math.round(p[1]) - 2, 2, 1);
+      } else {
+        b.globalAlpha = 0.55 * (1 - i / 6);
+        b.fillStyle = '#7fe8ff';
+        b.fillRect(Math.round(p[0]), Math.round(p[1]) - 2, 1, 1);
+      }
+    }
+    b.globalAlpha = 1;
   }
 
   // Skarpa etiketter i skärmupplösning ovanpå den pixelerade globen
@@ -807,6 +1053,14 @@ export class Globe {
         s.fillStyle = LAND_SHADES[hashId(c.id) % LAND_SHADES.length];
         s.fill();
         s.strokeStyle = BORDER; s.lineWidth = 0.55; s.stroke();
+      }
+      // säsongssnö: länder norr/söder om snögränsen får ett vitt täcke
+      if (this._snowN != null) {
+        const lat = c.centroid[1];
+        let a = 0;
+        if (lat > this._snowN) a = Math.min(0.55, ((lat - this._snowN) / 18) * 0.55 + 0.12);
+        else if (lat < this._snowS) a = Math.min(0.55, ((this._snowS - lat) / 18) * 0.55 + 0.12);
+        if (a > 0.03) { s.fillStyle = `rgba(235,244,252,${a})`; s.fill(); }
       }
     }
 

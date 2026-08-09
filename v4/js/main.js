@@ -9,7 +9,7 @@ import { BattleB } from './battleB.js';
 import { STATS, STAT_GROUPS, computeStats, statGoodness } from './stats.js';
 import { LAWS, defaultLaws, lawMods, lawChangeCost, lawOption } from './laws.js';
 import { IDEOLOGIES, countryIdeology, ideologyMods, lawLockedBy, enforceRequirements, IDEOLOGY_COST, DOCTRINE_COST } from './ideologies.js';
-import { RESEARCH, TIER_COST, researchMods, combatBonus, hasUnlock, logisticsRange } from './research.js';
+import { RESEARCH, TIER_COST, researchMods, combatBonus, hasUnlock, logisticsRange, satCoverage, espionageTier } from './research.js';
 import { CASUS_BELLI, justifyDays, seizeAmount, FEDERATION_FORMS, HISTORICAL_EMPIRES, DYNAMIC_GOALS, formableEmpires, empireProgress } from './war.js';
 import { FACTIONS } from './factions.js';
 import { applyFaction } from './units.js';
@@ -37,7 +37,7 @@ const state = {
 
 window.IMPERIUM = state; // för test/debug
 state.globe = globe;
-state.debug = { aiTick: () => aiWorldTick(), arrivals: () => checkArrivals(), worldCtx: () => worldCtx(), updateMarkers: () => updateMovingMarkers() };
+state.debug = { aiTick: () => aiWorldTick(), arrivals: () => checkArrivals(), worldCtx: () => worldCtx(), updateMarkers: () => updateMovingMarkers(), updateCountryArmies: () => updateCountryArmyMarkers() };
 
 document.fonts?.load('10px "Press Start 2P"').then(() => { globe.sceneDirty = true; }).catch(() => {});
 loadWarSprites();
@@ -421,12 +421,22 @@ globe.onSelectArmy = (m) => {
   const panel = $('#infopanel');
   const world = worldCtx().world;
   const pct = Math.round(Math.min(1, (performance.now() - m.start) / m.dur) * 100);
+  // spionageforskningen avgör vad man vet: 1=destination, 2=nationalitet, 3=antal, 4=sammansättning
+  const esp = state.mode === 'tv' ? 4 : espionageTier(state.solo?.nation);
   $('#fflag').style.display = 'none';
-  $('#iname').textContent = `\u{2694} ARMÉ PÅ MARSCH`;
-  $('#fpop').innerHTML = `<b>FRÅN:</b> ${cname(m.att)} <b>MOT:</b> ${cname(m.target)}`;
-  $('#fcap').innerHTML = `<b>STYRKA:</b> ${m.units.length} ENHETER`;
-  $('#fcity').innerHTML = `<b>FRAMME:</b> ${pct}% AV VÄGEN`;
-  $('#fideo').innerHTML = m.goal ? `<b>MÅL:</b> ${m.goal.icon} ${m.goal.name.toUpperCase()}` : '';
+  $('#iname').textContent = esp >= 2 ? `\u{2694} ARMÉ PÅ MARSCH` : `\u{2694} OKÄND ARMÉ PÅ MARSCH`;
+  $('#fpop').innerHTML = (esp >= 2 ? `<b>FRÅN:</b> ${cname(m.att)}` : `<b>FRÅN:</b> OKÄNT <span style="color:var(--holo-dim)">(KRÄVER SPIONAGE T2)</span>`)
+    + (esp >= 1 ? ` <b>MOT:</b> ${cname(m.target)}` : ` <b>MOT:</b> ? <span style="color:var(--holo-dim)">(T1)</span>`);
+  $('#fcap').innerHTML = esp >= 3
+    ? `<b>STYRKA:</b> ${m.units.length} ENHETER`
+    : `<b>STYRKA:</b> OKÄND <span style="color:var(--holo-dim)">(KRÄVER SPIONAGE T3)</span>`;
+  $('#fcity').innerHTML = esp >= 1 ? `<b>FRAMME:</b> ${pct}% AV VÄGEN` : '';
+  if (esp >= 4) {
+    const mc = compOf(m.units);
+    $('#fideo').innerHTML = `<b>ENHETER:</b> \u{1FA96}${mc.INF} \u{1F6E1}\u{FE0F}${mc.TANK} \u{2708}\u{FE0F}${mc.FLYG}`;
+  } else {
+    $('#fideo').innerHTML = m.goal && esp >= 2 ? `<b>MÅL:</b> ${m.goal.icon} ${m.goal.name.toUpperCase()}` : '';
+  }
   $('#fdoc').innerHTML = '';
   $('#ftype').innerHTML = '';
   $('#fres').innerHTML = '';
@@ -718,6 +728,7 @@ function tickDay() {
     if (st.approval.total >= -5) {
       s.res.pp += 30;
       toast(`VALSEGER! +30 \u{2696}\u{FE0F}`, 'amber', 5000);
+      globe.addFireworks(capitalLL(s.home), 6000);
       // ibland tar en historisk gestalt ledningen och ger sin buff
       if (Math.random() < 0.6) {
         const l = pickLeader(s.home);
@@ -960,16 +971,22 @@ function markKnown(...cids) {
 function updateCountryArmyMarkers() {
   const world = worldCtx().world;
   if (!world?.known) { globe.setCountryArmies([]); return; }
+  // satellittäckning avgör vilka länders arméer man ser (TV:n ser allt)
+  const tv = state.mode === 'tv';
+  const cov = tv ? Infinity : satCoverage(state.solo?.nation);
+  const homeLL = !tv && state.solo?.home ? capitalLL(state.solo.home) : null;
   const list = [];
   for (const cid of world.known) {
     if (state.solo?.claims[cid]) continue;
     const c = globe.getCountry(cid);
     if (!c) continue;
+    const ll = capitalLL(cid);
+    if (homeLL && cov !== Infinity && d3.geoDistance(homeLL, ll) > cov) continue;
     const n = (world.countryArmies?.[cid]?.units || []).length;
     if (!n) continue;
     const conq = world.aiOwned[cid];
     list.push({
-      ll: capitalLL(cid),
+      ll,
       a2: state.facts[cid]?.a2 || null,
       color: conq ? (world.aiEmpires[conq]?.color || '#7f8c8d') : '#8a97a5',
       n,
@@ -1012,6 +1029,7 @@ function tickVotes(ctx) {
     if (Math.random() < 0.65) {
       world.aiGoals[v.cid] = v;
       toast(`\u{2705} ${cname(v.cid)} HAR RÖSTAT JA — MÅLET ÄR ${v.icon} ${v.name.toUpperCase()}!`, 'amber', 8000);
+      globe.addFireworks(capitalLL(v.cid), 7000);
     } else {
       toast(`\u{274C} ${cname(v.cid)} RÖSTADE NEJ OM ${v.name.toUpperCase()}`, '', 5000);
     }
@@ -1112,11 +1130,14 @@ function checkArrivals() {
 
 function updateMovingMarkers() {
   const world = worldCtx().world;
+  // spionage avgör hur mycket man vet om främmande arméer (TV:n vet allt)
+  const esp = state.mode === 'tv' ? 4 : espionageTier(state.solo?.nation);
   globe.setMovingArmies((world?.moving || []).map((m) => ({
     ...m,
     color: world.aiEmpires?.[m.att]?.color || '#c0392b',
     name: globe.getCountry(m.att)?.name || '?',
-    a2: state.facts[m.att]?.a2 || null,
+    a2: esp >= 2 ? (state.facts[m.att]?.a2 || null) : null,
+    intel: { dir: esp >= 1, nat: esp >= 2, num: esp >= 3, comp: esp >= 4 },
   })));
   // krigsrök över länder som just nu invaderas eller är i öppet krig med spelaren
   const zones = new Set((world?.moving || []).map((m) => m.target));
@@ -1145,6 +1166,11 @@ setInterval(() => {
   }
   if (ticked) renderResbar();
   globe.setDayFloat(s.clock.day + s.clock.acc / s.clock.msPerDay);
+  // raketramp i hemlandet när rymdnära forskning finns
+  const r = s.nation?.research || {};
+  globe.setPlayerLaunch((r.aircraft >= 3 || r.nuclear >= 1 || r.satellites >= 1) ? capitalLL(s.home) : null);
+  // satellitnätverket på globen speglar forskningen
+  globe.setSatCoverage(s.home ? { center: capitalLL(s.home), ang: satCoverage(s.nation), tier: r.satellites || 0 } : null);
 }, 250);
 
 $('#pausebtn').addEventListener('click', () => {
@@ -1285,6 +1311,7 @@ function renderNationTab() {
         s.permMods = { ...e.mods };
         recomputeNation(); renderResbar(); renderNationTab(); renderTopbar();
         toast(`${e.icon} ${e.name.toUpperCase()} HAR UTROPATS!`, 'amber', 8000);
+        globe.addFireworks(capitalLL(s.home), 9000);
       }, e.mods);
     }
     for (const f of FEDERATION_FORMS) {
@@ -1298,6 +1325,7 @@ function renderNationTab() {
         s.permMods = { ...f.mods };
         recomputeNation(); renderResbar(); renderNationTab(); renderTopbar();
         toast(`${f.icon} ${f.name.toUpperCase()} HAR BILDATS!`, 'amber', 7000);
+        globe.addFireworks(capitalLL(s.home), 8000);
       }, f.mods);
     }
     body.appendChild(fDiv);
@@ -1515,7 +1543,8 @@ function renderResearchTab(body) {
           ? `T${i + 1} \u{23F3} PÅGÅR (${active.left}d)<br>${t.name}`
           : `T${i + 1} ${i < done ? '\u{2713}' : `(${TIER_COST[i]} \u{1F52C})`}<br>${t.name}`;
         box.addEventListener('mouseenter', () => {
-          const extra = t.unlock === 'nuke' ? ' <span class="dn">\u{2622}\u{FE0F} LÅSER UPP KÄRNVAPEN</span>' : '';
+          const extra = (t.unlock === 'nuke' ? ' <span class="dn">\u{2622}\u{FE0F} LÅSER UPP KÄRNVAPEN</span>' : '')
+            + (t.desc ? ` <span class="desc">${t.desc}</span>` : '');
           setPreview(`<span class="dc">T${i + 1} ${t.name.toUpperCase()} — ${TIER_COST[i]} \u{1F52C}</span> &nbsp; ` + deltaHtml(t.mods || {}) + extra);
         });
         box.addEventListener('mouseleave', () => setPreview());
@@ -1525,7 +1554,7 @@ function renderResearchTab(body) {
           if (s.researchQueue?.length) { warn('ETT FORSKNINGSPROJEKT I TAGET — SE KÖN I HÖRNET'); return; }
           if (s.res.rp < TIER_COST[i]) { warn(`KRÄVER ${TIER_COST[i]} \u{1F52C} — DU HAR ${s.res.rp}`); return; }
           s.res.rp -= TIER_COST[i];
-          const days = [6, 10, 15, 20][i];
+          const days = [6, 10, 15, 20, 26][i];
           (s.researchQueue ||= []).push({ branch: bid, tier: i + 1, name: t.name, left: days, total: days, unlock: t.unlock });
           renderBuildCorner(); renderResbar(); renderNationTab();
           toast(`\u{1F52C} FORSKNING STARTAD: ${t.name.toUpperCase()} — KLAR OM ${days} DAGAR`, 'amber', 5000);
@@ -2232,6 +2261,9 @@ function startTV() {
   // AI-världen lever på TV:n i multiplayer
   setInterval(() => { if (state.mode === 'tv' && globe.countries.length) aiWorldTick(); }, 9000);
   setInterval(() => { if (state.mode === 'tv') checkArrivals(); }, 1000);
+  // TV:n har ingen spelklocka — dag/natt + årstider drivs av väggklockan (2 s = 1 dag)
+  const tvEpoch = performance.now();
+  setInterval(() => { if (state.mode === 'tv') globe.setDayFloat((performance.now() - tvEpoch) / 2000); }, 250);
 
   net.host((code) => {
     renderTopbar();
