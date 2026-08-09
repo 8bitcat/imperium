@@ -17,6 +17,7 @@ import { FACTIONS } from './factions.js';
 import { applyFaction } from './units.js';
 import { pickLeader, leaderDesc } from './leaders.js';
 import { RELIGIONS, religionOf, startPercent, PHASES, phaseOf, phaseIndex, pushCost, dailyRate } from './integration.js';
+import { STANCES, stanceOf, setStance } from './stance.js';
 
 const $ = (s) => document.querySelector(s);
 const PLAYER_COLORS = ['#ff4f4f', '#4fa8ff', '#ffd24f', '#b06bff', '#ff9f3e', '#3ee6c8', '#ff6fd8', '#a4e34a'];
@@ -24,9 +25,9 @@ const SOLO_COLOR = '#ff4f4f';
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '4.11.0';
+export const VERSION = '4.12.0';
 export const VERSION_DATE = '2026-08-10';
-export const VERSION_NAME = 'INTEGRATION & LEVANDE VÄRLD';
+export const VERSION_NAME = 'HÅLLNINGAR & LEVANDE VÄRLD';
 
 const globe = new Globe($('#globe'));
 
@@ -334,7 +335,11 @@ function refreshInfoPanel() {
   const bio = biomeFor(c);
   $('#ftype').innerHTML = `<b>LANDSTYP:</b> ${BIOME_ICON[bio]} ${BIOMES[bio].name}`;
   const rel = religionFor(c.id);
-  $('#freli').innerHTML = `<b>RELIGION:</b> ${RELIGIONS[rel]?.icon || ''} ${RELIGIONS[rel]?.name.toUpperCase() || '?'}`;
+  const stKey = stanceOf(worldCtx().world || {}, c.id);
+  const st = STANCES[stKey] || STANCES.neutral;
+  $('#freli').innerHTML = `<b>RELIGION:</b> ${RELIGIONS[rel]?.icon || ''} ${RELIGIONS[rel]?.name.toUpperCase() || '?'}`
+    + `<br><b>HÅLLNING:</b> <span style="color:${st.color}">${st.icon} ${st.name}</span>`
+    + `<br><span style="font-size:6px;color:var(--holo-dim)">${st.desc}</span>`;
   const inc = countryIncomeOf(fact.p, c.id);
   const mineInc = state.solo?.claims[c.id];
   const itg = integOf(c.id);
@@ -1586,6 +1591,25 @@ function aiElectLeader(ctx) {
 
 // varje land har en miniekonomi och forskar utifrån sin läggning
 const MIL_IDEOLOGIES = new Set(['nationalism', 'fascism', 'imperialism', 'communism', 'natsoc', 'monarchism']);
+// ---------- HÅLLNING: hur landet ser på världen, och hur den smittar ----------
+function shiftStance(world, cid, next, why) {
+  const ch = setStance(world, cid, next);
+  if (!ch) return;
+  const st = STANCES[next];
+  toast(`${st.icon} ${cname(cid)} BLIR ${st.name}${why ? ' — ' + why : ''}`, next === 'ultra' ? 'red' : '', 7000);
+  logEvent(`${st.icon} ${cname(cid)} BLIR ${st.name}`, { war: next === 'aggressive' || next === 'ultra' });
+  if (selectedCountry?.id === cid) refreshInfoPanel();
+}
+
+// Aggressiva grannar tvingar fram upprustning runt omkring
+function spreadDefensive(world, cid) {
+  const c = globe.getCountry(cid);
+  if (!c) return;
+  for (const n of nearestCountryIds(c, 4, worldCtx()) || []) {
+    if (stanceOf(world, n) === 'neutral') shiftStance(world, n, 'defensive', `HOTAS AV ${cname(cid)}`);
+  }
+}
+
 // Varje land har en egen dröm: militärmakt, rikedom, välfärd eller rymden.
 // Doktrinen lottas en gång per land så att alla inte jagar samma sak.
 const AI_DREAMS = ['mil', 'eco', 'wel', 'space'];
@@ -1614,8 +1638,11 @@ function aiDevTick(ctx) {
   const ideo = (state.world?.[c.id] || countryIdeology(c.id)).ideology;
   const hasGoal = !!world.aiGoals[c.id];
   const dream = aiDream(world, c.id);
-  // hotade länder rustar oavsett dröm
-  const focus = hasGoal || world.aiWars.some((w) => w.target === c.id) ? 'mil'
+  const st = STANCES[stanceOf(world, c.id)] || STANCES.neutral;
+  // hållningen avgör hur ofta satsningen går till militären
+  const threatened = world.aiWars.some((w) => w.target === c.id) || (world.moving || []).some((m) => m.target === c.id);
+  if (threatened && stanceOf(world, c.id) === 'neutral') shiftStance(world, c.id, 'defensive', 'HOTAS AV KRIG');
+  const focus = hasGoal || threatened || Math.random() < st.focusMil ? 'mil'
     : Math.random() < 0.7 ? dream
     : AI_DREAMS[Math.floor(Math.random() * AI_DREAMS.length)];
   const d = (world.dev[c.id] ||= { mil: 0, eco: 0, wel: 0, space: 0 });
@@ -1625,8 +1652,20 @@ function aiDevTick(ctx) {
   toast(`\u{1F52C} ${c.name.toUpperCase()} SATSAR PÅ ${label} — NIVÅ ${d[focus]}`, '', 5000);
   logEvent(`\u{1F52C} ${cname(c.id)} SATSAR PÅ ${label} (NIVÅ ${d[focus]})`);
   if (focus === 'mil') {
+    // Hållningen avgör antal vs kvalitet: aggressiva bygger MÅNGA förband,
+    // defensiva bygger färre men moderniserar dem hårt.
     const ca = countryArmy(c.id);
-    if (ca.units.length < armyCap(c.id)) ca.units.push(mkUnit(d.mil >= 2 ? 'TANK' : 'INF', 1));
+    const tech = d.mil + (st.tech >= 2 ? 2 : st.tech >= 1 ? 0 : -1);
+    const add = Math.min(armyCap(c.id) - ca.units.length, Math.max(0, Math.round((1 + d.mil) * st.units)));
+    for (let i = 0; i < add; i++) {
+      ca.units.push(mkUnit(tech >= 3 && i % 3 === 0 ? 'FLYG' : tech >= 2 ? 'TANK' : (i % 2 ? 'TANK' : 'INF'), 1));
+    }
+    // defensiva länder moderniserar sina gamla förband varje satsning
+    const upgrades = st.tech >= 2 ? 2 : tech >= 3 ? 1 : 0;
+    for (let i = 0; i < upgrades; i++) {
+      const old = ca.units.find((u) => u.type === 'INF') || (st.tech >= 2 ? ca.units.find((u) => u.type === 'TANK') : null);
+      if (old) old.type = old.type === 'INF' ? 'TANK' : 'FLYG';
+    }
   }
   // rymdprogrammet i mål → landet skjuter upp satelliter som syns på globen
   if (focus === 'space' && d.space >= 2) {
@@ -1805,6 +1844,11 @@ function tickVotes(ctx) {
       world.aiGoals[v.cid] = v;
       toast(`\u{2705} ${cname(v.cid)} HAR RÖSTAT JA — MÅLET ÄR ${v.icon} ${v.name.toUpperCase()}!`, 'amber', 8000);
       globe.addFireworks(capitalLL(v.cid), 7000);
+      logEvent(`\u{2705} ${cname(v.cid)} SIKTAR PÅ ${v.name.toUpperCase()}`, { war: true });
+      // ett land som röstat för erövring blir expansivt — och grannarna rustar
+      // världsherravälde/kontinental dominans = ultra, historiska riken = aggressiv
+      shiftStance(world, v.cid, v.empireId ? 'aggressive' : 'ultra', v.name.toUpperCase());
+      spreadDefensive(world, v.cid);
     } else {
       toast(`\u{274C} ${cname(v.cid)} RÖSTADE NEJ OM ${v.name.toUpperCase()}`, '', 5000);
     }
