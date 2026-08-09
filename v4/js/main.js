@@ -16,6 +16,7 @@ import { CASUS_BELLI, justifyDays, seizeAmount, FEDERATION_FORMS, HISTORICAL_EMP
 import { FACTIONS } from './factions.js';
 import { applyFaction } from './units.js';
 import { pickLeader, leaderDesc } from './leaders.js';
+import { RELIGIONS, religionOf, startPercent, PHASES, phaseOf, phaseIndex, pushCost, dailyRate } from './integration.js';
 
 const $ = (s) => document.querySelector(s);
 const PLAYER_COLORS = ['#ff4f4f', '#4fa8ff', '#ffd24f', '#b06bff', '#ff9f3e', '#3ee6c8', '#ff6fd8', '#a4e34a'];
@@ -23,9 +24,9 @@ const SOLO_COLOR = '#ff4f4f';
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '4.10.0';
+export const VERSION = '4.11.0';
 export const VERSION_DATE = '2026-08-10';
-export const VERSION_NAME = 'TVÅSPELARSTRIDER';
+export const VERSION_NAME = 'INTEGRATION & LEVANDE VÄRLD';
 
 const globe = new Globe($('#globe'));
 
@@ -44,7 +45,13 @@ const state = {
 
 window.IMPERIUM = state; // för test/debug
 state.globe = globe;
-state.debug = { aiTick: () => aiWorldTick(), arrivals: () => checkArrivals(), worldCtx: () => worldCtx(), updateMarkers: () => updateMovingMarkers(), updateCountryArmies: () => updateCountryArmyMarkers() };
+state.debug = {
+  aiTick: () => aiWorldTick(), arrivals: () => checkArrivals(), worldCtx: () => worldCtx(),
+  updateMarkers: () => updateMovingMarkers(), updateCountryArmies: () => updateCountryArmyMarkers(),
+  startInteg: (cid) => startIntegration(cid), tickDay: () => tickDay(), applyState: () => applyState(),
+  aiCanReach: (w, a, t) => aiCanReach(w, a, t), aiDistanceTo: (w, a, t) => aiDistanceTo(w, a, t),
+  aiReach: (w, c) => aiReach(w, c), warAlert: (a, t, w) => warAlert(a, t, w), saveGame: () => saveGame(), loadGame: () => loadGame(),
+};
 
 document.fonts?.load('10px "Press Start 2P"').then(() => { globe.sceneDirty = true; }).catch(() => {});
 loadWarSprites();
@@ -128,8 +135,12 @@ function renderRoster() {
     const home = document.createElement('span');
     home.className = 'home';
     const nClaims = (p.claims || []).length;
+    // har spelaren utropat ett rike visas rikets namn i stället för hemlandet
+    const label = p.formation?.name
+      ? `${p.formation.icon || ''} ${p.formation.name}`
+      : (globe.getCountry(p.home)?.name || '?');
     home.textContent = p.home
-      ? `— ${globe.getCountry(p.home)?.name || '?'} ${p.factionIcon || ''}${p.ideoIcon || IDEOLOGIES[countryIdeology(p.home).ideology].icon}${nClaims > 1 ? ` \u{1F30D}${nClaims}` : ''}${p.busy ? ' \u{2694}' : ''}`
+      ? `— ${label} ${p.factionIcon || ''}${p.ideoIcon || IDEOLOGIES[countryIdeology(p.home).ideology].icon}${nClaims > 1 ? ` \u{1F30D}${nClaims}` : ''}${p.busy ? ' \u{2694}' : ''}`
       : '— väljer land…';
     row.append(chip, name, home);
     list.appendChild(row);
@@ -151,9 +162,33 @@ function renderTopbar() {
 
 function applyState() {
   globe.setClaims(claimsMap());
+  updateLabelOverrides();
   renderRoster();
   renderTopbar();
   refreshInfoPanel();
+}
+
+// Erövrade länder bär erövrarens namn på globen. Under integrationen visas
+// hur långt den kommit, så man ser vilka provinser som fortfarande är oroliga.
+function updateLabelOverrides() {
+  const s = state.solo;
+  const map = {};
+  if (s?.home) {
+    const homeName = globe.getCountry(s.home)?.name || '';
+    for (const cid of Object.keys(s.claims || {})) {
+      if (cid === s.home) continue;
+      if (s.claims[cid].puppet) continue;      // lydstater behåller sitt namn
+      const it = integOf(cid);
+      map[cid] = !it || it.pct >= 100 ? homeName : `${homeName} ${Math.floor(Math.max(0, it.pct))}%`;
+    }
+  }
+  // AI-imperier: kärnlandets namn på allt de äger
+  const world = state.mode === 'tv' ? state.hostWorld : (s || state.aiWorldRemote);
+  for (const [cid, conq] of Object.entries(world?.aiOwned || {})) {
+    const emp = world.aiEmpires?.[conq];
+    map[cid] = emp?.name || globe.getCountry(conq)?.name || '';
+  }
+  globe.setLabelOverride(map);
 }
 
 // ---------- armé (solo-prototypen) ----------
@@ -298,9 +333,15 @@ function refreshInfoPanel() {
   const BIOME_ICON = { GRAS: '\u{1F33E}', SNO: '\u{2744}\u{FE0F}', OKEN: '\u{1F3DC}\u{FE0F}', DJUNGEL: '\u{1F334}' };
   const bio = biomeFor(c);
   $('#ftype').innerHTML = `<b>LANDSTYP:</b> ${BIOME_ICON[bio]} ${BIOMES[bio].name}`;
+  const rel = religionFor(c.id);
+  $('#freli').innerHTML = `<b>RELIGION:</b> ${RELIGIONS[rel]?.icon || ''} ${RELIGIONS[rel]?.name.toUpperCase() || '?'}`;
   const inc = countryIncomeOf(fact.p, c.id);
-  const mineInc = state.mode === 'solo' && state.solo?.claims[c.id];
-  $('#finc').innerHTML = `<b>INKOMST:</b> +${inc} \u{1F4B0}/DAG${mineInc ? '' : ' <span style="color:var(--holo-dim)">VID ERÖVRING</span>'}`;
+  const mineInc = state.solo?.claims[c.id];
+  const itg = integOf(c.id);
+  const factor = itg ? phaseOf(itg.pct).income : 1;
+  $('#finc').innerHTML = `<b>INKOMST:</b> ${mineInc ? '' : '+'}${Math.round(inc * (mineInc ? factor : 1))} \u{1F4B0}/DAG`
+    + (mineInc ? (factor < 1 ? ` <span style="color:var(--red)">(AV ${inc} — EJ INTEGRERAT)</span>` : '')
+      : ' <span style="color:var(--holo-dim)">VID ERÖVRING</span>');
 
   const fres = $('#fres');
   fres.innerHTML = '';
@@ -332,6 +373,8 @@ function refreshInfoPanel() {
   const ftr = $('#ftrade');
   ftr.innerHTML = '';
   show(ftr, false);
+  $('#finteg').innerHTML = '';
+  show($('#finteg'), false);
 
   if (state.mode === 'solo' || (state.mode === 'player' && state.solo)) {
     const s = state.solo;
@@ -343,6 +386,18 @@ function refreshInfoPanel() {
         $('#movebtn').innerHTML = `\u{1F6A9} FLYTTA ARMÉN HIT${s.garrisons?.[c.id]?.length ? ' (SLÅ IHOP MED GARNISONEN)' : ''}`;
         show($('#movebtn'), true);
       }
+      // pågående uppror i egen provins — slå ner det
+      if (integOf(c.id)?.revolt) {
+        $('#istatus').textContent = `\u{1F525} UPPROR — ${countryArmy(c.id).units.length} REBELLER`;
+        $('#istatus').style.color = 'var(--red)';
+        if (s.army?.units.length && !state.battle) {
+          attackBtn.innerHTML = '\u{1F525} SLÅ NER UPPRORET';
+          show(attackBtn, true);
+        }
+      } else {
+        attackBtn.innerHTML = '\u{2694} ANFALL MED ARMÉN';
+      }
+      renderFactIntegration(c);
       renderFactBuild(c);
     } else if (!s.home) {
       $('#istatus').textContent = 'FRITT TERRITORIUM';
@@ -380,7 +435,11 @@ function refreshInfoPanel() {
     }
   } else if (claim) {
     const mine = state.me && state.me.home === c.id;
-    $('#istatus').textContent = mine ? 'DITT HEMLAND' : `TAGET AV ${claim.playerName.toUpperCase()}`;
+    // utropade riken syns för alla — även på TV:n och andra spelares skärmar
+    const owner = playerOwning(c.id);
+    const form = owner?.formation;
+    $('#istatus').innerHTML = (mine ? 'DITT HEMLAND' : `TAGET AV ${claim.playerName.toUpperCase()}`)
+      + (form ? `<br><span style="color:var(--amber)">${form.icon || ''} ${form.name.toUpperCase()}</span>` : '');
     $('#istatus').style.color = claim.color;
   } else {
     $('#istatus').textContent = 'FRITT TERRITORIUM';
@@ -389,6 +448,86 @@ function refreshInfoPanel() {
     show(claimBtn, state.mode === 'player');
   }
   show(panel, true);
+}
+
+// Integrationspanelen: mätare, faser och möjligheten att köpa på integrationen
+function renderFactIntegration(c) {
+  const s = state.solo;
+  const el = $('#finteg');
+  const it = integOf(c.id);
+  el.innerHTML = '';
+  if (!it || !s?.nation) { show(el, false); return; }
+  const pct = it.pct;
+  const idx = phaseIndex(pct);
+  const ph = PHASES[idx];
+  const tier = s.nation.research?.integration || 0;
+  const cost = pushCost(state.facts[c.id]?.p, pct, tier);
+  const myRel = religionFor(s.home), theirRel = religionFor(c.id);
+  const theirIdeo = (state.world?.[c.id] || countryIdeology(c.id)).ideology;
+
+  const head = document.createElement('div');
+  head.className = 'ihead';
+  head.innerHTML = pct >= 100
+    ? `\u{2705} FULLT INTEGRERAT — 100%`
+    : `\u{1F91D} INTEGRATION ${Math.floor(pct)}% \u{2022} FAS ${idx + 1} AV 3: ${ph.name}`;
+  el.appendChild(head);
+
+  const bar = document.createElement('div');
+  bar.className = 'ibar';
+  const fill = document.createElement('div');
+  if (pct < 0) { fill.className = 'ineg'; fill.style.width = `${Math.min(100, -pct)}%`; }
+  else { fill.className = 'ifill'; fill.style.width = `${pct}%`; }
+  bar.appendChild(fill);
+  el.appendChild(bar);
+
+  const phs = document.createElement('div');
+  phs.className = 'iphases';
+  PHASES.slice(0, 3).forEach((p, i) => {
+    const d = document.createElement('div');
+    d.className = 'iph' + (i < idx ? ' done' : i === idx ? ' cur' : '');
+    d.innerHTML = `FAS ${i + 1}<br>${p.name}<br>${p.at}%`;
+    phs.appendChild(d);
+  });
+  el.appendChild(phs);
+
+  const sub = document.createElement('div');
+  sub.className = 'isub';
+  const adj = isAdjacentToRealm(c.id);
+  const bonuses = [];
+  if (forcesIn(c.id)) bonuses.push('\u{2694} TRUPP +0.4%/DAG');
+  if (hasOfficeIn(c.id)) bonuses.push('\u{1F3DB}\u{FE0F} KONTOR +0.5%/DAG');
+  if (tier) bonuses.push(`\u{1F52C} FORSKNING +${(0.15 * tier).toFixed(2)}%/DAG`);
+  sub.innerHTML = `${ph.desc}<br>`
+    + `IDEOLOGI: ${IDEOLOGIES[theirIdeo]?.name.toUpperCase() || '?'} MOT DIN ${IDEOLOGIES[s.nation.ideology]?.name.toUpperCase() || '?'}<br>`
+    + `RELIGION: ${RELIGIONS[theirRel]?.icon || ''} ${RELIGIONS[theirRel]?.name.toUpperCase() || '?'} MOT DIN ${RELIGIONS[myRel]?.icon || ''} ${RELIGIONS[myRel]?.name.toUpperCase() || '?'}<br>`
+    + (adj ? '' : `<span style="color:var(--red)">\u{2757} INGEN LANDGRÄNS TILL DITT RIKE — STÖRSTA HINDRET (TAKTEN \u{2212}60%)</span><br>`)
+    + (bonuses.length ? bonuses.join(' \u{2022} ') : 'INGA BONUSAR — BYGG \u{1F3DB}\u{FE0F} INTEGRATIONSKONTOR ELLER SKICKA TRUPP')
+    + (ph.unrest >= 30 ? `<br><span style="color:var(--red)">\u{26A0}\u{FE0F} OROLIGT — ${it.unrestDays}/${forcesIn(c.id) ? 26 : 14} DAGAR TILL UPPROR</span>` : '');
+  el.appendChild(sub);
+
+  if (pct >= 100) { show(el, true); return; }
+  const btn = document.createElement('button');
+  btn.className = 'btn amber';
+  btn.style.marginTop = '5px';
+  btn.innerHTML = `\u{1F91D} INTEGRERA SNABBARE (+${cost.gain}%)<br>${cost.money} \u{1F4B0} + ${cost.pp} \u{2696}\u{FE0F}`;
+  const blocked = s.res.money < cost.money ? 'FÖR LITE PENGAR'
+    : s.res.pp < cost.pp ? 'FÖR LITE POLITICAL POWER' : null;
+  if (blocked) { btn.disabled = true; btn.title = blocked; }
+  btn.addEventListener('click', () => {
+    if (blocked) { warn(blocked); return; }
+    if (s.res.money < cost.money || s.res.pp < cost.pp) { warn('RESURSERNA RÄCKER INTE LÄNGRE'); refreshInfoPanel(); return; }
+    s.res.money -= cost.money;
+    s.res.pp -= cost.pp;
+    it.pct = Math.min(100, it.pct + cost.gain);
+    it.unrestDays = Math.max(0, it.unrestDays - 3);
+    renderResbar();
+    if (it.pct >= 100) toast(`\u{1F389} ${c.name.toUpperCase()} ÄR FULLT INTEGRERAT!`, 'amber', 8000);
+    else toast(`\u{1F91D} INTEGRATIONEN AV ${c.name.toUpperCase()} DRIVS PÅ — ${Math.floor(it.pct)}%`, 'amber', 5000);
+    applyState();
+    refreshInfoPanel();
+  });
+  el.appendChild(btn);
+  show(el, true);
 }
 
 // Bygg armé i valfritt eget land — kostar pengar + manpower + råvaror,
@@ -836,6 +975,179 @@ function ownedResources() {
   return set;
 }
 
+// ---------- VÄRLDSHISTORIK: allt som händer loggas och går att bläddra i ----------
+function logEvent(text, opts = {}) {
+  state.history ||= [];
+  state.history.unshift({
+    day: state.solo?.clock?.day || state.hostDay || 0,
+    text: String(text).replace(/<[^>]*>/g, ''),
+    mine: !!opts.mine,
+    war: !!opts.war,
+  });
+  if (state.history.length > 300) state.history.length = 300;
+  if ($('#histpanel').classList.contains('show')) renderHistory();
+}
+
+let histFilter = 'all';
+function renderHistory() {
+  const list = $('#histlist');
+  const rows = (state.history || []).filter((h) =>
+    histFilter === 'all' || (histFilter === 'mine' && h.mine) || (histFilter === 'war' && h.war));
+  list.innerHTML = rows.length
+    ? rows.map((h) => `<div class="hrow${h.mine ? ' mine' : ''}${h.war ? ' war' : ''}"><span class="hday">DAG ${h.day}</span> — ${h.text}</div>`).join('')
+    : '<div class="hrow" style="color:var(--holo-dim)">INGET HAR HÄNT ÄN</div>';
+}
+
+$('#histbtn').addEventListener('click', () => {
+  const el = $('#histpanel');
+  const open = !el.classList.contains('show');
+  el.classList.toggle('show', open);
+  if (open) renderHistory();
+});
+$('#histclose').addEventListener('click', () => $('#histpanel').classList.remove('show'));
+document.querySelectorAll('.htab').forEach((b) => b.addEventListener('click', () => {
+  histFilter = b.dataset.h;
+  document.querySelectorAll('.htab').forEach((x) => x.classList.toggle('on', x === b));
+  renderHistory();
+}));
+
+// ---------- KRIGSVARNING: omöjlig att missa när någon går mot DIG ----------
+function warAlert(attId, targetId, why) {
+  const s = state.solo;
+  const a2 = (cid) => state.facts[cid]?.a2;
+  const flag = (cid) => (a2(cid) ? `<img src="https://flagcdn.com/w40/${a2(cid).toLowerCase()}.png" alt="">` : '');
+  $('#watitle').textContent = 'KRIGSFÖRKLARING MOT DIG';
+  $('#wavs').innerHTML = `${flag(attId)} ${cname(attId)} <span style="color:var(--red)">VS</span> ${cname(targetId)} ${flag(targetId)}`;
+  $('#watext').innerHTML = `${why || 'RÄTTFÄRDIGAR KRIG MOT DITT RIKE'}<br>FÖRBERED FÖRSVARET — BYGG TRUPP OCH BEVAKA DERAS ARMÉER`;
+  $('#waralert').classList.add('show');
+  logEvent(`\u{2694} ${cname(attId)} RÄTTFÄRDIGAR KRIG MOT ${cname(targetId)}`, { mine: true, war: true });
+  if (s?.clock) s.clock.paused = true; // pausa så man hinner reagera
+}
+$('#waok').addEventListener('click', () => {
+  $('#waralert').classList.remove('show');
+  const s = state.solo;
+  if (s?.clock) { s.clock.paused = false; renderResbar(); }
+});
+
+// ---------- INTEGRATION av erövrade länder ----------
+// Ett nytt land är oroligt, kostar pengar och ger inget förrän det integrerats.
+function religionFor(cid) {
+  return religionOf(cid, globe.getCountry(cid)?.centroid);
+}
+
+// gränsar landet till resten av riket? (en exklav är mycket svårare att hålla)
+function isAdjacentToRealm(cid) {
+  const s = state.solo;
+  if (!s) return true;
+  const mine = Object.keys(s.claims || {}).filter((x) => x !== cid);
+  if (!mine.length) return true;
+  return globe.bordersAny(cid, mine);
+}
+
+function startIntegration(cid) {
+  const s = state.solo;
+  if (!s || !cid || cid === s.home) return;
+  s.integ ||= {};
+  if (s.integ[cid]) return;
+  const theirIdeo = (state.world?.[cid] || countryIdeology(cid)).ideology;
+  const adj = isAdjacentToRealm(cid);
+  const pct = startPercent(s.nation?.ideology, theirIdeo, religionFor(s.home), religionFor(cid), adj);
+  if (!adj) toast(`\u{2757} ${cname(cid)} SAKNAR LANDGRÄNS TILL DITT RIKE — INTEGRATIONEN BLIR MYCKET SVÅR`, 'red', 9000);
+  s.integ[cid] = { pct, unrestDays: 0 };
+  const p = phaseOf(pct);
+  toast(`\u{1F6A9} ${cname(cid)} ÄR ERÖVRAT — ${p.name}: ${p.desc} (INTEGRATION ${Math.floor(pct)}%)`, 'red', 9000);
+}
+
+function integOf(cid) { return state.solo?.integ?.[cid] || null; }
+
+// har jag trupp i landet? (armén på plats eller en garnison)
+function forcesIn(cid) {
+  const s = state.solo;
+  if (!s) return false;
+  if (s.army?.units.length && s.army.at === cid && !s.armyMoving) return true;
+  return (s.garrisons?.[cid] || []).length > 0;
+}
+
+function hasOfficeIn(cid) { return cityBuildingsIn(cid).includes('integration'); }
+
+// daglig integration + oro + risk för uppror
+function tickIntegration() {
+  const s = state.solo;
+  if (!s?.integ) return;
+  const tier = s.nation?.research?.integration || 0;
+  for (const [cid, it] of Object.entries(s.integ)) {
+    if (!s.claims[cid]) { delete s.integ[cid]; continue; }
+    if (it.pct >= 100) continue;
+    const theirIdeo = (state.world?.[cid] || countryIdeology(cid)).ideology;
+    it.pct = Math.min(100, it.pct + dailyRate({
+      researchTier: tier,
+      office: hasOfficeIn(cid),
+      armyHere: forcesIn(cid),
+      sameIdeo: theirIdeo === s.nation?.ideology,
+      adjacent: isAdjacentToRealm(cid),
+    }));
+    if (it.pct >= 100) {
+      toast(`\u{1F389} ${cname(cid)} ÄR FULLT INTEGRERAT — FULL INKOMST`, 'amber', 9000);
+      applyState();
+      continue;
+    }
+    // djupt ockuperad provins: bryter sig ur om oron får pyra för länge
+    if (it.pct < 20) {
+      it.unrestDays++;
+      const calm = forcesIn(cid) ? 45 : 25;   // trupp på plats håller ordning längre
+      if (it.unrestDays >= Math.floor(calm * 0.6) && !it.warned) {
+        it.warned = true;
+        toast(`\u{26A0}\u{FE0F} ORON VÄXER I ${cname(cid)} — INTEGRERA ELLER SKICKA TRUPP!`, 'red', 9000);
+        logEvent(`\u{26A0}\u{FE0F} ORO I ${cname(cid)} — UPPROR HOTAR`, { mine: true });
+      }
+      if (it.unrestDays >= calm) revolt(cid);
+    } else {
+      it.unrestDays = Math.max(0, it.unrestDays - 1);
+      if (it.unrestDays === 0) it.warned = false;
+    }
+  }
+}
+
+// upproret: har du trupp i landet måste du slå upprorsarmén, annars är landet förlorat
+function revolt(cid) {
+  const s = state.solo;
+  const c = globe.getCountry(cid);
+  if (!c) return;
+  const n = Math.max(3, armySizeOf(state.facts[cid]?.p, cid) - 2);
+  const rebels = Array.from({ length: n }, (_, i) => mkUnit(i % 3 === 2 ? 'TANK' : 'INF', 1));
+  countryArmy(cid).units = rebels;
+  if (forcesIn(cid)) {
+    // trupp på plats → provinsen är i öppet uppror tills du slagit ner det.
+    // Integrationen står stilla och landet ger fortsatt ingenting.
+    const it = s.integ[cid];
+    if (it) { it.pct = Math.min(it.pct, 5); it.unrestDays = 0; it.warned = false; it.revolt = true; }
+    toast(`\u{1F525} UPPROR I ${c.name.toUpperCase()}! SLÅ NER DET — TRYCK PÅ LANDET OCH ANFALL`, 'red', 12000);
+    logEvent(`\u{1F525} UPPROR I ${cname(cid)} — DINA TRUPPER MÅSTE SLÅ NER DET`, { mine: true, war: true });
+  } else {
+    delete s.claims[cid];
+    delete s.integ[cid];
+    delete s.wars[cid];
+    for (const k of Object.keys(s.cityB || {})) if (k.startsWith(cid + ':')) delete s.cityB[k];
+    if (s.garrisons) delete s.garrisons[cid];
+    s.trade = (s.trade || []).filter((d) => d.cid !== cid);
+    toast(`\u{1F4A5} ${c.name.toUpperCase()} HAR BRUTIT SIG UR DITT RIKE — INGEN TRUPP FANNS PÅ PLATS`, 'red', 12000);
+    logEvent(`\u{1F4A5} ${cname(cid)} BRÖT SIG UR DITT RIKE`, { mine: true, war: true });
+    applyState();
+  }
+  refreshInfoPanel();
+}
+
+// slå ner ett pågående uppror i en egen provins
+function crushRevolt(cid) {
+  const s = state.solo;
+  const c = globe.getCountry(cid);
+  if (!c || !s?.army?.units.length || state.battle) return;
+  state.pendingTarget = c;
+  s.prevAt = s.army.at;
+  s.revoltTarget = cid;
+  startBattle('A');
+}
+
 // ---------- stadsbyggnader: hjälpare ----------
 // bara byggnader i länder man FORTFARANDE äger räknas (förlorade länder ger inget)
 function allBuildings() {
@@ -934,10 +1246,26 @@ function tickDay() {
   s.clock.day++;
   const st = s.stats;
   s.res.money = Math.max(0, s.res.money + Math.round(10 + st.income.total * 0.3));
-  // varje ägt land bidrar med inkomst efter sin ekonomiska tyngd — rika länder är feta byten
+  // varje ägt land bidrar efter sin ekonomiska tyngd — MEN erövrade länder ger
+  // inget förrän de integrerats: i ockupationsfasen kostar de i stället.
+  let occUnrest = 0;
   for (const cid of Object.keys(s.claims)) {
-    s.res.money += countryIncomeOf(state.facts[cid]?.p, cid);
+    const base = countryIncomeOf(state.facts[cid]?.p, cid);
+    const it = integOf(cid);
+    if (!it) { s.res.money += base; continue; }
+    const ph = phaseOf(it.pct);
+    s.res.money += Math.round(base * ph.income);
+    if (ph.pp < 0) s.res.pp += Math.round(2 * ph.pp);   // ockupation kostar pol. makt
+    occUnrest += ph.unrest * 0.25;                      // oron RÄKNAS OM varje dag
   }
+  tickIntegration();
+  // integrationskontorens upkeep
+  const offices = allBuildings().filter((b) => BUILDINGS[b]?.upkeep).length;
+  s.res.money -= offices * 6;
+  // ockupationsoron sätts (inte ackumuleras) och saldon får aldrig gå under noll
+  if (occUnrest > 0) s.occUnrest = Math.min(45, occUnrest); else delete s.occUnrest;
+  s.res.money = Math.max(0, s.res.money);
+  s.res.pp = Math.max(0, s.res.pp);
   s.res.man += Math.max(0, Math.round(2 + st.manpower.total * 0.06));
   s.res.rp += Math.max(0, Math.round(1 + Math.max(0, st.research.total) * 0.08));
   s.res.pp += Math.max(0, Math.round(2 + st.polpower.total * 0.04));
@@ -1178,6 +1506,30 @@ function nearestCountryIds(c, n, ctx) {
     .map((x) => x.id);
 }
 
+// AI-imperier vågar sig också på SPELARENS länder när de blivit starka nog.
+// Då slår den stora krigsvarningen till så man hinner förbereda försvaret.
+function maybeAttackPlayer(ctx) {
+  const { world } = ctx;
+  const mine = state.mode === 'tv'
+    ? state.players.flatMap((p) => (p.claims || []).map((cid) => ({ cid, who: p.name })))
+    : Object.keys(state.solo?.claims || {}).map((cid) => ({ cid, who: 'DU' }));
+  if (!mine.length) return;
+  // bara imperier med militär tyngd och något att vinna
+  const cands = Object.keys(world.aiEmpires || {}).filter((cid) => (world.dev?.[cid]?.mil || 0) >= 2);
+  if (!cands.length) return;
+  const att = cands[Math.floor(Math.random() * cands.length)];
+  if (world.aiWars.some((w) => w.att === att) || world.moving.some((m) => m.att === att)) return;
+  const reachable = mine.filter((m) => aiCanReach(world, att, m.cid));
+  if (!reachable.length) return;
+  const tgt = reachable[Math.floor(Math.random() * reachable.length)];
+  if (world.aiWars.some((w) => w.target === tgt.cid)) return;
+  world.aiWars.push({ att, target: tgt.cid, ticks: 3 + Math.floor(Math.random() * 3), vsPlayer: true });
+  markKnown(att, tgt.cid);
+  if (state.mode !== 'tv') warAlert(att, tgt.cid, `${cname(att)} VILL LÄGGA ${cname(tgt.cid)} UNDER SIG`);
+  else toast(`\u{2620}\u{FE0F} ${cname(att)} FÖRKLARAR KRIG MOT ${tgt.who.toUpperCase()} (${cname(tgt.cid)})`, 'red', 10000);
+  logEvent(`\u{2620}\u{FE0F} ${cname(att)} FÖRKLARAR KRIG MOT ${cname(tgt.cid)}`, { mine: true, war: true });
+}
+
 function aiWorldTick() {
   const ctx = worldCtx();
   const { world, blocked } = ctx;
@@ -1211,8 +1563,12 @@ function aiWorldTick() {
     advanceGoals(ctx);
   }
   tickVotes(ctx);
+  if (Math.random() < 0.08) maybeAttackPlayer(ctx);
   tickAiWars(ctx);
   tickDefenses(ctx);
+  tickAiIntegration(ctx);
+  aiMergeArmies(ctx);
+  updateSpaceNations();
   updateCountryArmyMarkers();
 }
 
@@ -1230,25 +1586,149 @@ function aiElectLeader(ctx) {
 
 // varje land har en miniekonomi och forskar utifrån sin läggning
 const MIL_IDEOLOGIES = new Set(['nationalism', 'fascism', 'imperialism', 'communism', 'natsoc', 'monarchism']);
+// Varje land har en egen dröm: militärmakt, rikedom, välfärd eller rymden.
+// Doktrinen lottas en gång per land så att alla inte jagar samma sak.
+const AI_DREAMS = ['mil', 'eco', 'wel', 'space'];
+function aiDream(world, cid) {
+  world.dream ||= {};
+  if (!world.dream[cid]) {
+    const ideo = (state.world?.[cid] || countryIdeology(cid)).ideology;
+    const bias = MIL_IDEOLOGIES.has(ideo) ? ['mil', 'mil', 'eco', 'space']
+      : ideo === 'socialdemocracy' || ideo === 'socialism' ? ['wel', 'wel', 'eco', 'space']
+      : ['eco', 'wel', 'space', 'mil'];
+    world.dream[cid] = bias[Math.floor(Math.random() * bias.length)];
+  }
+  return world.dream[cid];
+}
+
 function aiDevTick(ctx) {
   const { blocked } = ctx;
   const world = ctx.world;
-  const others = globe.countries.filter((c) => !blocked.has(c.id));
+  const all = globe.countries.filter((c) => !blocked.has(c.id));
+  // Utvecklingen KONCENTRERAS: oftast fortsätter ett land som redan satsat.
+  // Annars fastnar alla på nivå 1 och ingen når rymden eller moderna arméer.
+  const started = all.filter((c) => world.dev[c.id]);
+  const others = started.length >= 8 && Math.random() < 0.7 ? started : all;
   const c = others[Math.floor(Math.random() * others.length)];
   if (!c) return;
   const ideo = (state.world?.[c.id] || countryIdeology(c.id)).ideology;
   const hasGoal = !!world.aiGoals[c.id];
-  const focus = hasGoal || MIL_IDEOLOGIES.has(ideo) ? 'mil'
-    : (ideo === 'socialdemocracy' || ideo === 'socialism') ? (Math.random() < 0.6 ? 'wel' : 'eco')
-    : (Math.random() < 0.6 ? 'eco' : 'wel');
-  const d = (world.dev[c.id] ||= { mil: 0, eco: 0, wel: 0 });
-  if (d[focus] >= 4) return;
-  d[focus]++;
-  const label = { mil: 'KRIGSINDUSTRI', eco: 'EKONOMI', wel: 'VÄLFÄRD' }[focus];
+  const dream = aiDream(world, c.id);
+  // hotade länder rustar oavsett dröm
+  const focus = hasGoal || world.aiWars.some((w) => w.target === c.id) ? 'mil'
+    : Math.random() < 0.7 ? dream
+    : AI_DREAMS[Math.floor(Math.random() * AI_DREAMS.length)];
+  const d = (world.dev[c.id] ||= { mil: 0, eco: 0, wel: 0, space: 0 });
+  if ((d[focus] || 0) >= 4) { aiIdeologyShift(world, c.id); return; }
+  d[focus] = (d[focus] || 0) + 1;
+  const label = { mil: 'KRIGSINDUSTRI', eco: 'EKONOMI', wel: 'VÄLFÄRD', space: 'RYMDPROGRAM' }[focus];
   toast(`\u{1F52C} ${c.name.toUpperCase()} SATSAR PÅ ${label} — NIVÅ ${d[focus]}`, '', 5000);
+  logEvent(`\u{1F52C} ${cname(c.id)} SATSAR PÅ ${label} (NIVÅ ${d[focus]})`);
   if (focus === 'mil') {
     const ca = countryArmy(c.id);
     if (ca.units.length < armyCap(c.id)) ca.units.push(mkUnit(d.mil >= 2 ? 'TANK' : 'INF', 1));
+  }
+  // rymdprogrammet i mål → landet skjuter upp satelliter som syns på globen
+  if (focus === 'space' && d.space >= 2) {
+    world.spaceNations ||= [];
+    if (!world.spaceNations.includes(c.id)) {
+      world.spaceNations.push(c.id);
+      toast(`\u{1F680} ${c.name.toUpperCase()} HAR SKJUTIT UPP SIN FÖRSTA SATELLIT!`, 'amber', 8000);
+      logEvent(`\u{1F680} ${cname(c.id)} SKJUTER UPP SIN FÖRSTA SATELLIT`);
+      updateSpaceNations();
+    }
+  }
+}
+
+// Länder byter ideologi när de kört fast — för att låsa upp nya fördelar
+function aiIdeologyShift(world, cid) {
+  if (Math.random() > 0.25) return;
+  const wstate = (state.world ||= {});
+  const wn = (wstate[cid] ||= { laws: defaultLaws(), ...countryIdeology(cid) });
+  const dream = aiDream(world, cid);
+  const wanted = {
+    mil: ['nationalism', 'imperialism', 'fascism', 'monarchism'],
+    eco: ['liberalism', 'conservatism', 'democracy'],
+    wel: ['socialdemocracy', 'socialism', 'democracy'],
+    space: ['democracy', 'liberalism', 'communism', 'socialdemocracy'],
+  }[dream];
+  const next = wanted[Math.floor(Math.random() * wanted.length)];
+  if (!IDEOLOGIES[next] || next === wn.ideology) return;
+  const old = IDEOLOGIES[wn.ideology]?.name || '?';
+  wn.ideology = next;
+  wn.doctrine = Object.keys(IDEOLOGIES[next].doctrines || {})[0] || wn.doctrine;
+  toast(`\u{1F5F3}\u{FE0F} ${cname(cid)} BYTER IDEOLOGI: ${old.toUpperCase()} \u{2192} ${IDEOLOGIES[next].name.toUpperCase()}`, '', 7000);
+  logEvent(`\u{1F5F3}\u{FE0F} ${cname(cid)} BYTER IDEOLOGI TILL ${IDEOLOGIES[next].name.toUpperCase()}`);
+  if (selectedCountry?.id === cid) refreshInfoPanel();
+}
+
+// satellitnationernas banor ritas på globen (syns i TV-läget och för spelare
+// med tillräcklig satellittäckning)
+function updateSpaceNations() {
+  const world = worldCtx().world;
+  const list = (world?.spaceNations || []).map((cid) => ({
+    cid, ll: capitalLL(cid), color: world.aiEmpires?.[cid]?.color || '#cfe8ff',
+  }));
+  globe.setSpaceNations(list);
+}
+
+// AI-arméer slår ihop sig när en större styrka hotar i närheten
+function aiMergeArmies(ctx) {
+  const { world } = ctx;
+  const empires = Object.keys(world.aiEmpires || {});
+  for (const core of empires) {
+    const emp = world.aiEmpires[core];
+    if (!emp?.owned?.length) continue;
+    // hittar imperiet ett hot inom räckhåll drar det ihop trupperna till det landet
+    const lands = [core, ...emp.owned];
+    const threat = (world.moving || []).find((m) => lands.includes(m.target) && !m.defensive);
+    if (!threat) continue;
+    const dest = countryArmy(threat.target);
+    if (dest.units.length >= armyCap(threat.target)) continue;
+    for (const cid of lands) {
+      if (cid === threat.target) continue;
+      const src = countryArmy(cid);
+      if (src.units.length <= 3) continue;
+      const move = src.units.splice(0, Math.min(3, src.units.length - 3));
+      if (!move.length) continue;
+      dest.units.push(...move);
+      toast(`\u{1F91D} ${emp.name.toUpperCase()} SLÅR IHOP SINA ARMÉER I ${cname(threat.target)} (${dest.units.length} ENHETER)`, 'red', 6000);
+      logEvent(`\u{1F91D} ${emp.name.toUpperCase()} SAMLAR SINA ARMÉER I ${cname(threat.target)}`, { war: true });
+      break;
+    }
+  }
+}
+
+// AI-imperiernas provinser har egna integrationsmätare — och gör uppror
+function tickAiIntegration(ctx) {
+  const { world } = ctx;
+  world.aiInteg ||= {};
+  for (const [cid, conq] of Object.entries(world.aiOwned || {})) {
+    const it = (world.aiInteg[cid] ||= {
+      pct: startPercent(
+        (state.world?.[conq] || countryIdeology(conq)).ideology,
+        (state.world?.[cid] || countryIdeology(cid)).ideology,
+        religionFor(conq), religionFor(cid)),
+      unrestDays: 0,
+    });
+    if (it.pct >= 100) continue;
+    it.pct = Math.min(100, it.pct + 0.35 + 0.05 * (world.dev?.[conq]?.eco || 0));
+    if (it.pct < 40) {
+      it.unrestDays++;
+      if (it.unrestDays > 30 + Math.floor(Math.random() * 20)) {
+        // provinsen sliter sig loss ur imperiet
+        delete world.aiOwned[cid];
+        delete world.aiInteg[cid];
+        const emp = world.aiEmpires[conq];
+        if (emp) emp.owned = emp.owned.filter((x) => x !== cid);
+        countryArmy(cid).units = Array.from({ length: 4 }, (_, i) => mkUnit(i === 3 ? 'TANK' : 'INF', 1));
+        toast(`\u{1F525} ${cname(cid)} GÖR UPPROR OCH BRYTER SIG UR ${(emp?.name || cname(conq)).toUpperCase()}!`, 'amber', 9000);
+        logEvent(`\u{1F525} ${cname(cid)} BRÖT SIG UR ${(emp?.name || cname(conq)).toUpperCase()}`, { war: true });
+        worldChanged();
+      }
+    } else {
+      it.unrestDays = 0;
+    }
   }
 }
 
@@ -1276,12 +1756,15 @@ function updateCountryArmyMarkers() {
     const n = (world.countryArmies?.[cid]?.units || []).length;
     if (!n) continue;
     const conq = world.aiOwned[cid];
+    // spionageforskningen avgör hur mycket brickan avslöjar (TV:n ser allt)
+    const esp = state.mode === 'tv' ? 4 : espionageTier(state.solo?.nation);
     list.push({
       ll,
       // erövrade länders arméer byggs av imperiet → imperiets flagga, inte landets
-      a2: state.facts[conq || cid]?.a2 || null,
+      a2: esp >= 2 ? (state.facts[conq || cid]?.a2 || null) : null,
       color: conq ? (world.aiEmpires[conq]?.color || '#7f8c8d') : '#8a97a5',
-      n,
+      comp: esp >= 4 ? compOf(world.countryArmies[cid].units) : null,
+      n: esp >= 3 ? n : null,
     });
     if (list.length >= 40) break;
   }
@@ -1337,16 +1820,25 @@ function advanceGoals(ctx) {
   const goal = world.aiGoals[cid];
   if (world.aiOwned[cid]) { delete world.aiGoals[cid]; return; }
   if (world.aiWars.some((w) => w.att === cid) || world.moving.some((m) => m.att === cid)) return;
-  // smart målval: ta det svagaste kvarvarande landet först
+  // smart målval: bara mål inom logistisk räckvidd, svagaste först
   const free = goal.targets.filter((t) => countryFree(t, ctx));
-  free.sort((a, b) => forceValue(countryArmy(a).units) - forceValue(countryArmy(b).units));
-  const next = free[0];
+  const reachable = free.filter((t) => aiCanReach(world, cid, t));
+  reachable.sort((a, b) => {
+    const da = aiDistanceTo(world, cid, a), db = aiDistanceTo(world, cid, b);
+    return (forceValue(countryArmy(a).units) + da * 6) - (forceValue(countryArmy(b).units) + db * 6);
+  });
+  const next = reachable[0];
+  if (!next && free.length) {
+    // målen finns kvar men ligger utanför räckhåll — vänta tills riket vuxit närmare
+    return;
+  }
   if (!next) {
     delete world.aiGoals[cid];
     toast(`\u{1F3C1} ${cname(cid)} HAR FULLBORDAT ${goal.name.toUpperCase()}`, 'amber', 6000);
     return;
   }
   world.aiWars.push({ att: cid, target: next, ticks: 2 + Math.floor(Math.random() * 3), goal });
+  logEvent(`\u{2696}\u{FE0F} ${cname(cid)} RÄTTFÄRDIGAR KRIG MOT ${cname(next)} (${goal.name.toUpperCase()})`, { war: true });
   markKnown(cid, next);
   toast(`\u{2696}\u{FE0F} ${cname(cid)} RÄTTFÄRDIGAR KRIG MOT ${cname(next)} (${goal.name.toUpperCase()})`, 'red', 7000);
 }
@@ -1378,6 +1870,26 @@ function craftForce(budget, defUnits, cid) {
     else push('INF');
   }
   return units;
+}
+
+// AI:ns logistiska räckvidd: mätt från NÄRMASTE eget territorium (kolonier och
+// erövringar räknas som baser) och begränsad av landets militära utveckling.
+// Storbritannien marscherar alltså inte till Sydafrika utan baser på vägen.
+function aiReach(world, cid) {
+  const mil = world.dev?.[cid]?.mil || 0;
+  return 0.34 + 0.13 * mil;              // ~2 grannländer, upp till halva jorden vid nivå 4
+}
+
+function aiDistanceTo(world, cid, targetId) {
+  const to = capitalLL(targetId);
+  const bases = [cid, ...(world.aiEmpires?.[cid]?.owned || [])];
+  let min = Infinity;
+  for (const b of bases) min = Math.min(min, d3.geoDistance(capitalLL(b), to));
+  return min;
+}
+
+function aiCanReach(world, cid, targetId) {
+  return aiDistanceTo(world, cid, targetId) <= aiReach(world, cid);
 }
 
 // AI:n ger upp ett mål som visat sig för hårt och går vidare till nästa
@@ -1417,7 +1929,18 @@ function tickAiWars(ctx) {
       abandonTarget(world, w.att, w.target, `\u{1F6AB} ${cname(w.att)} AVSTÅR FRÅN ATT ANFALLA ${cname(w.target)} — FÖRSVARET ÄR FÖR STARKT`);
       continue;
     }
+    // hann målet hamna utanför räckhåll (bas förlorad)? blås av fälttåget
+    if (!aiCanReach(world, w.att, w.target)) {
+      abandonTarget(world, w.att, w.target, `\u{1F69B} ${cname(w.att)} BLÅSER AV FÄLTTÅGET MOT ${cname(w.target)} — FÖR LÅNGT FRÅN FÖRSÖRJNINGEN`);
+      continue;
+    }
     const units = craftForce(w.mob, countryArmy(w.target).units, w.att);
+    // marscher nära räckviddsgränsen kostar trupp i svinn
+    const stretch = aiDistanceTo(world, w.att, w.target) / aiReach(world, w.att);
+    if (stretch > 0.75) {
+      const lose = Math.min(units.length - 2, Math.round((stretch - 0.75) * 8));
+      if (lose > 0) units.splice(0, lose);
+    }
     const from = capitalLL(w.att), to = capitalLL(w.target);
     const dist = d3.geoDistance(from, to);
     world.moving.push({
@@ -1451,6 +1974,35 @@ function checkArrivals() {
         toast(`\u{1F6E1}\u{FE0F} FÖRSTÄRKNINGAR FRAMME I ${cname(m.target)} — FÖRSVARET NU ${ca.units.length} ENHETER`, 'red', 6000);
         if (selectedCountry?.id === m.target) refreshInfoPanel();
       }
+      updateMovingMarkers();
+      continue;
+    }
+    // invasion av SPELARENS land: garnisonen försvarar, annars faller landet
+    const s = state.solo;
+    if (s?.claims[m.target]) {
+      const gar = s.garrisons?.[m.target] || [];
+      const home = s.army?.units.length && s.army.at === m.target && !s.armyMoving ? s.army.units : [];
+      const defenders = [...gar, ...home].map((u) => ({ ...u, side: 1 }));
+      const r0 = autoResolve(m.units, defenders);
+      if (r0.winner === 0) {
+        delete s.claims[m.target];
+        delete s.integ?.[m.target];
+        if (gar.length) delete s.garrisons[m.target];
+        if (home.length) { s.army.units = []; }
+        countryArmy(m.target).units = r0.survivorsA.map((u) => ({ ...u, side: 1 }));
+        (world.aiOwned ||= {})[m.target] = m.att;
+        ensureAiEmpire(world, m.att).owned.push(m.target);
+        toast(`\u{1F4A5} ${cname(m.att)} HAR TAGIT ${cname(m.target)} FRÅN DIG!`, 'red', 12000);
+        logEvent(`\u{1F4A5} ${cname(m.att)} EROVRADE ${cname(m.target)} FRÅN DIG`, { mine: true, war: true });
+      } else {
+        const left = r0.survivorsD.map(({ type, hp }) => ({ type, hp }));
+        if (home.length) s.army.units = left.slice(0, home.length);
+        if (gar.length) s.garrisons[m.target] = left.slice(home.length);
+        toast(`\u{1F6E1}\u{FE0F} DITT FÖRSVAR SLOG TILLBAKA ${cname(m.att)}S INVASION AV ${cname(m.target)}!`, 'amber', 10000);
+        logEvent(`\u{1F6E1}\u{FE0F} DU SLOG TILLBAKA ${cname(m.att)} I ${cname(m.target)}`, { mine: true, war: true });
+      }
+      updateArmyMarker();
+      applyState();
       updateMovingMarkers();
       continue;
     }
@@ -2243,6 +2795,7 @@ $('#demConfirm').addEventListener('click', () => {
 
     if (cb.demands.annex && checked('annex')) {
       s.claims[target.id] = { color: SOLO_COLOR, playerName: 'DU' };
+      startIntegration(target.id);
       got.push('ANNEKTERAT');
     }
     if (cb.demands.puppet && checked('puppet')) {
@@ -2262,6 +2815,7 @@ $('#demConfirm').addEventListener('click', () => {
       const emp = s.aiEmpires[target.id];
       if (emp) emp.owned = [];
       s.claims[target.id] = { color: SOLO_COLOR, playerName: 'DU' };
+      startIntegration(target.id);
       got.push(`${freed} LÄNDER BEFRIADE`);
     }
   }
@@ -2769,7 +3323,7 @@ function startWorldLoad() {
 }
 
 // ---------- TV-läge (värd) ----------
-function startTV() {
+function startTV(wantCode) {
   state.mode = 'tv';
   state.hostWorld = { aiOwned: {}, aiEmpires: {}, countryArmies: {}, aiWars: [], moving: [], aiGoals: {}, votes: [] };
   state.battles = { active: [], queued: [] };
@@ -2787,6 +3341,7 @@ function startTV() {
 
   net.host((code) => {
     renderTopbar();
+    saveGame();
     const url = location.protocol === 'file:'
       ? null
       : location.origin + location.pathname + '?room=' + code;
@@ -2817,7 +3372,7 @@ function startTV() {
     }
     show($('#qrpanel'));
     toast('RUM SKAPAT — SKANNA QR MED MOBILEN', 'amber', 6000);
-  });
+  }, wantCode);
 
   net.on({
     peerOpen: () => {},
@@ -2891,6 +3446,10 @@ function startTV() {
         player.docKey = d?.docKey || '';
         player.leader = String(d?.leader || '').slice(0, 40);
         player.leaderDesc = String(d?.leaderDesc || '').slice(0, 60);
+        // utropat rike ska synas för ALLA — på TV:n, i rostern och i landsfakta
+        player.formation = d?.formation && d.formation.name
+          ? { name: String(d.formation.name).slice(0, 40), icon: String(d.formation.icon || '').slice(0, 4) }
+          : null;
         player.factionIcon = d?.faction || '';
         player.boost = d?.boost && typeof d.boost === 'object' ? d.boost : {};
         player.kenneyRow = Number(d?.kenneyRow) || 8;
@@ -3211,7 +3770,10 @@ function startPlayer(name, code) {
         if (state.solo && me) {
           state.solo.claims = {};
           for (const cid of (me.claims || [])) {
-            state.solo.claims[cid] = { color: me.color, playerName: 'DU', puppet: me.puppets?.includes(cid) };
+            const isPuppet = me.puppets?.includes(cid);
+            state.solo.claims[cid] = { color: me.color, playerName: 'DU', puppet: isPuppet };
+            // nyvunnet land (även via PvP) ska integreras — lydstater styr sig själva
+            if (cid !== state.solo.home && !isPuppet && !state.solo.integ?.[cid]) startIntegration(cid);
           }
         }
         if (d.battles) renderBattleFeed(d.battles);
@@ -3356,6 +3918,53 @@ function backToLobby(by) {
   applyState();
 }
 
+// ---------- SPARAT SPEL: ett pågående parti överlever en omladdning ----------
+const GAME_KEY = 'imperium.game';
+function saveGame() {
+  try {
+    if (state.mode === 'solo' && state.solo?.nation) {
+      const s = state.solo;
+      localStorage.setItem(GAME_KEY, JSON.stringify({
+        mode: 'solo', at: Date.now(), day: s.clock?.day || 1, version: VERSION,
+        solo: {
+          claims: s.claims, home: s.home, army: s.army, wars: s.wars, reparations: s.reparations,
+          aiOwned: s.aiOwned, aiEmpires: s.aiEmpires, permMods: s.permMods, nation: s.nation,
+          res: s.res, extra: s.extra, faction: s.faction, factionMods: s.factionMods,
+          leader: s.leader, leaderMods: s.leaderMods, buildQueue: s.buildQueue,
+          researchQueue: s.researchQueue, garrisons: s.garrisons, cityB: s.cityB, trade: s.trade,
+          integ: s.integ, countryArmies: s.countryArmies, aiWars: s.aiWars, aiGoals: s.aiGoals,
+          dev: s.dev, dream: s.dream, spaceNations: s.spaceNations, aiInteg: s.aiInteg,
+          known: [...(s.known || [])],
+        },
+        world: state.world || {},
+        history: (state.history || []).slice(0, 120),
+      }));
+    } else if (state.mode === 'tv') {
+      const w = state.hostWorld;
+      localStorage.setItem(GAME_KEY, JSON.stringify({
+        mode: 'tv', at: Date.now(), code: net.code, version: VERSION,
+        players: state.players.map(({ ...p }) => ({ ...p, offline: true })),
+        hostWorld: {
+          aiOwned: w.aiOwned, aiEmpires: w.aiEmpires, countryArmies: w.countryArmies,
+          aiWars: w.aiWars, aiGoals: w.aiGoals, dev: w.dev, dream: w.dream, leaders: w.leaders,
+          spaceNations: w.spaceNations, aiInteg: w.aiInteg, fails: w.fails, known: [...(w.known || [])],
+        },
+        world: state.world || {},
+        history: (state.history || []).slice(0, 120),
+      }));
+    }
+  } catch (e) { /* fullt lager */ }
+}
+
+function loadGame() {
+  try {
+    const raw = localStorage.getItem(GAME_KEY);
+    if (!raw) return null;
+    const g = JSON.parse(raw);
+    return g && Date.now() - (g.at || 0) < 24 * 3600e3 ? g : null;
+  } catch (e) { return null; }
+}
+
 // ---------- sessionsminne: tappar man kontakten kan man återuppta sitt spel ----------
 const SESS_KEY = 'imperium.session';
 function saveSession() {
@@ -3367,7 +3976,7 @@ function saveSession() {
       home: s.home, nation: s.nation, res: s.res, extra: s.extra, permMods: s.permMods,
       faction: s.faction, factionMods: s.factionMods, leader: s.leader, leaderMods: s.leaderMods,
       cityB: s.cityB, trade: s.trade, buildQueue: s.buildQueue, researchQueue: s.researchQueue,
-      garrisons: s.garrisons, army: s.army, day: s.clock?.day || 1,
+      garrisons: s.garrisons, army: s.army, integ: s.integ, wars: s.wars, day: s.clock?.day || 1,
     }));
   } catch (e) { /* privat läge / fullt lager — strunt samma */ }
 }
@@ -3399,6 +4008,8 @@ function restoreSession(snap, home) {
   s.buildQueue = snap.buildQueue || [];
   s.researchQueue = snap.researchQueue || [];
   s.garrisons = snap.garrisons || {};
+  s.integ = snap.integ || {};
+  s.wars = snap.wars || {};
   s.army = snap.army || { units: [], ll: capitalLL(home), at: home };
   s.clock = { day: snap.day || 1, paused: false, acc: 0, msPerDay: 2000 };
   if (s.faction) applyFaction(FACTIONS[s.faction]);
@@ -3423,6 +4034,7 @@ function startNationSync() {
       docKey: s.nation.doctrine || '',
       leader: s.leader?.n || '',
       leaderDesc: s.leader ? leaderDesc(s.leader) : '',
+      formation: s.nation.formation ? { name: s.nation.formation.name, icon: s.nation.formation.icon } : null,
       faction: FACTIONS[s.faction]?.icon || '',
       boost: battleBoost(),                       // stridsbonus, så PvP blir rättvist
       kenneyRow: FACTIONS[s.faction]?.kenneyRow ?? 8,
@@ -3521,8 +4133,53 @@ function closeSpectate() {
 
 $('#bClose').addEventListener('click', () => closeSpectate());
 
+// Återuppta ett pågående parti efter omladdning (nya versionen behåller spelet)
+function resumeGame(g) {
+  if (!g) return false;
+  if (g.mode === 'solo') {
+    startSolo(true);
+    const pending = () => {
+      if (!globe.countries.length) { setTimeout(pending, 400); return; }
+      const s = state.solo;
+      Object.assign(s, g.solo, {
+        known: new Set(g.solo.known || []),
+        clock: { day: g.day || 1, paused: false, acc: 0, msPerDay: 2000 },
+        moving: [], votes: [],           // marscher går på wall-clock och kan inte sparas
+      });
+      state.world = g.world || {};
+      state.history = g.history || [];
+      if (s.faction) applyFaction(FACTIONS[s.faction]);
+      recomputeNation();
+      $('#resbar').style.display = 'flex';
+      renderResbar();
+      renderBuildCorner();
+      updateArmyMarker();
+      applyState();
+      toast(`\u{21BB} SPELET ÅTERUPPTAGET — DAG ${s.clock.day}, ${Object.keys(s.claims).length} LÄNDER`, 'amber', 8000);
+    };
+    pending();
+    return true;
+  }
+  if (g.mode === 'tv') {
+    startTV(g.code);
+    const pending = () => {
+      if (!globe.countries.length) { setTimeout(pending, 400); return; }
+      Object.assign(state.hostWorld, g.hostWorld, { known: new Set(g.hostWorld?.known || []), moving: [], votes: [], defenses: [] });
+      state.players = g.players || [];
+      state.world = g.world || {};
+      state.history = g.history || [];
+      applyState();
+      broadcastState();
+      toast(`\u{21BB} SPELET ÅTERUPPTAGET — SPELARNA KAN ANSLUTA MED SAMMA NAMN`, 'amber', 10000);
+    };
+    pending();
+    return true;
+  }
+  return false;
+}
+
 // ---------- erövringsläge (solo-prototyp) ----------
-function startSolo() {
+function startSolo(resuming) {
   state.mode = 'solo';
   state.solo = {
     claims: {}, home: null, army: null, prevAt: null,
@@ -3543,7 +4200,7 @@ function startSolo() {
   startWorldLoad();
   renderTopbar();
   announceVersion();
-  toast('VÄLJ DITT HEMLAND — KLICKA PÅ ETT LAND', 'amber', 6000);
+  if (!resuming) toast('VÄLJ DITT HEMLAND — KLICKA PÅ ETT LAND', 'amber', 6000);
 }
 
 // ---------- meny + start ----------
@@ -3556,8 +4213,21 @@ function announceVersion() {
 wireToggles();
 renderLegend();
 
-$('#btnTV').addEventListener('click', startTV);
-$('#btnSolo').addEventListener('click', startSolo);
+$('#btnTV').addEventListener('click', () => startTV());
+$('#btnSolo').addEventListener('click', () => startSolo());
+
+// pågående parti? erbjud att fortsätta där man var
+const savedGame = loadGame();
+if (savedGame) {
+  const b = $('#btnContinue');
+  b.innerHTML = savedGame.mode === 'tv'
+    ? `&#8635; FORTSÄTT TV-SPELET (RUM ${savedGame.code || '?'})`
+    : `&#8635; FORTSÄTT SPELET (DAG ${savedGame.day || 1})`;
+  b.style.display = 'block';
+  b.addEventListener('click', () => resumeGame(savedGame));
+}
+// spara partiet regelbundet så en omladdning aldrig kostar spelet
+setInterval(saveGame, 8000);
 // har man en sparad session erbjuds den direkt i anslutningsrutan
 function refreshResumeBtn() {
   const snap = loadSession();

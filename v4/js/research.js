@@ -150,6 +150,15 @@ export const RESEARCH = {
       { name: 'Globalt satellitnätverk', desc: 'TOTAL TÄCKNING — HELA JORDEN BEVAKAS', mods: { research: 14, milpower: 10 } },
     ],
   },
+  integration: {
+    name: 'Integration', icon: '\u{1F91D}', group: 'civil',
+    tiers: [
+      { name: 'Språkreform', desc: 'EROVRADE LÄNDER INTEGRERAS SNABBARE OCH BILLIGARE', mods: { integration: 5 } },
+      { name: 'Medborgarskapsprogram', desc: 'SNABBARE INTEGRATION + LÄGRE KOSTNAD', mods: { integration: 8, stability: 4 } },
+      { name: 'Kulturell assimilering', desc: 'ÄNNU SNABBARE INTEGRATION', mods: { integration: 12, unrest: -6 } },
+      { name: 'Enad nation', desc: 'MAXIMAL INTEGRATIONSTAKT', mods: { integration: 18, unrest: -10, stability: 8 } },
+    ],
+  },
   espionage: {
     name: 'Espionage & Intelligence', icon: '\u{1F575}\u{FE0F}', group: 'militar',
     tiers: [

@@ -33,10 +33,13 @@ export class Net {
   on(h) { this.handlers = { ...this.handlers, ...h }; }
   _emit(name, ...a) { this.handlers[name]?.(...a); }
 
-  host(onReady) {
+  // wantCode: försök återta samma rumskod så ett pågående spel kan fortsätta
+  host(onReady, wantCode) {
     this.mode = 'host';
+    let first = wantCode && /^[A-Z0-9]{4}$/.test(wantCode) ? wantCode : null;
     const tryCode = () => {
-      const code = randomCode();
+      const code = first || randomCode();
+      first = null;
       const peer = new Peer(PREFIX + code, PEER_OPTS);
       peer.on('open', () => {
         this.peer = peer;

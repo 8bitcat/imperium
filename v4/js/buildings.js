@@ -10,6 +10,7 @@ export const BUILDINGS = {
   bank: { name: 'BANK', icon: '\u{1F3E6}', money: 220, days: 5, daily: { money: 8 }, desc: '+8 \u{1F4B0} PER DAG' },
   rekryt: { name: 'REKRYTERINGSKONTOR', icon: '\u{1F9CD}', money: 150, days: 4, daily: { man: 1 }, desc: '+1 \u{1F9CD} PER DAG' },
   marknad: { name: 'HANDELSMARKNAD', icon: '\u{1F91D}', money: 200, days: 5, tradeSlot: 1, desc: '+1 HANDELSAVTAL' },
+  integration: { name: 'INTEGRATIONSKONTOR', icon: '\u{1F3DB}\u{FE0F}', money: 260, days: 6, upkeep: 6, office: true, desc: 'INTEGRERAR LANDET SNABBARE (6 \u{1F4B0}/DAG)' },
   gruva: { name: 'GRUVA', icon: '\u{26CF}\u{FE0F}', money: 240, days: 6, resource: 'JARN', research: ['economy', 1], desc: 'PRODUCERAR JÄRN' },
   raffinaderi: { name: 'RAFFINADERI', icon: '\u{1F6E2}\u{FE0F}', money: 320, days: 7, resource: 'OLJA', research: ['economy', 2], desc: 'PRODUCERAR OLJA' },
 };

@@ -84,6 +84,8 @@
     pointer-events: none;
   }
   #topbar .right { color: var(--amber); text-shadow: 0 0 8px rgba(255,176,46,0.5); }
+  /* topbaren släpper igenom klick till globen — utom hamburgerknappen */
+  #histbtn { pointer-events: auto; }
 
   #roster { top: 56px; left: 10px; min-width: 190px; max-width: 46vw; display: none; }
   #roster .row { display: flex; align-items: center; gap: 7px; margin: 4px 0; }
@@ -215,6 +217,60 @@
   button.feedrow:hover { background: rgba(60, 42, 8, 0.8); }
   button.feedrow.on { border-color: var(--holo); color: var(--holo); }
   button.feedrow.on small { color: var(--holo); }
+  /* integrationen av erövrade länder */
+  #finteg { border: 1px solid rgba(57,215,255,0.3); padding: 7px; margin: 7px 0; }
+  #finteg .ihead { font-size: 7px; color: var(--amber); line-height: 1.9; }
+  #finteg .ibar { height: 9px; border: 1px solid var(--holo-faint); margin: 5px 0; background: rgba(0,0,0,0.4); }
+  #finteg .ifill { height: 100%; background: linear-gradient(90deg, #b8452f, #ffb02e, #4ae37a); }
+  #finteg .ineg { height: 100%; background: repeating-linear-gradient(45deg, #7a2020, #7a2020 3px, #4a1414 3px, #4a1414 6px); }
+  #finteg .isub { font-size: 6px; color: var(--holo-dim); line-height: 1.9; }
+  #finteg .iphases { display: flex; gap: 3px; margin: 4px 0; }
+  #finteg .iph {
+    flex: 1; font-size: 5px; text-align: center; padding: 3px 1px; line-height: 1.6;
+    border: 1px solid var(--holo-faint); color: var(--holo-dim);
+  }
+  #finteg .iph.done { border-color: #4ae37a; color: #4ae37a; }
+  #finteg .iph.cur { border-color: var(--amber); color: var(--amber); background: rgba(60,42,8,0.6); }
+  /* hamburgermeny + världshistorik */
+  #histbtn {
+    font-family: inherit; font-size: 12px; line-height: 1; cursor: pointer; margin-left: 10px;
+    background: rgba(6,18,28,0.9); color: var(--holo);
+    border: 1px solid rgba(57,215,255,0.45); padding: 6px 9px;
+  }
+  #histbtn:hover { background: rgba(12,34,50,0.95); }
+  #histpanel {
+    position: fixed; right: 10px; top: 56px; width: 330px; max-width: 92vw;
+    max-height: 72vh; display: none; flex-direction: column; z-index: 86;
+  }
+  #histpanel.show { display: flex; }
+  #histtabs { display: flex; gap: 4px; margin-bottom: 6px; }
+  .htab {
+    flex: 1; font-family: inherit; font-size: 6px; padding: 6px 3px; cursor: pointer;
+    background: rgba(8,18,28,0.8); color: var(--holo-dim); border: 1px solid var(--holo-faint);
+  }
+  .htab.on { color: var(--amber); border-color: rgba(255,176,46,0.6); background: rgba(40,28,6,0.7); }
+  #histlist { overflow-y: auto; }
+  .hrow { font-size: 6px; line-height: 1.9; padding: 4px 0; border-bottom: 1px solid rgba(57,215,255,0.12); }
+  .hrow .hday { color: var(--amber); }
+  .hrow.mine { color: #ffe9c4; }
+  .hrow.war { color: #ff9b8a; }
+  /* krigsvarning */
+  #waralert {
+    position: fixed; inset: 0; z-index: 96; display: none;
+    align-items: center; justify-content: center; background: rgba(20,0,0,0.82);
+  }
+  #waralert.show { display: flex; animation: wapulse 0.9s ease-in-out infinite alternate; }
+  @keyframes wapulse { from { background: rgba(20,0,0,0.82); } to { background: rgba(60,0,0,0.9); } }
+  .wabox {
+    text-align: center; padding: 22px 26px; max-width: 92vw;
+    border: 3px solid var(--red); background: rgba(10,4,6,0.96);
+  }
+  .waskull { font-size: 54px; line-height: 1; margin-bottom: 10px; }
+  .watitle { font-size: 14px; color: var(--red); letter-spacing: 2px; margin-bottom: 12px; }
+  .wavs { font-size: 10px; color: #fff; line-height: 2.2; margin-bottom: 10px; }
+  .wavs img { width: 34px; vertical-align: middle; margin: 0 6px; image-rendering: pixelated; }
+  .watext { font-size: 7px; color: var(--holo-dim); line-height: 2; margin-bottom: 16px; }
+  @media (prefers-reduced-motion: reduce) { #waralert.show { animation: none; } }
   .card label { display: block; font-size: 8px; color: var(--holo-dim); text-align: left; margin-top: 6px; }
   .card .err { color: var(--red); font-size: 8px; min-height: 14px; margin-top: 8px; }
   .card a.v1link { display: block; font-size: 7px; color: var(--holo-dim); margin-top: 14px; text-decoration: none; }
@@ -489,6 +545,29 @@
 <div id="topbar" style="display:none">
   <div class="left" id="topleft">IMPERIUM V4 // GEOSCAPE</div>
   <div class="right" id="topright"></div>
+  <button id="histbtn" title="VÄRLDSHISTORIK">&#9776;</button>
+</div>
+
+<!-- VÄRLDSHISTORIK -->
+<div id="histpanel" class="panel">
+  <div class="ptitle">&#9654; VÄRLDSHISTORIK <button class="pclose" id="histclose">&#10005;</button></div>
+  <div id="histtabs">
+    <button class="htab on" data-h="all">ALLT</button>
+    <button class="htab" data-h="mine">MITT RIKE</button>
+    <button class="htab" data-h="war">KRIG</button>
+  </div>
+  <div id="histlist"></div>
+</div>
+
+<!-- KRIGSVARNING: går inte att missa -->
+<div id="waralert">
+  <div class="wabox">
+    <div class="waskull">&#128128;</div>
+    <div class="watitle" id="watitle">KRIGSFÖRKLARING</div>
+    <div class="wavs" id="wavs"></div>
+    <div class="watext" id="watext"></div>
+    <button id="waok" class="btn warbtn">TILL VAPEN!</button>
+  </div>
 </div>
 
 <div id="resbar">
@@ -518,7 +597,9 @@
   <div class="frow" id="fdoc"></div>
   <div class="frow" id="fleader"></div>
   <div class="frow" id="ftype"></div>
+  <div class="frow" id="freli"></div>
   <div class="frow" id="finc"></div>
+  <div id="finteg" style="display:none"></div>
   <div id="fres"></div>
   <div id="istatus"></div>
   <div id="fbuild" style="display:none"></div>
@@ -577,6 +658,7 @@
     <div class="logo">IMPERIUM</div>
     <div class="tagline">V4 // NATIONER &#8226; LAGAR &#8226; IDEOLOGI</div>
     <div id="menuversion"></div>
+    <button id="btnContinue" class="btn amber" style="display:none">&#8635; FORTSÄTT SPELET</button>
     <button id="btnSolo" class="btn amber">&#9876; ERÖVRA VÄRLDEN (PROTOTYP)</button>
     <button id="btnTV" class="btn">&#128250; STARTA TV-LÄGE</button>
     <button id="btnJoin" class="btn">&#128241; GÅ MED I SPEL</button>

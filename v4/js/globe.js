@@ -177,7 +177,43 @@ export class Globe {
 
   setClaims(claims) { this.claims = claims || {}; this._rebuildBorderMesh(); this.sceneDirty = true; }
 
-  setTopology(topo) { this.topology = topo; this._meshSig = null; this._rebuildBorderMesh(); this.sceneDirty = true; }
+  // cid → namn som ska visas i stället för landets eget (erövrade provinser)
+  setLabelOverride(map) {
+    const sig = JSON.stringify(map || {});
+    if (sig === this._lblSig) return;
+    this._lblSig = sig;
+    this.labelOverride = map || {};
+    this.sceneDirty = true;
+  }
+
+  setTopology(topo) {
+    this.topology = topo;
+    this._meshSig = null;
+    this._buildNeighbors();
+    this._rebuildBorderMesh();
+    this.sceneDirty = true;
+  }
+
+  // vilka länder delar landgräns? (topojson.neighbors, byggs en gång per karta)
+  _buildNeighbors() {
+    this.neighbors = {};
+    if (!this.topology || typeof topojson === 'undefined') return;
+    const geoms = this.topology.objects.countries.geometries;
+    const ids = geoms.map((g) => String(g.id ?? g.properties?.name ?? ''));
+    const nb = topojson.neighbors(geoms);
+    ids.forEach((id, i) => {
+      if (!id) return;
+      this.neighbors[id] = new Set((nb[i] || []).map((j) => ids[j]).filter(Boolean));
+    });
+  }
+
+  // gränsar landet till något av dessa länder?
+  bordersAny(cid, others) {
+    const set = this.neighbors?.[cid];
+    if (!set) return false;
+    for (const o of others) if (set.has(o)) return true;
+    return false;
+  }
 
   // Gränser mellan länder med SAMMA ägare suddas ut — riket blir ett enda område.
   // Basmeshen innehåller kuster + gränser mellan olika ägare; per ägare byggs en
@@ -224,6 +260,7 @@ export class Globe {
   setWarZones(list) { this.warZones = list || []; } // {ll} — krigsrök över anfallna länder
   setPlayerLaunch(ll) { this.playerLaunch = ll; } // spelarens ramp när rymdforskning finns
   setSatCoverage(c) { this.satCov = c; } // {center, ang (rad), tier 0-5} — satellitforskningen
+  setSpaceNations(list) { this.spaceNations = list || []; } // AI-länder med rymdprogram
 
   // fyrverkerier över en punkt (valsegrar, rikesutrop)
   addFireworks(ll, durMs = 6000) {
@@ -500,7 +537,29 @@ export class Globe {
     }
   }
 
-  // stående AI-arméer i kända länder: liten flaggbricka + antal vid huvudstaden
+  // Ritar en armés sammansättning: en liten figur + antal per truppslag,
+  // så man ser om det är infanteri, pansar eller flyg — inte bara en siffra.
+  _drawComp(x, comp, color, sx, sy) {
+    const parts = ['INF', 'TANK', 'FLYG'].filter((t) => (comp?.[t] || 0) > 0);
+    let ox = sx;
+    x.font = '7px "Press Start 2P", monospace';
+    x.textAlign = 'left';
+    x.textBaseline = 'middle';
+    for (const t of parts) {
+      drawUnit(x, t, color, ox, sy - 6, 0.85, 1);
+      x.fillStyle = '#fff';
+      x.fillText(String(comp[t]), ox + 13, sy + 1);
+      ox += 13 + String(comp[t]).length * 7 + 4;
+    }
+    return ox - sx;
+  }
+
+  _compWidth(comp) {
+    const parts = ['INF', 'TANK', 'FLYG'].filter((t) => (comp?.[t] || 0) > 0);
+    return parts.reduce((w, t) => w + 13 + String(comp[t]).length * 7 + 4, 0);
+  }
+
+  // stående arméer i kända länder: flagga + vilka truppslag som står där
   _drawCountryArmies(x) {
     if (this.zoom < 1.2) return;
     const ps = this.pixelSize;
@@ -508,22 +567,33 @@ export class Globe {
       if (!this._front(a.ll, 1.5)) continue;
       const p = this.proj(a.ll);
       if (!p) continue;
+      // utan spionage T4 syns ingen sammansättning — bara en figur och antal (eller ?)
+      const comp = a.comp;
+      const w = comp ? Math.max(34, 20 + this._compWidth(comp)) : 40;
       const sx = p[0] * ps, sy = p[1] * ps - 14;
       x.fillStyle = 'rgba(10,16,24,0.92)';
-      x.fillRect(sx - 19, sy - 8, 38, 16);
+      x.fillRect(sx - w / 2, sy - 9, w, 18);
       x.strokeStyle = a.color;
       x.lineWidth = 1;
-      x.strokeRect(sx - 19, sy - 8, 38, 16);
+      x.strokeRect(sx - w / 2, sy - 9, w, 18);
       const flag = this._flagImg(a.a2);
-      if (flag) {
-        x.imageSmoothingEnabled = false;
-        x.drawImage(flag, sx - 16, sy - 4, 12, 8);
-      }
       x.font = '8px "Press Start 2P", monospace';
       x.textAlign = 'left';
       x.textBaseline = 'middle';
-      x.fillStyle = '#fff';
-      x.fillText(`\u{2694}${a.n}`, sx - 1, sy + 1);
+      if (flag) {
+        x.imageSmoothingEnabled = false;
+        x.drawImage(flag, sx - w / 2 + 3, sy - 4, 12, 8);
+      } else {
+        x.fillStyle = '#8a97a5';
+        x.fillText('?', sx - w / 2 + 6, sy + 1);
+      }
+      if (comp) {
+        this._drawComp(x, comp, a.color, sx - w / 2 + 18, sy);
+      } else {
+        drawUnit(x, 'INF', a.color, sx - w / 2 + 18, sy - 6, 0.85, 1);
+        x.fillStyle = '#fff';
+        x.fillText(a.n == null ? '?' : String(a.n), sx - w / 2 + 31, sy + 1);
+      }
     }
   }
 
@@ -538,7 +608,8 @@ export class Globe {
       const p = this.proj(ll);
       if (!p) continue;
       const sx = p[0] * ps, sy = p[1] * ps;
-      const w = 52, h = 20;
+      const mcomp = m.comp || (m.units || []).reduce((a, u) => (a[u.type] = (a[u.type] || 0) + 1, a), {});
+      const w = Math.max(52, 24 + this._compWidth(mcomp)), h = 20;
       x.fillStyle = '#10151c';
       x.fillRect(sx - w / 2 - 1, sy - h / 2 - 1, w + 2, h + 2);
       x.fillStyle = 'rgba(10,16,24,0.95)';
@@ -558,12 +629,17 @@ export class Globe {
         x.fillStyle = '#8a97a5';
         x.fillText('?', sx - w / 2 + 10, sy + 1);
       }
-      drawUnit(x, 'TANK', m.color, sx - w / 2 + 20, sy - 8, 1.1, 1);
-      x.font = '9px "Press Start 2P", monospace';
-      x.textAlign = 'left';
-      x.textBaseline = 'middle';
-      x.fillStyle = '#fff';
-      x.fillText(!m.intel || m.intel.num ? String(m.units?.length ?? '') : '?', sx + w / 2 - 12, sy + 1);
+      // med spionage T4 syns exakt sammansättning, annars bara antal (eller ?)
+      if (!m.intel || m.intel.comp) {
+        this._drawComp(x, mcomp, m.color, sx - w / 2 + 21, sy);
+      } else {
+        drawUnit(x, 'INF', m.color, sx - w / 2 + 21, sy - 7, 1, 1);
+        x.font = '9px "Press Start 2P", monospace';
+        x.textAlign = 'left';
+        x.textBaseline = 'middle';
+        x.fillStyle = '#fff';
+        x.fillText(m.intel.num ? String(m.units?.length ?? '') : '?', sx - w / 2 + 36, sy + 1);
+      }
       this._movingHits.push({ x: sx, y: sy, m });
     }
   }
@@ -1053,6 +1129,22 @@ export class Globe {
         }
       }
     }
+    // rymdnationernas egna satelliter — en per land, i landets färg
+    for (let i = 0; i < (this.spaceNations?.length || 0); i++) {
+      const sn = this.spaceNations[i];
+      const inc = Math.abs(sn.ll?.[1] || 30) + 8;
+      const lon = ((t * (0.007 + (i % 4) * 0.002) + i * 83) % 360 + 540) % 360 - 180;
+      const lat = inc * Math.sin(t * 0.0009 + i);
+      const ll = [lon, Math.max(-80, Math.min(80, lat))];
+      if (!this._front(ll, 1.35)) continue;
+      const p = this.proj(ll);
+      if (!p) continue;
+      b.fillStyle = Math.floor(t / 350 + i) % 4 ? sn.color : '#ffffff';
+      b.fillRect(Math.round(p[0]), Math.round(p[1]) - 3, 1, 1);
+      b.globalAlpha = 0.35;
+      b.fillRect(Math.round(p[0]) - 1, Math.round(p[1]) - 3, 1, 1);
+      b.globalAlpha = 1;
+    }
     // ISS: snabb flyover med cyan släpljus
     const issAt = (tt) => [((tt * 0.011) % 360 + 540) % 360 - 180, 51.6 * Math.sin(tt * 0.00045)];
     for (let i = 5; i >= 0; i--) {
@@ -1327,7 +1419,13 @@ export class Globe {
       if (p[0] < -6 || p[1] < -6 || p[0] > LW + 6 || p[1] > LH + 6) continue;
       const rp = this.proj(this.proj.invert(p));
       if (!rp || Math.hypot(rp[0] - p[0], rp[1] - p[1]) > 1.5) continue;
-      entries.push({ area, x: p[0], y: p[1], text: c.name.toUpperCase(), kind: 'country', claimed: !!this.claims[c.id] });
+      // erövrade länder bär erövrarens namn — under integrationen visas hur långt den kommit
+      const lbl = this.labelOverride?.[c.id];
+      entries.push({
+        area, x: p[0], y: p[1],
+        text: (lbl || c.name).toUpperCase(),
+        kind: 'country', claimed: !!this.claims[c.id],
+      });
     }
     entries.sort((a, b) => b.area - a.area);
     this._labels = entries.slice(0, 28);
