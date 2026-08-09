@@ -58,6 +58,19 @@
     color: var(--holo); font-size: 8px; letter-spacing: 1px;
     border-bottom: 1px solid var(--holo-faint);
     padding-bottom: 6px; margin-bottom: 7px;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  /* stängkryss — varje fönster går att stänga */
+  .pclose {
+    font-family: inherit; font-size: 10px; line-height: 1; cursor: pointer;
+    background: transparent; border: 1px solid rgba(255, 79, 79, 0.5);
+    color: var(--red); padding: 7px 10px; flex: none; /* tumvänlig träffyta */
+  }
+  .pclose:hover { background: rgba(70, 18, 18, 0.7); }
+  /* länk och rumskod ska gå att markera och kopiera */
+  #qrurl, #qrcodeTxt {
+    -webkit-user-select: text; user-select: text; cursor: text;
+    touch-action: auto; word-break: break-all;
   }
 
   #topbar {
@@ -423,13 +436,27 @@
   .blink { animation: blink 1s steps(2) infinite; }
   @keyframes blink { 50% { opacity: 0.25; } }
 
-  @media (max-width: 600px) {
-    #roster { top: 48px; left: 6px; min-width: 130px; font-size: 8px; }
-    #infopanel { left: 6px; right: 6px; bottom: 64px; width: auto; }
-    #legendpanel { left: 6px; right: 6px; top: 48px; width: auto; }
+  /* MOBIL: paneler får aldrig äta hela skärmen — de skrollar i stället */
+  @media (max-width: 820px) {
+    #roster { top: 48px; left: 6px; min-width: 120px; max-width: 52vw; max-height: 26vh; overflow-y: auto; font-size: 7px; }
+    #infopanel { left: 6px; right: 6px; bottom: 60px; width: auto; max-height: 46vh; overflow-y: auto; }
+    #legendpanel { left: 6px; right: 6px; top: 48px; width: auto; max-height: 40vh; overflow-y: auto; }
+    #buildcorner { left: 6px; bottom: 60px; max-width: 45vw; min-width: 0 !important; max-height: 30vh; overflow-y: auto; font-size: 7px; }
+    #battlefeed { top: 48px; right: 6px; max-width: 46vw; max-height: 26vh; overflow-y: auto; }
+    #citypanel { left: 6px; right: 6px; top: 44px; bottom: 54px; width: auto; }
+    /* #nation ÄR bakgrundsdimman (inset:0) — krymp rutan #natwrap, inte dimman */
+    #natwrap { width: 96vw; max-height: 88vh; }
     #topbar { font-size: 8px; padding: 8px 10px; }
     #qrpanel { bottom: 64px; }
+    #toggles { gap: 4px; }
+    .tbtn { font-size: 7px; padding: 6px 7px; }
     .logo { font-size: 20px; }
+    .armybtn { font-size: 6px; }
+  }
+  /* när både faktarutan och bygg-kön är öppna på mobil delar de höjden */
+  @media (max-width: 820px) and (max-height: 900px) {
+    #infopanel { max-height: 40vh; }
+    #buildcorner { max-height: 22vh; }
   }
 </style>
 </head>
@@ -454,12 +481,12 @@
 </div>
 
 <div id="roster" class="panel">
-  <div class="ptitle">&#9654; BEFÄLHAVARE</div>
+  <div class="ptitle">&#9654; BEFÄLHAVARE <button class="pclose" data-close="#roster">&#10005;</button></div>
   <div id="rosterlist"></div>
 </div>
 
 <div id="infopanel" class="panel">
-  <div class="ptitle">&#9654; LANDSFAKTA</div>
+  <div class="ptitle">&#9654; LANDSFAKTA <button class="pclose" id="infoclose">&#10005;</button></div>
   <div id="facthead">
     <img id="fflag" alt="">
     <div id="iname"></div>
@@ -469,6 +496,7 @@
   <div class="frow" id="fcity"></div>
   <div class="frow" id="fideo"></div>
   <div class="frow" id="fdoc"></div>
+  <div class="frow" id="fleader"></div>
   <div class="frow" id="ftype"></div>
   <div class="frow" id="finc"></div>
   <div id="fres"></div>
@@ -486,7 +514,7 @@
 </div>
 
 <div id="legendpanel" class="panel">
-  <div class="ptitle">&#9654; TILLGÅNGAR & BYGGEN</div>
+  <div class="ptitle">&#9654; TILLGÅNGAR & BYGGEN <button class="pclose" id="legendclose">&#10005;</button></div>
   <div id="legendlist"></div>
 </div>
 
@@ -495,11 +523,13 @@
   <div id="qrimg"></div>
   <div class="code" id="qrcodeTxt"></div>
   <div class="url" id="qrurl"></div>
+  <button id="qrcopy" class="btn">&#128203; KOPIERA LÄNKEN</button>
 </div>
 
 <div id="toggles">
   <button class="tbtn on" id="tgCities">&#127961; STÄDER</button>
   <button class="tbtn" id="tgTerrain">&#127757; TERRÄNG</button>
+  <button class="tbtn" id="tgSpin">&#128260; SNURR</button>
   <button class="tbtn on" id="tgTrade">&#128230; HANDEL</button>
   <button class="tbtn" id="tgLegend">&#128220; TILLGÅNGAR</button>
 </div>
@@ -517,7 +547,7 @@
 
 <!-- STRIDSFEED: pågående + köade strider (uppe till höger) -->
 <div id="battlefeed" class="panel" style="top:56px; right:10px; min-width:180px; max-width:46vw; display:none">
-  <div class="ptitle">&#9654; STRIDER</div>
+  <div class="ptitle">&#9654; STRIDER <button class="pclose" data-close="#battlefeed">&#10005;</button></div>
   <div id="battlefeedlist"></div>
 </div>
 
@@ -545,6 +575,7 @@
     <label>RUMSKOD</label>
     <input id="joincode" class="field" maxlength="4" placeholder="ABCD" autocapitalize="characters">
     <button id="btnJoinGo" class="btn amber">ANSLUT</button>
+    <button id="btnResume" class="btn" style="display:none">&#8635; FORTSÄTT DIN GAMLA SESSION</button>
     <button id="btnJoinBack" class="btn">TILLBAKA</button>
     <div class="err" id="joinerr"></div>
   </div>

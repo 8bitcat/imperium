@@ -156,6 +156,29 @@ export class BattleA {
     }
   }
 
+  // Avståndskarta FRAM till en punkt över faktiskt framkomlig mark. Utan den
+  // går AI:n rakt mot fienden i fågelvägen och FASTNAR vid floden i stället för
+  // att söka sig till bron — striden kunde då aldrig ta slut.
+  _flowField(u, tx, ty) {
+    const dist = new Map([[tx + ',' + ty, 0]]);
+    const q = [[tx, ty, 0]];
+    while (q.length) {
+      const [x, y, d] = q.shift();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+        const step = this.moveCost(u.type, this.terr[ny][nx]);
+        if (!isFinite(step)) continue;
+        const nd = d + step;
+        const key = nx + ',' + ny;
+        if (dist.has(key) && dist.get(key) <= nd) continue;
+        dist.set(key, nd);
+        q.push([nx, ny, nd]);
+      }
+    }
+    return dist;
+  }
+
   _computeReach(u) {
     this.reach.clear();
     this.attackFrom.clear();
@@ -311,11 +334,14 @@ export class BattleA {
         const targets = this.units.filter((x) => x.side === 0);
         if (targets.length) {
           const t = targets.reduce((m, x) => (Math.abs(x.tx - u.tx) + Math.abs(x.ty - u.ty) < Math.abs(m.tx - u.tx) + Math.abs(m.ty - u.ty) ? x : m));
-          let bt = null, bd = 1e9;
+          // gå den väg som faktiskt går att gå (över bron), inte fågelvägen
+          const field = this._flowField(u, t.tx, t.ty);
+          const here = field.get(u.tx + ',' + u.ty) ?? Infinity;
+          let bt = null, bd = here;
           for (const key of this.reach.keys()) {
             const [x, y] = key.split(',').map(Number);
             if (this.unitAt(x, y) && this.unitAt(x, y) !== u) continue;
-            const d = Math.abs(x - t.tx) + Math.abs(y - t.ty);
+            const d = field.get(key) ?? Infinity;
             if (d < bd) { bd = d; bt = [x, y]; }
           }
           if (bt) { u.tx = bt[0]; u.ty = bt[1]; }
@@ -327,6 +353,24 @@ export class BattleA {
     }
     this.turn = 0;
     for (const u of this.units) u.moved = false;
+    // Ingen strid får pågå i evighet (t.ex. om båda sidor sitter fast bakom en
+    // flod) — efter 30 rundor avgörs resten på styrkeförhållandet.
+    this.round = (this.round || 0) + 1;
+    if (this.round >= 30 && !this.done) {
+      const atk = this.units.filter((u) => u.side === 0);
+      const def = this.units.filter((u) => u.side === 1);
+      const val = (l) => l.reduce((a, u) => a + ({ INF: 1, TANK: 1.9, FLYG: 2.5 }[u.type] || 1) * (u.hp / 10), 0);
+      const attWon = val(atk) >= val(def);
+      this.done = true;
+      this._status('STRIDEN HAR DRAGIT UT PÅ TIDEN — AVGÖRS PÅ STYRKEFÖRHÅLLANDET');
+      this.o.onEnd?.({
+        winner: attWon ? 0 : 1,
+        survivors: atk.map(({ type, hp }) => ({ type, hp })),
+        defSurvivors: def.map(({ type, hp }) => ({ type, hp })),
+        timeout: true,
+      });
+      return;
+    }
     this._status('DIN TUR');
   }
 
