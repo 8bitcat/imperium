@@ -9,7 +9,7 @@ async function fetchCountries(url) {
   if (!res.ok) throw new Error('atlas ' + res.status);
   const topo = await res.json();
   const feats = topojson.feature(topo, topo.objects.countries).features;
-  return feats.map((f) => {
+  const countries = feats.map((f) => {
     const id = String(f.id ?? f.properties?.name ?? '');
     return {
       id,
@@ -19,13 +19,14 @@ async function fetchCountries(url) {
       centroid: d3.geoCentroid(f),
     };
   }).filter((c) => c.id);
+  return { countries, topo };
 }
 
 export async function loadWorld(onLevel) {
   const lo = await fetchCountries(ATLAS_110);
-  onLevel(lo, '110m');
+  onLevel(lo.countries, '110m', lo.topo);
   fetchCountries(ATLAS_50)
-    .then((hi) => onLevel(hi, '50m'))
+    .then((hi) => onLevel(hi.countries, '50m', hi.topo))
     .catch((e) => console.warn('50m-karta kunde inte laddas, kör vidare på 110m', e));
 }
 

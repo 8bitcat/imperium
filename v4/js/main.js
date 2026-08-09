@@ -10,6 +10,7 @@ import { STATS, STAT_GROUPS, computeStats, statGoodness } from './stats.js';
 import { LAWS, defaultLaws, lawMods, lawChangeCost, lawOption } from './laws.js';
 import { IDEOLOGIES, countryIdeology, ideologyMods, lawLockedBy, enforceRequirements, IDEOLOGY_COST, DOCTRINE_COST } from './ideologies.js';
 import { RESEARCH, TIER_COST, researchMods, combatBonus, hasUnlock, logisticsRange, satCoverage, espionageTier } from './research.js';
+import { BUILDINGS, CITY_SLOTS, UNIT_NEEDS_BUILDING, TRADE_PRICES, TRADE_DEFAULT } from './buildings.js';
 import { CASUS_BELLI, justifyDays, seizeAmount, FEDERATION_FORMS, HISTORICAL_EMPIRES, DYNAMIC_GOALS, formableEmpires, empireProgress } from './war.js';
 import { FACTIONS } from './factions.js';
 import { applyFaction } from './units.js';
@@ -304,6 +305,9 @@ function refreshInfoPanel() {
   const fb = $('#fbuild');
   fb.innerHTML = '';
   show(fb, false);
+  const ftr = $('#ftrade');
+  ftr.innerHTML = '';
+  show(ftr, false);
 
   if (state.mode === 'solo' || (state.mode === 'player' && state.solo)) {
     const s = state.solo;
@@ -335,16 +339,19 @@ function refreshInfoPanel() {
         $('#istatus').textContent = `FÖRSVAR: ${defN} ENHETER${conqTxt}`;
         $('#istatus').style.color = '';
         if (s.army?.units.length && !state.battle) show(justifyBtn, true);
+        renderFactTrade(c);
       } else if (war.status === 'justifying') {
         $('#istatus').textContent = `RÄTTFÄRDIGAR KRIG (${CASUS_BELLI[war.cb].name.toUpperCase()}) — ${war.days} DAGAR KVAR${conqTxt}`;
         $('#istatus').style.color = 'var(--amber)';
         show(wpBtn, true);
+        renderFactTrade(c, true); // aktiva avtal ska kunna sägas upp även under krig
       } else {
         $('#istatus').textContent = `KRIG RÄTTFÄRDIGAT: ${CASUS_BELLI[war.cb].name.toUpperCase()} — REDO ATT ANFALLA${conqTxt}`;
         $('#istatus').style.color = 'var(--red)';
         if (s.army?.units.length && !state.battle) show(attackBtn, true);
         if (!state.battle && hasUnlock(s.nation, 'nuke')) show($('#nukebtn'), true);
         show(wpBtn, true);
+        renderFactTrade(c, true);
       }
     }
   } else if (claim) {
@@ -383,7 +390,8 @@ function renderFactBuild(c) {
     btn.innerHTML = `${uName}<br>${fCost} \u{1F4B0} + ${b.man} \u{1F9CD}${b.needs.length ? '<br>KRÄVER ' + b.needs.map((r) => RESOURCES[r].icon).join('') : ''}`;
     const resReq = b.research && (s.nation.research[b.research[0]] || 0) < b.research[1]
       ? `KRÄVER FORSKNING: ${RESEARCH[b.research[0]].name.toUpperCase()} T${b.research[1]}` : null;
-    const blocked = resReq
+    const blocked = unitBuildingBlocked(c.id, type)
+      || resReq
       || (missing.length ? 'SAKNAR ' + missing.map((r) => RESOURCES[r].name.toUpperCase()).join(', ')
       : s.res.money < fCost ? 'FÖR LITE PENGAR'
       : s.res.man < b.man ? 'FÖR LITE MANPOWER' : null);
@@ -402,7 +410,167 @@ function renderFactBuild(c) {
     row.appendChild(btn);
   }
   fb.appendChild(row);
+  const cbtn = document.createElement('button');
+  cbtn.className = 'btn';
+  cbtn.style.marginTop = '6px';
+  cbtn.innerHTML = `\u{1F3D9} STÄDER & BYGGNADER (${(state.cities[c.id] || []).length})`;
+  cbtn.addEventListener('click', () => openCityPanel(c.id));
+  fb.appendChild(cbtn);
   show(fb, true);
+}
+
+// ---------- stadspanelen: byggnader per stad ----------
+function openCityPanel(cid) {
+  state.cityPanelCid = cid;
+  state.cityPanelExpand = null;
+  $('#citypanel').classList.add('show');
+  renderCityPanel(cid);
+}
+
+function renderCityPanel(cid) {
+  const s = state.solo;
+  const c = globe.getCountry(cid);
+  $('#cptitle').textContent = `\u{1F3D9} ${c?.name.toUpperCase() || ''} — STÄDER & BYGGNADER`;
+  const body = $('#cpbody');
+  body.innerHTML = '';
+  const cities = state.cities[cid] || [];
+  const idx = cities.map((city, i) => ({ city, i }));
+  // huvudstaden ALLTID överst — den har gratis-kasernen och får aldrig sorteras bort
+  idx.sort((a, b) => (b.city.c ? 1 : 0) - (a.city.c ? 1 : 0)
+    || (a.city.tier ?? 2) - (b.city.tier ?? 2)
+    || (b.city.p || 0) - (a.city.p || 0));
+  const rows = idx.slice(0, 14);
+  if (!rows.length) {
+    body.innerHTML = '<div style="font-size:8px;color:var(--holo-dim)">INGA STÄDER REGISTRERADE</div>';
+    return;
+  }
+  const info = document.createElement('div');
+  info.style.cssText = 'font-size:7px;color:var(--holo-dim);margin-bottom:8px;line-height:1.8';
+  info.textContent = `VARJE STAD HAR ${CITY_SLOTS} BYGGPLATSER. KASERN/FABRIK/FLYGBAS GÖR ENHETER BYGGBARA I LANDET — ANDRA GER POÄNG, RÅVAROR OCH HANDEL.`;
+  body.appendChild(info);
+  for (const { city, i } of rows) {
+    const key = cid + ':' + i;
+    const built = s.cityB?.[key] || [];
+    const queued = (s.buildQueue || []).filter((q) => q.cityKey === key);
+    const row = document.createElement('div');
+    row.className = 'cityrow';
+    const name = document.createElement('div');
+    name.className = 'cityname';
+    name.innerHTML = `${city.c ? '\u{2B50} ' : ''}${city.n.toUpperCase()}${city.c ? ' <small>(HUVUDSTAD)</small>' : (city.tier ?? 2) === 3 ? ' <small>(SMÅSTAD)</small>' : ''}`;
+    row.appendChild(name);
+    const slots = document.createElement('div');
+    slots.className = 'cityslots';
+    for (let sl = 0; sl < CITY_SLOTS; sl++) {
+      const el = document.createElement('button');
+      el.className = 'cityslot';
+      if (built[sl]) {
+        const B = BUILDINGS[built[sl]];
+        el.innerHTML = `${B.icon} ${B.name}`;
+        el.classList.add('built');
+        el.title = B.desc;
+      } else if (sl < built.length + queued.length) {
+        const q = queued[sl - built.length];
+        el.innerHTML = `\u{23F3} ${BUILDINGS[q.building].name} (${q.left}D)`;
+        el.classList.add('queued');
+      } else if (sl === built.length + queued.length) {
+        el.innerHTML = '+ BYGG';
+        el.addEventListener('click', () => {
+          state.cityPanelExpand = state.cityPanelExpand === key ? null : key;
+          renderCityPanel(cid);
+        });
+      } else {
+        el.innerHTML = '\u{00B7}';
+        el.disabled = true;
+      }
+      slots.appendChild(el);
+    }
+    row.appendChild(slots);
+    body.appendChild(row);
+    if (state.cityPanelExpand === key) {
+      const chooser = document.createElement('div');
+      chooser.className = 'citychooser';
+      for (const [bid, B] of Object.entries(BUILDINGS)) {
+        const btn = document.createElement('button');
+        btn.className = 'armybtn';
+        btn.innerHTML = `${B.icon} ${B.name}<br>${B.money} \u{1F4B0} \u{2022} ${B.days}D<br><small>${B.desc}</small>`;
+        const resReq = B.research && (s.nation.research[B.research[0]] || 0) < B.research[1]
+          ? `KRÄVER FORSKNING: ${RESEARCH[B.research[0]].name.toUpperCase()} T${B.research[1]}` : null;
+        const dupe = built.includes(bid) || queued.some((q) => q.building === bid) ? 'FINNS REDAN I STADEN' : null;
+        const blocked = dupe || resReq || (s.res.money < B.money ? 'FÖR LITE PENGAR' : null);
+        if (blocked) { btn.disabled = true; btn.title = blocked; }
+        btn.addEventListener('click', () => {
+          if (blocked) { warn(blocked); return; }
+          // omkontroll vid klicket — saldot kan ha ändrats sedan panelen ritades
+          if (s.res.money < B.money) { warn('FÖR LITE PENGAR'); renderCityPanel(cid); return; }
+          if (!s.claims[cid]) { warn('LANDET ÄR INTE LÄNGRE DITT'); $('#citypanel').classList.remove('show'); return; }
+          s.res.money -= B.money;
+          (s.buildQueue ||= []).push({ building: bid, cityKey: key, cityName: city.n, name: `${B.icon} ${B.name}`, left: B.days, total: B.days, dest: cid });
+          state.cityPanelExpand = null;
+          renderBuildCorner();
+          renderResbar();
+          renderCityPanel(cid);
+          toast(`\u{1F528} ${B.name} PÅBÖRJAD I ${city.n.toUpperCase()} — KLAR OM ${B.days} DAGAR`, 'amber');
+        });
+        chooser.appendChild(btn);
+      }
+      body.appendChild(chooser);
+    }
+  }
+}
+
+// ---------- handel: råvaruavtal med andra länder ----------
+// dealsOnly = true under krig: bara AVBRYT-knappar, inga nya köp
+function renderFactTrade(c, dealsOnly = false) {
+  const s = state.solo;
+  if (!s?.nation) return;
+  const ft = $('#ftrade');
+  ft.innerHTML = '';
+  const deals = (s.trade || []).filter((d) => d.cid === c.id);
+  const owned = ownedResources();
+  const theirs = dealsOnly ? [] : resourcesOf(c.id).filter((r) => !owned.has(r));
+  if (!deals.length && !theirs.length) return;
+  const title = document.createElement('div');
+  title.style.cssText = 'font-size:7px;color:var(--holo-dim);margin:6px 0 2px';
+  title.textContent = `\u{1F91D} HANDEL (${(s.trade || []).length}/${tradeSlots()} AVTAL)`;
+  ft.appendChild(title);
+  const row = document.createElement('div');
+  row.className = 'armybuild';
+  for (const d of deals) {
+    const btn = document.createElement('button');
+    btn.className = 'armybtn';
+    btn.innerHTML = `AVBRYT: ${RESOURCES[d.res].icon} ${RESOURCES[d.res].name.toUpperCase()}<br>(${d.upkeep} \u{1F4B0}/DAG)`;
+    btn.addEventListener('click', () => {
+      s.trade = s.trade.filter((x) => x !== d);
+      toast(`AVTALET OM ${RESOURCES[d.res].name.toUpperCase()} AVSLUTAT`, '', 4000);
+      renderResbar();
+      refreshInfoPanel();
+    });
+    row.appendChild(btn);
+  }
+  for (const r of theirs) {
+    const [price, upkeep] = TRADE_PRICES[r] || TRADE_DEFAULT;
+    const btn = document.createElement('button');
+    btn.className = 'armybtn';
+    btn.innerHTML = `KÖP ${RESOURCES[r].icon} ${RESOURCES[r].name.toUpperCase()}<br>${price} \u{1F4B0} + ${upkeep} \u{1F4B0}/DAG`;
+    const blocked = (s.trade || []).length >= tradeSlots()
+      ? `MAX ${tradeSlots()} AVTAL — BYGG \u{1F91D} HANDELSMARKNAD I EN STAD`
+      : s.res.money < price ? 'FÖR LITE PENGAR' : null;
+    if (blocked) { btn.disabled = true; btn.title = blocked; }
+    btn.addEventListener('click', () => {
+      if (blocked) { warn(blocked); return; }
+      // omkontroll vid klicket — saldo och slots kan ha ändrats sedan render
+      if (s.res.money < price) { warn('FÖR LITE PENGAR'); refreshInfoPanel(); return; }
+      if ((s.trade || []).length >= tradeSlots()) { warn('AVTALSPLATSERNA ÄR FULLA'); refreshInfoPanel(); return; }
+      s.res.money -= price;
+      (s.trade ||= []).push({ res: r, cid: c.id, upkeep });
+      toast(`\u{1F91D} HANDELSAVTAL: ${RESOURCES[r].icon} ${RESOURCES[r].name.toUpperCase()} FRÅN ${c.name.toUpperCase()}`, 'amber', 6000);
+      renderResbar();
+      refreshInfoPanel();
+    });
+    row.appendChild(btn);
+  }
+  ft.appendChild(row);
+  show(ft, true);
 }
 
 globe.onSelect = (c) => {
@@ -442,7 +610,7 @@ globe.onSelectArmy = (m) => {
   $('#ftype').innerHTML = '';
   $('#fres').innerHTML = '';
   $('#istatus').textContent = '';
-  for (const id of ['claimbtn', 'attackbtn', 'nukebtn', 'justifybtn', 'wpbtn', 'nationbtn', 'fbuild', 'movebtn']) show($('#' + id), false);
+  for (const id of ['claimbtn', 'attackbtn', 'nukebtn', 'justifybtn', 'wpbtn', 'nationbtn', 'fbuild', 'movebtn', 'ftrade']) show($('#' + id), false);
   const ib = $('#interceptbtn');
   show(ib, state.mode === 'solo' && !!state.solo?.army?.units.length && !state.battle && !state.solo?.chase);
   state.pendingIntercept = m;
@@ -614,6 +782,10 @@ function initNation(countryId) {
   s.res = { money: 500, man: 20, rp: 0, pp: 100 };
   s.extra = {};
   s.clock = { day: 1, paused: false, acc: 0, msPerDay: 2000 };
+  // huvudstaden startar med en gratis kasern — utan den kan inget infanteri byggas
+  const capIdx = Math.max(0, (state.cities[countryId] || []).findIndex((x) => x.c));
+  s.cityB = { [countryId + ':' + capIdx]: ['kasern'] };
+  s.trade = [];
   recomputeNation();
   $('#resbar').style.display = 'flex';
   renderResbar();
@@ -636,7 +808,40 @@ function recomputeNation() {
 function ownedResources() {
   const set = new Set();
   for (const cid of Object.keys(state.solo?.claims || {})) for (const r of resourcesOf(cid)) set.add(r);
+  for (const b of allBuildings()) if (BUILDINGS[b]?.resource) set.add(BUILDINGS[b].resource);
+  for (const d of state.solo?.trade || []) set.add(d.res);
   return set;
+}
+
+// ---------- stadsbyggnader: hjälpare ----------
+// bara byggnader i länder man FORTFARANDE äger räknas (förlorade länder ger inget)
+function allBuildings() {
+  const s = state.solo;
+  const out = [];
+  for (const [k, arr] of Object.entries(s?.cityB || {})) {
+    if (s.claims[k.split(':')[0]]) out.push(...arr);
+  }
+  return out;
+}
+
+function cityBuildingsIn(cid) {
+  const out = [];
+  for (const [k, arr] of Object.entries(state.solo?.cityB || {})) {
+    if (k.startsWith(cid + ':')) out.push(...arr);
+  }
+  return out;
+}
+
+// enhetsproduktion kräver rätt byggnad någonstans i landet man bygger i
+function unitBuildingBlocked(cid, type) {
+  const need = UNIT_NEEDS_BUILDING[type];
+  if (!need) return null;
+  if (cityBuildingsIn(cid).includes(need)) return null;
+  return `KRÄVER ${BUILDINGS[need].icon} ${BUILDINGS[need].name} I LANDET`;
+}
+
+function tradeSlots() {
+  return 1 + allBuildings().filter((b) => BUILDINGS[b]?.tradeSlot).length;
 }
 
 function battleBoost() {
@@ -710,6 +915,28 @@ function tickDay() {
   s.res.rp += Math.max(0, Math.round(1 + Math.max(0, st.research.total) * 0.08));
   s.res.pp += Math.max(0, Math.round(2 + st.polpower.total * 0.04));
 
+  // stadsbyggnadernas dagliga avkastning
+  for (const b of allBuildings()) {
+    const d = BUILDINGS[b]?.daily;
+    if (!d) continue;
+    s.res.money += d.money || 0;
+    s.res.rp += d.rp || 0;
+    s.res.man += d.man || 0;
+  }
+  // handelsavtalens dagliga kostnad — utan pengar spricker avtalet.
+  // Erövrar man avtalslandet äger man råvaran själv → avtalet upplöses gratis.
+  for (const deal of [...(s.trade || [])]) {
+    if (s.claims[deal.cid]) {
+      s.trade = s.trade.filter((x) => x !== deal);
+      toast(`\u{1F91D} ${cname(deal.cid)} ÄR NU DITT — AVTALET OM ${RESOURCES[deal.res].name.toUpperCase()} BEHÖVS INTE LÄNGRE`, '', 5000);
+    } else if (s.res.money >= deal.upkeep) {
+      s.res.money -= deal.upkeep;
+    } else {
+      s.trade = s.trade.filter((x) => x !== deal);
+      toast(`\u{1F91D} AVTALET OM ${RESOURCES[deal.res].name.toUpperCase()} MED ${cname(deal.cid)} HAR SPRUCKIT — PENGARNA TOG SLUT`, 'red', 6000);
+    }
+  }
+
   // tillfälliga effekter (händelser, atomslag) klingar av
   let decayed = false;
   for (const k of Object.keys(s.extra)) {
@@ -765,6 +992,7 @@ function tickDay() {
   if (puppetIds.length && st.stability.total < -20 && s.clock.day % 15 === 0 && Math.random() < 0.5) {
     const cid = puppetIds[Math.floor(Math.random() * puppetIds.length)];
     delete s.claims[cid];
+    for (const k of Object.keys(s.cityB || {})) if (k.startsWith(cid + ':')) delete s.cityB[k];
     toast(`SJÄLVSTÄNDIGHETSUPPROR! ${(globe.getCountry(cid)?.name || '?').toUpperCase()} LÄMNAR DITT VÄLDE`, 'red', 7000);
     applyState();
   }
@@ -776,8 +1004,14 @@ function tickDay() {
     if (--b.left <= 0) {
       s.buildQueue.shift();
       const dest = b.dest || s.home;
-      // en marscherande armé kan inte ta emot nya enheter — de blir garnison i huvudstaden
-      if (s.army && s.army.at === dest && !s.armyMoving && !s.chase) {
+      if (b.building) {
+        // stadsbyggnad färdig
+        ((s.cityB ||= {})[b.cityKey] ||= []).push(b.building);
+        toast(`\u{2705} ${BUILDINGS[b.building].icon} ${BUILDINGS[b.building].name} FÄRDIG I ${b.cityName?.toUpperCase() || cname(dest)}`, 'amber', 6000);
+        if ($('#citypanel').classList.contains('show')) renderCityPanel(state.cityPanelCid);
+        if (selectedCountry?.id === dest) refreshInfoPanel();
+      } else if (s.army && s.army.at === dest && !s.armyMoving && !s.chase) {
+        // en marscherande armé kan inte ta emot nya enheter — de blir garnison i huvudstaden
         s.army.units.push(mkUnit(b.type, 0));
         toast(`\u{2705} ${b.name} FÄRDIGBYGGD — ANSLUTER TILL ARMÉN`, 'amber', 4500);
       } else {
@@ -1247,7 +1481,8 @@ function renderNationTab() {
     const resReq = b.research && (s.nation.research[b.research[0]] || 0) < b.research[1]
       ? `KRÄVER FORSKNING: ${RESEARCH[b.research[0]].name.toUpperCase()} T${b.research[1]}` : null;
     const blocked = !s.army ? 'INGEN ARMÉ'
-      : resReq
+      : unitBuildingBlocked(s.home, type)
+      || resReq
       || (missing.length ? 'SAKNAR ' + missing.map((r) => RESOURCES[r].name.toUpperCase()).join(', ')
       : s.res.money < fCost ? 'FÖR LITE PENGAR'
       : s.res.man < b.man ? 'FÖR LITE MANPOWER' : null);
@@ -1602,6 +1837,7 @@ function renderResearchTab(body) {
 
 $('#nationbtn').addEventListener('click', openNation);
 $('#natclose').addEventListener('click', () => $('#nation').classList.remove('show'));
+$('#cpclose').addEventListener('click', () => $('#citypanel').classList.remove('show'));
 document.querySelectorAll('.nattab').forEach((el) => el.addEventListener('click', () => {
   natTab = el.dataset.tab;
   renderNationTab();
@@ -2290,6 +2526,62 @@ function classifySeaRoutes() {
 }
 
 // ---------- kartdata ----------
+// ---------- småstäder: mångdubbla städerna, pop-skalat per land ----------
+const TOWN_SYL = ['ka', 've', 'lin', 'mor', 'sa', 'tor', 'bel', 'ran', 'os', 'vi', 'del', 'nar', 'ke', 'lu', 'gra', 'fen'];
+function townName(h, lat, lon) {
+  const a = TOWN_SYL[h % 16], b = TOWN_SYL[(h >> 4) % 16];
+  let suf;
+  if (lat > 40 && lon > -30 && lon < 60) suf = ['burg', 'stad', 'berg', 'dorf', 'vik'][(h >> 8) % 5];
+  else if (lat > 5 && lon >= 60) suf = ['pur', 'abad', 'ang', 'shan', 'pore'][(h >> 8) % 5];
+  else if (lon <= -30) suf = ['ton', 'ville', 'field', 'burgo', 'ita'][(h >> 8) % 5];
+  else suf = ['ba', 'ala', 'ombe', 'esh', 'ara'][(h >> 8) % 5];
+  const name = a + b + suf;
+  return name[0].toUpperCase() + name.slice(1);
+}
+
+let townsDone = false;
+function generateTowns() {
+  if (townsDone) return;
+  if (!globe.countries.length || !state.cities || !Object.keys(state.facts || {}).length) {
+    setTimeout(generateTowns, 600);
+    return;
+  }
+  townsDone = true;
+  const list = [...globe.countries];
+  let i = 0, total = 0;
+  const step = () => {
+    const t0 = performance.now();
+    while (i < list.length && performance.now() - t0 < 24) {
+      const c = list[i++];
+      const pop = state.facts[c.id]?.p || 3e6;
+      const n = Math.max(2, Math.min(90, Math.round(pop / 2.2e6)));
+      let h = ((parseInt(c.id, 10) || 7) * 2654435761) % 2147483647;
+      const rnd = () => { h = (h * 1103515245 + 12345) % 2147483648; return h / 2147483648; };
+      const [[x0, y0], [x1, y1]] = c.bounds;
+      const wrap = x1 < x0 ? 360 : 0;
+      const towns = [];
+      let tries = 0;
+      while (towns.length < n && tries < n * 10) {
+        tries++;
+        let lon = x0 + rnd() * (x1 + wrap - x0);
+        if (lon > 180) lon -= 360;
+        const lat = y0 + rnd() * (y1 - y0);
+        if (!d3.geoContains(c.feature, [lon, lat])) continue;
+        towns.push({ n: townName(h, lat, lon), ll: [lon, lat], p: 20e3 + Math.round(rnd() * 350e3), tier: 3 });
+      }
+      if (towns.length) (state.cities[c.id] ||= []).push(...towns);
+      total += towns.length;
+    }
+    if (i < list.length) setTimeout(step, 0);
+    else {
+      globe.setCities(state.cities);
+      if (selectedCountry) refreshInfoPanel();
+      console.log(`IMPERIUM: ${total} småstäder genererade`);
+    }
+  };
+  step();
+}
+
 function startWorldLoad() {
   overlay('#loading', true);
   Promise.all([loadCities(), loadFacts()]).then(([cities, facts]) => {
@@ -2301,9 +2593,10 @@ function startWorldLoad() {
     if (selectedCountry) refreshInfoPanel();
   }).catch((e) => console.warn('städer kunde inte laddas', e));
 
-  loadWorld((countries, level) => {
+  loadWorld((countries, level, topo) => {
     state.mapLevel = level;
     globe.setCountries(countries);
+    globe.setTopology(topo);
     globe.setClaims(claimsMap());
     if (level === '110m') {
       overlay('#loading', false);
@@ -2311,6 +2604,7 @@ function startWorldLoad() {
       show($('#hint'));
       $('#toggles').style.display = 'flex';
       classifySeaRoutes();
+      generateTowns();
     } else {
       toast('KARTDETALJ: HÖG UPPLÖSNING', '', 2500);
       if (selectedCountry) selectedCountry = globe.getCountry(selectedCountry.id);
@@ -2659,6 +2953,8 @@ function startSolo() {
     buildQueue: [],    // {type, name, left, total}
     researchQueue: [], // {branch, tier, name, left, total}
     garrisons: {},     // countryId -> byggda enheter som väntar där
+    cityB: {},         // "cid:cityIdx" -> [byggnadsId] — byggnader per stad
+    trade: [],         // {res, cid, upkeep} — aktiva handelsavtal
     countryArmies: {}, // stående arméer per land
     aiWars: [], moving: [], aiGoals: {}, votes: [],
   };

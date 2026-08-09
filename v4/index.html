@@ -369,6 +369,35 @@
   .lcbtn.no { color: var(--red); border-color: var(--red); }
   .lcbtn.no:hover { background: rgba(70, 18, 18, 0.6); }
   .lawopt.pend { border-color: var(--amber); color: var(--amber); background: rgba(60, 42, 8, 0.7); }
+  #citypanel {
+    position: fixed; right: 10px; top: 56px; bottom: 60px; width: 335px; max-width: 92vw;
+    display: none; flex-direction: column; z-index: 82;
+    background: rgba(4, 14, 22, 0.97); border: 1px solid rgba(57, 215, 255, 0.4);
+  }
+  #citypanel.show { display: flex; }
+  .cphead {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 10px 12px; border-bottom: 1px solid rgba(57, 215, 255, 0.25);
+    font-size: 8px; color: var(--amber);
+  }
+  #cpbody { overflow-y: auto; padding: 10px 12px; flex: 1; }
+  .cityrow { margin-bottom: 9px; }
+  .cityname { font-size: 8px; color: var(--holo); margin-bottom: 3px; }
+  .cityname small { color: var(--holo-dim); font-size: 6px; }
+  .cityslots { display: flex; gap: 4px; flex-wrap: wrap; }
+  .cityslot {
+    font-family: inherit; font-size: 6px; padding: 5px 6px; min-width: 92px; text-align: left;
+    background: rgba(10, 20, 30, 0.8); color: var(--holo-dim);
+    border: 1px dashed rgba(57, 215, 255, 0.35); cursor: pointer; line-height: 1.7;
+  }
+  .cityslot.built { border-style: solid; color: var(--amber); border-color: rgba(255, 176, 46, 0.55); cursor: default; }
+  .cityslot.queued { border-style: solid; color: var(--holo); cursor: default; }
+  .cityslot:disabled { opacity: 0.35; cursor: default; }
+  .citychooser {
+    display: flex; flex-wrap: wrap; gap: 5px; margin: 5px 0 12px; padding: 7px;
+    border: 1px solid rgba(57, 215, 255, 0.25); background: rgba(8, 18, 28, 0.7);
+  }
+  .citychooser .armybtn small { font-size: 5px; color: var(--holo-dim); }
   .natgroup { margin-bottom: 14px; }
   .natgroup .gtitle {
     font-size: 8px; letter-spacing: 2px; color: var(--amber);
@@ -444,6 +473,7 @@
   <div id="fres"></div>
   <div id="istatus"></div>
   <div id="fbuild" style="display:none"></div>
+  <div id="ftrade" style="display:none"></div>
   <button id="claimbtn" class="btn amber" style="display:none">GÖR TILL HEMLAND</button>
   <button id="movebtn" class="btn" style="display:none">&#128681; FLYTTA ARMÉN HIT</button>
   <button id="justifybtn" class="btn" style="display:none">&#9878;&#65039; RÄTTFÄRDIGA KRIG</button>
@@ -471,6 +501,11 @@
   <button class="tbtn" id="tgTerrain">&#127757; TERRÄNG</button>
   <button class="tbtn on" id="tgTrade">&#128230; HANDEL</button>
   <button class="tbtn" id="tgLegend">&#128220; TILLGÅNGAR</button>
+</div>
+
+<div id="citypanel">
+  <div class="cphead"><span id="cptitle">STÄDER</span><button id="cpclose" class="btn">STÄNG &#10005;</button></div>
+  <div id="cpbody"></div>
 </div>
 
 <div id="hint">DRA = ROTERA &nbsp;&#8226;&nbsp; SKROLLA/NYP = ZOOM &nbsp;&#8226;&nbsp; KLICKA PÅ ETT LAND</div>

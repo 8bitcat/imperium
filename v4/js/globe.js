@@ -128,7 +128,7 @@ export class Globe {
       for (const c of list) {
         this.cities.push({
           ...c, country,
-          tier: c.c ? 0 : (c.p >= 3e6 ? 0 : c.p >= 800e3 ? 1 : 2),
+          tier: c.tier ?? (c.c ? 0 : (c.p >= 3e6 ? 0 : c.p >= 800e3 ? 1 : 2)),
         });
       }
     }
@@ -175,7 +175,41 @@ export class Globe {
     return null;
   }
 
-  setClaims(claims) { this.claims = claims || {}; this.sceneDirty = true; }
+  setClaims(claims) { this.claims = claims || {}; this._rebuildBorderMesh(); this.sceneDirty = true; }
+
+  setTopology(topo) { this.topology = topo; this._meshSig = null; this._rebuildBorderMesh(); this.sceneDirty = true; }
+
+  // Gränser mellan länder med SAMMA ägare suddas ut — riket blir ett enda område.
+  // Basmeshen innehåller kuster + gränser mellan olika ägare; per ägare byggs en
+  // yttre kontur som ritas i ägarens färg. Meshbygget är dyrt — signaturkontrollen
+  // ser till att det bara sker när ägandet faktiskt ändrats, inte varje AI-tick.
+  _rebuildBorderMesh() {
+    if (!this.topology || typeof topojson === 'undefined') {
+      this._borderMesh = null;
+      this._ownerMeshes = [];
+      return;
+    }
+    const sig = Object.entries(this.claims).map(([k, v]) => k + ':' + v.color).sort().join(',');
+    if (sig === this._meshSig) return;
+    this._meshSig = sig;
+    this._borderMesh = null;
+    this._ownerMeshes = [];
+    const obj = this.topology.objects.countries;
+    const owner = (g) => {
+      // samma id-härledning som data.js — vissa länder (Kosovo m.fl.) saknar id och identifieras via namn
+      const id = String(g.id ?? g.properties?.name ?? '');
+      return this.claims[id]?.color || 'free:' + id;
+    };
+    this._borderMesh = topojson.mesh(this.topology, obj, (a, b) => a === b || owner(a) !== owner(b));
+    const colors = [...new Set(Object.values(this.claims).map((c) => c.color))];
+    for (const col of colors) {
+      const mine = (g) => owner(g) === col;
+      this._ownerMeshes.push({
+        color: col,
+        mesh: topojson.mesh(this.topology, obj, (a, b) => (a === b ? mine(a) : mine(a) !== mine(b))),
+      });
+    }
+  }
   select(id) { this.selectedId = id; this.sceneDirty = true; }
   setArmy(army) { this.army = army; } // {ll:[lon,lat], comp:{INF,TANK,FLYG}, color} | null
 
@@ -1164,6 +1198,7 @@ export class Globe {
     s.beginPath(); this.spath(this.grat);
     s.strokeStyle = 'rgba(45,140,170,0.20)'; s.lineWidth = 0.5; s.stroke();
 
+    const useMesh = !!this._borderMesh;
     for (const c of this.countries) {
       const claim = this.claims[c.id];
       const terr = this.showTerrain ? this.terrainColors?.[c.id] : null;
@@ -1179,11 +1214,17 @@ export class Globe {
           s.fillStyle = shade(claim.color, 0.45);
           s.fill();
         }
-        s.strokeStyle = claim.color; s.lineWidth = 1; s.stroke();
+        // med mesh ritas ägarens kontur i ett svep efteråt — inga inre gränser.
+        // En tunn stroke i FILLFÄRGEN täcker antialias-sömmen mellan grannländer med samma ägare.
+        if (!useMesh) {
+          s.strokeStyle = claim.color; s.lineWidth = 1; s.stroke();
+        } else {
+          s.strokeStyle = terr || shade(claim.color, 0.45); s.lineWidth = 0.7; s.stroke();
+        }
       } else {
         s.fillStyle = terr || LAND_SHADES[hashId(c.id) % LAND_SHADES.length];
         s.fill();
-        s.strokeStyle = BORDER; s.lineWidth = 0.55; s.stroke();
+        if (!useMesh) { s.strokeStyle = BORDER; s.lineWidth = 0.55; s.stroke(); }
       }
       // terrängläge: subtil bruskstruktur ger landmassorna djup
       if (terr) {
@@ -1197,6 +1238,17 @@ export class Globe {
         if (lat > this._snowN) a = Math.min(0.55, ((lat - this._snowN) / 18) * 0.55 + 0.12);
         else if (lat < this._snowS) a = Math.min(0.55, ((this._snowS - lat) / 18) * 0.55 + 0.12);
         if (a > 0.03) { s.fillStyle = `rgba(235,244,252,${a})`; s.fill(); }
+      }
+    }
+
+    // gränsmesh: kuster + gränser mellan OLIKA ägare (inre gränser är utsuddade),
+    // sedan varje ägares yttre kontur i ägarfärgen
+    if (useMesh) {
+      s.beginPath(); this.spath(this._borderMesh);
+      s.strokeStyle = BORDER; s.lineWidth = 0.55; s.stroke();
+      for (const om of this._ownerMeshes) {
+        s.beginPath(); this.spath(om.mesh);
+        s.strokeStyle = om.color; s.lineWidth = 1.1; s.stroke();
       }
     }
 
@@ -1231,7 +1283,7 @@ export class Globe {
     // städer (prickar i scenen; ljus/blink sker i kompositpasset)
     this._visCities = [];
     if (this.showCities) {
-      const maxTier = this.zoom < 1.6 ? 0 : this.zoom < 3 ? 1 : 2;
+      const maxTier = this.zoom < 1.6 ? 0 : this.zoom < 2.6 ? 1 : this.zoom < 3.8 ? 2 : 3;
       for (const city of this.cities) {
         if (city.tier > maxTier && !city.c) continue;
         if (!this._front(city.ll, 1.5)) continue;
@@ -1249,6 +1301,11 @@ export class Globe {
           s.fillRect(px - 1, py - 1, 3, 3);
           s.fillStyle = '#ffe9a8';
           s.fillRect(px, py, 1, 1);
+        } else if (city.tier === 3) {
+          s.globalAlpha = 0.7;
+          s.fillStyle = '#b3a878';
+          s.fillRect(px, py, 1, 1);
+          s.globalAlpha = 1;
         } else {
           s.fillStyle = '#d8c98a';
           s.fillRect(px, py, 1, 1);
@@ -1280,6 +1337,7 @@ export class Globe {
       for (const v of this._visCities) {
         if (count >= 28) break;
         if (v.city.tier === 2 && this.zoom < 5) continue;
+        if (v.city.tier === 3 && this.zoom < 6.5) continue;
         this._labels.push({ x: v.x, y: v.y, text: v.city.n.toUpperCase(), kind: 'city', capital: !!v.city.c });
         count++;
       }
