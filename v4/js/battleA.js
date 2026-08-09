@@ -47,14 +47,33 @@ export class BattleA {
 
     this._genMap(mulberry(opts.seed || 7));
 
+    // Utplacering: fyll kolumnvis inåt från respektive sida. Den gamla loopen
+    // letade bara i EN kolumn (8 rutor) och hängde sig för evigt när stora
+    // försvarsarméer (upp till 20 enheter) inte fick plats — frysning vid invasion.
     this.units = [];
-    opts.atk.forEach((u, i) => this.units.push({ ...u, side: 0, tx: i % 2, ty: 1 + Math.floor(i / 2) * 2 % (ROWS - 1), moved: false }));
-    opts.def.forEach((u, i) => this.units.push({ ...u, side: 1, tx: COLS - 1 - (i % 2), ty: 1 + Math.floor(i / 2) * 2 % (ROWS - 1), moved: false }));
+    opts.atk.forEach((u) => this.units.push({ ...u, side: 0, tx: 0, ty: 0, moved: false }));
+    opts.def.forEach((u) => this.units.push({ ...u, side: 1, tx: COLS - 1, ty: 0, moved: false }));
     const seen = new Set();
-    for (const u of this.units) {
-      while (seen.has(u.tx + ',' + u.ty) || this.terr[u.ty][u.tx] === 2 || this.terr[u.ty][u.tx] === 4) u.ty = (u.ty + 1) % ROWS;
-      seen.add(u.tx + ',' + u.ty);
-    }
+    const place = (u, cols) => {
+      for (const tx of cols) {
+        for (let ty = 0; ty < ROWS; ty++) {
+          const key = tx + ',' + ty;
+          if (seen.has(key) || this.terr[ty][tx] === 2 || this.terr[ty][tx] === 4) continue;
+          u.tx = tx; u.ty = ty; seen.add(key);
+          return;
+        }
+      }
+      // nödfall: första lediga icke-vattenrutan var som helst
+      for (let tx = 0; tx < COLS; tx++) {
+        for (let ty = 0; ty < ROWS; ty++) {
+          const key = tx + ',' + ty;
+          if (!seen.has(key) && this.terr[ty][tx] !== 4) { u.tx = tx; u.ty = ty; seen.add(key); return; }
+        }
+      }
+    };
+    const atkCols = [0, 1, 2, 3, 4];
+    const defCols = [COLS - 1, COLS - 2, COLS - 3, COLS - 4, COLS - 5];
+    for (const u of this.units) place(u, u.side === 0 ? atkCols : defCols);
 
     this.turn = 0;
     this.sel = null;

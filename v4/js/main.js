@@ -3,7 +3,7 @@ import { Net } from './net.js';
 import { loadWorld, loadCities, loadFacts } from './data.js';
 import { Globe } from './globe.js';
 import { RESOURCES, RECIPES, resourcesOf } from './resources.js';
-import { STARTER_ARMY, defenderArmy, compOf, autoResolve, biomeFor, BIOMES, mkUnit, loadWarSprites, UNIT_TYPES } from './units.js';
+import { STARTER_ARMY, defenderArmy, compOf, autoResolve, biomeFor, BIOMES, mkUnit, loadWarSprites, UNIT_TYPES, consolidate, expandUnits } from './units.js';
 import { BattleA } from './battleA.js';
 import { BattleB } from './battleB.js';
 import { STATS, STAT_GROUPS, computeStats, statGoodness } from './stats.js';
@@ -690,8 +690,8 @@ function openInterceptBattle(m) {
     klinchCanvas: $('#kcanvas'),
     klinchEl: $('#klinch'),
     biome,
-    atk: state.solo.army.units.map((u) => ({ ...u })),
-    def: m.units.map((u) => ({ ...u })),
+    atk: consolidate(state.solo.army.units.map((u) => ({ ...u }))),
+    def: consolidate(m.units.map((u) => ({ ...u }))),
     seed: seedFrom(m.att),
     atkBoost: battleBoost(),
     kenneyRow: FACTIONS[state.solo.faction]?.kenneyRow ?? 8,
@@ -711,13 +711,13 @@ function finishIntercept(m, result) {
   const world = worldCtx().world;
   if (result.winner === 0) {
     world.moving = world.moving.filter((x) => x.id !== m.id);
-    s.army.units = result.survivors.map((u) => ({ ...u }));
+    s.army.units = expandUnits(result.survivors);
     s.res.money += 100;
     $('#bresTitle').textContent = 'GENSKJUTNING LYCKAD!';
     $('#bresTitle').style.color = 'var(--amber)';
     $('#bresText').innerHTML = `${cname(m.att)}S INVASION AV ${cname(m.target)} ÄR STOPPAD<br>+100 \u{1F4B0} KRIGSBYTE`;
   } else if (result.retreat) {
-    s.army.units = result.survivors.map((u) => ({ ...u }));
+    s.army.units = expandUnits(result.survivors);
     $('#bresTitle').textContent = 'RETRÄTT';
     $('#bresTitle').style.color = 'var(--holo)';
     $('#bresText').textContent = 'DU DROG DIG UR — INVASIONEN FORTSÄTTER.';
@@ -2160,7 +2160,7 @@ $('#demConfirm').addEventListener('click', () => {
   }
 
   delete s.wars[target.id];
-  s.army.units = result.survivors.map((u) => ({ ...u }));
+  s.army.units = expandUnits(result.survivors);
   s.army.units.push(mkUnit('INF', 0));
   s.army.at = target.id;
   s.army.ll = capitalLL(target.id);
@@ -2249,9 +2249,10 @@ function seedFrom(id) {
 
 function startBattle(kind) {
   const target = state.pendingTarget;
-  const def = (state.mode === 'solo' ? countryArmy(target.id).units : defenderArmy(target, state.facts[target.id])).map((u) => ({ ...u }));
+  // stora arméer slås ihop till dubbelenheter (hp ≤ 20) så kartan aldrig svämmar över
+  const def = consolidate((state.mode === 'solo' ? countryArmy(target.id).units : defenderArmy(target, state.facts[target.id])).map((u) => ({ ...u })));
   if (!def.length) def.push(mkUnit('INF', 1)); // sista garnisonen
-  const atk = state.solo.army.units.map((u) => ({ ...u }));
+  const atk = consolidate(state.solo.army.units.map((u) => ({ ...u })));
   const biome = biomeFor(target);
   $('#battle').classList.add('show');
   $('#btitle').textContent = `PROTOTYP ${kind} — ${kind === 'A' ? 'TAKTIK' : 'REALTID'} • ${target.name.toUpperCase()}`;
@@ -2287,7 +2288,7 @@ function finishBattle(result) {
 
   // försvararens förluster består — den stående armén tar stryk
   if (state.mode === 'solo' && result.defSurvivors) {
-    countryArmy(target.id).units = result.defSurvivors.map((u) => ({ ...u, side: 1 }));
+    countryArmy(target.id).units = expandUnits(result.defSurvivors).map((u) => ({ ...u, side: 1 }));
   }
 
   const victory = result.winner === 0;
@@ -2297,7 +2298,7 @@ function finishBattle(result) {
     openDemands(target, war?.cb || 'annexation', result);
     return;
   } else if (result.retreat) {
-    s.army.units = result.survivors.map((u) => ({ ...u }));
+    s.army.units = expandUnits(result.survivors);
     s.army.at = s.prevAt;
     s.army.ll = capitalLL(s.prevAt);
     $('#bresTitle').textContent = 'RETRÄTT';
@@ -2561,7 +2562,7 @@ function generateTowns() {
     while (i < list.length && performance.now() - t0 < 24) {
       const c = list[i++];
       const pop = state.facts[c.id]?.p || 3e6;
-      const n = Math.max(2, Math.min(90, Math.round(pop / 2.2e6)));
+      const n = Math.max(1, Math.min(35, Math.round(pop / 6e6)));
       let h = ((parseInt(c.id, 10) || 7) * 2654435761) % 2147483647;
       const rnd = () => { h = (h * 1103515245 + 12345) % 2147483648; return h / 2147483648; };
       const [[x0, y0], [x1, y1]] = c.bounds;

@@ -53,6 +53,38 @@ export function compOf(units) {
   return c;
 }
 
+// Stora arméer slås ihop till DUBBELENHETER i strid: två likadana enheter
+// blir en med hp upp till 20 (dubbel styrka, dubbel tålighet) så taktikkartan
+// aldrig svämmar över. hp/10 skalar redan skadan, så en 20:a slår dubbelt.
+export function consolidate(units, maxUnits = 12) {
+  const out = units.map((u) => ({ ...u }));
+  while (out.length > maxUnits) {
+    let pair = null;
+    for (const t of ['INF', 'TANK', 'FLYG']) {
+      const l = out.filter((u) => u.type === t && u.hp < 20).sort((a, b) => a.hp - b.hp);
+      if (l.length >= 2 && l[0].hp + l[1].hp <= 20) { pair = [l[0], l[1]]; break; }
+    }
+    if (!pair) break;
+    pair[0].hp += pair[1].hp;
+    out.splice(out.indexOf(pair[1]), 1);
+  }
+  return out;
+}
+
+// motsatsen efter striden: dubbelenheter delas upp igen till vanliga enheter
+export function expandUnits(units) {
+  const out = [];
+  for (const u of units) {
+    if (u.hp > 10) {
+      out.push({ ...u, hp: 10 });
+      out.push({ ...u, hp: u.hp - 10 });
+    } else {
+      out.push({ ...u });
+    }
+  }
+  return out;
+}
+
 // ---------- snabbresultat (tärningsmodell) ----------
 export function autoResolve(atkUnits, defUnits) {
   const a = atkUnits.map((u) => ({ ...u }));
