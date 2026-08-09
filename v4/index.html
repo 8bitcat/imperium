@@ -201,6 +201,20 @@
     display: inline-block; line-height: 2.1;
   }
   #menuversion .vname { color: var(--holo-dim); }
+  /* stridskön i hörnet — pågående spelarstrider går att klicka fram på TV:n */
+  .feedrow {
+    display: block; width: 100%; text-align: left; font-family: inherit;
+    font-size: 7px; line-height: 1.9; margin: 3px 0; padding: 4px 0;
+    background: transparent; border: none; color: inherit;
+  }
+  button.feedrow {
+    cursor: pointer; padding: 6px 7px; color: var(--amber);
+    border: 1px solid rgba(255, 176, 46, 0.45); background: rgba(40, 28, 6, 0.55);
+  }
+  button.feedrow small { color: var(--holo-dim); font-size: 6px; }
+  button.feedrow:hover { background: rgba(60, 42, 8, 0.8); }
+  button.feedrow.on { border-color: var(--holo); color: var(--holo); }
+  button.feedrow.on small { color: var(--holo); }
   .card label { display: block; font-size: 8px; color: var(--holo-dim); text-align: left; margin-top: 6px; }
   .card .err { color: var(--red); font-size: 8px; min-height: 14px; margin-top: 8px; }
   .card a.v1link { display: block; font-size: 7px; color: var(--holo-dim); margin-top: 14px; text-decoration: none; }
@@ -552,7 +566,7 @@
 <div id="buildcorner" class="panel" style="left:10px; bottom:66px; min-width:150px; display:none"></div>
 
 <!-- STRIDSFEED: pågående + köade strider (uppe till höger) -->
-<div id="battlefeed" class="panel" style="top:56px; right:10px; min-width:180px; max-width:46vw; display:none">
+<div id="battlefeed" class="panel" style="top:56px; right:10px; min-width:180px; max-width:46vw; display:none; z-index:88">
   <div class="ptitle">&#9654; STRIDER <button class="pclose" data-close="#battlefeed">&#10005;</button></div>
   <div id="battlefeedlist"></div>
 </div>
@@ -662,6 +676,7 @@
     <button id="bEndTurn" class="tbtn on">AVSLUTA DRAG</button>
     <button id="bSelAll" class="tbtn on">VÄLJ ALLA</button>
     <button id="bRetreat" class="tbtn">RETRÄTT</button>
+    <button id="bClose" class="tbtn" style="display:none">&#10005; DÖLJ STRIDEN</button>
   </div>
   <canvas id="bcanvas"></canvas>
   <div id="bstatus"></div>

@@ -23,9 +23,9 @@ const SOLO_COLOR = '#ff4f4f';
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '4.9.0';
+export const VERSION = '4.10.0';
 export const VERSION_DATE = '2026-08-10';
-export const VERSION_NAME = 'PvP-STRIDER & SMART AI';
+export const VERSION_NAME = 'TVÅSPELARSTRIDER';
 
 const globe = new Globe($('#globe'));
 
@@ -2892,6 +2892,8 @@ function startTV() {
         player.leader = String(d?.leader || '').slice(0, 40);
         player.leaderDesc = String(d?.leaderDesc || '').slice(0, 60);
         player.factionIcon = d?.faction || '';
+        player.boost = d?.boost && typeof d.boost === 'object' ? d.boost : {};
+        player.kenneyRow = Number(d?.kenneyRow) || 8;
         player.units = Array.isArray(d?.units) ? d.units.slice(0, 40) : [];
         renderRoster();
         broadcastState(); // så alla ser uppdaterad ideologi/ledare i landkortet
@@ -2932,8 +2934,17 @@ function startTV() {
         rebuildActiveBattles();
         if (!player.busy) processBattleQueue();
         broadcastState();
+      } else if (t === 'pvpact') {
+        // spegla ett drag till motståndaren i den pågående striden
+        const P = state.pvpPending;
+        if (!P || P.id !== d?.battleId) return;
+        const other = P.att === peerId ? P.def : (P.def === peerId ? P.att : null);
+        if (!other) return;
+        net.sendTo(other, 'pvpact', { battleId: P.id, act: d.act });
+        (P.acts ||= []).push(d.act);
+        if (state.spectate) state.battle?.applyRemote?.(d.act); // TV:n tittar på
       } else if (t === 'pvpdone') {
-        // anfallaren har spelat klart taktikstriden
+        // striden är spelad — bara ANFALLAREN rapporterar utfallet
         if (state.pvpPending?.att !== peerId || state.pvpPending?.id !== d?.battleId) return;
         finalizePvp(d.battleId, d);
       } else if (t === 'pvp') {
@@ -2989,14 +3000,23 @@ function resolvePvp(entry) {
     return;
   }
   const battleId = Math.random().toString(36).slice(2, 9);
-  state.pvpPending = { id: battleId, att: A.id, def: D.id, target: entry.target };
   A.busy = true; A.busyAt = c.name;
   D.busy = true; D.busyAt = c.name;
-  net.sendTo(A.id, 'pvpbattle', {
-    battleId, target: entry.target, defName: D.name,
-    defUnits: (D.units || []).map(({ type, hp }) => ({ type, hp })),
-  });
-  net.sendTo(D.id, 'pvpdefend', { target: entry.target, attName: A.name });
+  // BÅDA spelarna får samma strid på sin skärm och styr sin EGEN sida.
+  // Samma enhetslistor + samma seed ger identiska kartor och identisk utgång.
+  const atkUnits = (A.units || []).map(({ type, hp }) => ({ type, hp }));
+  const defUnits = (D.units || []).map(({ type, hp }) => ({ type, hp }));
+  const common = {
+    battleId, target: entry.target,
+    atkUnits, defUnits,
+    attName: A.name, defName: D.name,
+    atkBoost: A.boost || {}, defBoost: D.boost || {},
+    atkRow: A.kenneyRow ?? 8, defRow: D.kenneyRow ?? 7,
+  };
+  // TV:n sparar hela striden så den kan visas upp och spelas om från början
+  state.pvpPending = { id: battleId, att: A.id, def: D.id, target: entry.target, ...common, acts: [] };
+  net.sendTo(A.id, 'pvpbattle', { ...common, role: 'att' });
+  net.sendTo(D.id, 'pvpbattle', { ...common, role: 'def' });
   toast(`\u{2694}\u{FE0F} ${A.name.toUpperCase()} ANFALLER ${D.name.toUpperCase()} I ${c.name.toUpperCase()} — STRIDEN PÅGÅR`, 'red', 7000);
   broadcastState();
   // säkerhetsnät: tappar anfallaren kontakten avgörs striden automatiskt
@@ -3015,6 +3035,7 @@ function finalizePvp(battleId, result) {
   const P = state.pvpPending;
   if (!P || P.id !== battleId) return;
   state.pvpPending = null;
+  if (state.spectate) closeSpectate();
   clearTimeout(state.pvpTimer);
   const A = state.players.find((p) => p.id === P.att);
   const D = state.players.find((p) => p.id === P.def);
@@ -3215,9 +3236,9 @@ function startPlayer(name, code) {
         refreshInfoPanel();
       } else if (t === 'pvpbattle') {
         startPvpBattle(d);
-      } else if (t === 'pvpdefend') {
-        const c = globe.getCountry(d.target);
-        toast(`\u{1F6A8} ${String(d.attName || '').toUpperCase()} ANFALLER ${c?.name.toUpperCase() || ''} — DIN ARMÉ FÖRSVARAR SIG!`, 'red', 8000);
+      } else if (t === 'pvpact') {
+        // motståndarens drag i den pågående striden
+        if (state.pvpBattleId === d.battleId) state.battle?.applyRemote?.(d.act);
       } else if (t === 'eliminated') {
         backToLobby(d?.by);
       } else if (t === 'deny') {
@@ -3232,27 +3253,35 @@ function startPlayer(name, code) {
 function startPvpBattle(d) {
   const s = state.solo;
   const target = globe.getCountry(d.target);
+  const iAmAtt = d.role !== 'def';
   // kan vi inte strida (utslagen, kartan inte klar) MÅSTE värden få veta det —
   // annars står hela stridskön still tills timeouten löser ut
-  if (!s?.army?.units?.length || !target) {
-    net.send('pvpdone', {
-      battleId: d.battleId, winner: 1, retreat: true,
-      survivors: (s?.army?.units || []).map(({ type, hp }) => ({ type, hp })),
-      defSurvivors: d.defUnits || [],
-    });
+  if (!s || !target) {
+    if (iAmAtt) {
+      net.send('pvpdone', {
+        battleId: d.battleId, winner: 1, retreat: true,
+        survivors: [], defSurvivors: d.defUnits || [],
+      });
+    }
     return;
   }
   if (state.battle) { state.battle.destroy?.(); state.battle = null; }
+  // BÅDA sidorna byggs från värdens listor → identiska kartor och enhetsordning
+  const atk = consolidate(sanitizeUnits(d.atkUnits, 0));
   const def = consolidate(sanitizeUnits(d.defUnits, 1));
+  if (!atk.length) atk.push(mkUnit('INF', 0));
   if (!def.length) def.push(mkUnit('INF', 1));
-  const atk = consolidate(s.army.units.map((u) => ({ ...u })));
   state.pvpBattleId = d.battleId;
+  state.pvpRole = d.role || 'att';
   state.pendingTarget = target;
+  const foe = String((iAmAtt ? d.defName : d.attName) || '').toUpperCase();
   $('#battle').classList.add('show');
-  $('#btitle').textContent = `\u{2694} ${String(d.defName || '').toUpperCase()} — ${target.name.toUpperCase()}`;
+  $('#btitle').textContent = `\u{2694} ${foe} — ${target.name.toUpperCase()}`;
   show($('#bEndTurn'), true);
   show($('#bSelAll'), false);
-  toast(`\u{2694}\u{FE0F} STRID MOT ${String(d.defName || '').toUpperCase()} OM ${target.name.toUpperCase()}!`, 'red', 6000);
+  toast(iAmAtt
+    ? `\u{2694}\u{FE0F} DU ANFALLER ${foe} OM ${target.name.toUpperCase()}!`
+    : `\u{1F6E1}\u{FE0F} ${foe} ANFALLER — FÖRSVARA ${target.name.toUpperCase()}!`, 'red', 7000);
   state.battle = new BattleA({
     canvas: $('#bcanvas'),
     klinchCanvas: $('#kcanvas'),
@@ -3261,8 +3290,13 @@ function startPvpBattle(d) {
     atk,
     def,
     seed: seedFrom(target.id),
-    atkBoost: battleBoost(),
-    kenneyRow: FACTIONS[s.faction]?.kenneyRow ?? 8,
+    atkBoost: d.atkBoost || {},
+    defBoost: d.defBoost || {},
+    kenneyRow: (iAmAtt ? d.atkRow : d.defRow) ?? 8,
+    pvp: {
+      role: iAmAtt ? 'att' : 'def',
+      send: (act) => net.send('pvpact', { battleId: d.battleId, act }),
+    },
     setStatus: (t) => { $('#bstatus').textContent = t; },
     setTerrain: renderTerrBadge,
     onEnd: (result) => finishPvpBattle(result),
@@ -3270,23 +3304,31 @@ function startPvpBattle(d) {
 }
 
 function finishPvpBattle(result) {
+  const iAmAtt = state.pvpRole !== 'def';
   state.battle?.destroy?.();
   state.battle = null;
   $('#battle').classList.remove('show');
   $('#klinch').style.display = 'none';
   const s = state.solo;
+  // mina överlevare är min sidas lista
   if (s?.army) {
-    s.army.units = expandUnits(result.survivors || []);
+    s.army.units = expandUnits((iAmAtt ? result.survivors : result.defSurvivors) || []);
     updateArmyMarker();
   }
-  net.send('pvpdone', {
-    battleId: state.pvpBattleId,
-    winner: result.winner,
-    retreat: !!result.retreat,
-    survivors: (result.survivors || []).map(({ type, hp }) => ({ type, hp })),
-    defSurvivors: (result.defSurvivors || []).map(({ type, hp }) => ({ type, hp })),
-  });
+  // bara anfallaren rapporterar utfallet till värden (annars dubbla domar)
+  if (iAmAtt) {
+    net.send('pvpdone', {
+      battleId: state.pvpBattleId,
+      winner: result.winner,
+      retreat: !!result.retreat,
+      survivors: (result.survivors || []).map(({ type, hp }) => ({ type, hp })),
+      defSurvivors: (result.defSurvivors || []).map(({ type, hp }) => ({ type, hp })),
+    });
+  } else {
+    toast('STRIDEN ÄR ÖVER — TV:N RÄKNAR SAMMAN', '', 4000);
+  }
   state.pvpBattleId = null;
+  state.pvpRole = null;
   applyState();
 }
 
@@ -3382,6 +3424,8 @@ function startNationSync() {
       leader: s.leader?.n || '',
       leaderDesc: s.leader ? leaderDesc(s.leader) : '',
       faction: FACTIONS[s.faction]?.icon || '',
+      boost: battleBoost(),                       // stridsbonus, så PvP blir rättvist
+      kenneyRow: FACTIONS[s.faction]?.kenneyRow ?? 8,
       units: (s.army?.units || []).map(({ type, hp }) => ({ type, hp })),
     });
   };
@@ -3392,18 +3436,90 @@ function startNationSync() {
 function renderBattleFeed(battles) {
   const feed = $('#battlefeed');
   const list = $('#battlefeedlist');
-  const rows = [];
+  list.innerHTML = '';
+  let n = 0;
+  const P = state.pvpPending;
+  // pågående spelarstrid — på TV:n går den att klicka fram och titta på
+  if (state.mode === 'tv' && P) {
+    const an = state.players.find((p) => p.id === P.att)?.name || '?';
+    const dn = state.players.find((p) => p.id === P.def)?.name || '?';
+    const row = document.createElement('button');
+    row.className = 'feedrow live' + (state.spectate ? ' on' : '');
+    row.innerHTML = `\u{2694} ${an.toUpperCase()} vs ${dn.toUpperCase()}<br><small>${(globe.getCountry(P.target)?.name || '').toUpperCase()} — ${state.spectate ? 'DÖLJ STRIDEN' : 'VISA STRIDEN'}</small>`;
+    row.addEventListener('click', () => toggleSpectate());
+    list.appendChild(row);
+    n++;
+  }
   for (const a of battles?.active || []) {
-    rows.push(`<div style="font-size:7px;color:var(--amber);margin:3px 0">\u{2694} ${a.name.toUpperCase()}${a.target ? ': ' + a.target.toUpperCase() : ''} — PÅGÅR</div>`);
+    if (P && state.mode === 'tv') break; // redan visad som klickbar rad
+    const d = document.createElement('div');
+    d.className = 'feedrow';
+    d.style.color = 'var(--amber)';
+    d.textContent = `\u{2694} ${a.name.toUpperCase()}${a.target ? ': ' + a.target.toUpperCase() : ''} — PÅGÅR`;
+    list.appendChild(d);
+    n++;
   }
   for (const q of battles?.queued || []) {
     const an = state.players.find((p) => p.id === q.att)?.name || '?';
     const dn = state.players.find((p) => p.id === q.def)?.name || '?';
-    rows.push(`<div style="font-size:7px;color:var(--holo-dim);margin:3px 0">\u{23F3} ${an.toUpperCase()} \u{2694} ${dn.toUpperCase()} — KÖAD</div>`);
+    const d = document.createElement('div');
+    d.className = 'feedrow';
+    d.style.color = 'var(--holo-dim)';
+    d.textContent = `\u{23F3} ${an.toUpperCase()} \u{2694} ${dn.toUpperCase()} — KÖAD`;
+    list.appendChild(d);
+    n++;
   }
-  list.innerHTML = rows.join('');
-  show(feed, rows.length > 0 && feed.dataset.closed !== '1');
+  show(feed, n > 0 && feed.dataset.closed !== '1');
 }
+
+// ---------- TV:n tittar på en pågående spelarstrid ----------
+function toggleSpectate() {
+  if (state.spectate) { closeSpectate(); return; }
+  const P = state.pvpPending;
+  const target = P && globe.getCountry(P.target);
+  if (!P || !target) return;
+  state.spectate = true;
+  $('#battle').classList.add('show');
+  const an = state.players.find((p) => p.id === P.att)?.name || '?';
+  const dn = state.players.find((p) => p.id === P.def)?.name || '?';
+  $('#btitle').textContent = `\u{1F4FA} ${an.toUpperCase()} vs ${dn.toUpperCase()} — ${target.name.toUpperCase()}`;
+  show($('#bEndTurn'), false);
+  show($('#bSelAll'), false);
+  show($('#bRetreat'), false);
+  show($('#bClose'), true); // TV:n stänger stridsvyn med krysset
+  state.battle = new BattleA({
+    canvas: $('#bcanvas'),
+    klinchCanvas: $('#kcanvas'),
+    klinchEl: $('#klinch'),
+    biome: biomeFor(target),
+    atk: consolidate(sanitizeUnits(P.atkUnits, 0)),
+    def: consolidate(sanitizeUnits(P.defUnits, 1)),
+    seed: seedFrom(P.target),
+    atkBoost: P.atkBoost || {},
+    defBoost: P.defBoost || {},
+    kenneyRow: P.atkRow ?? 8,
+    pvp: { role: 'spec', send: () => {} }, // åskådare: styr ingenting
+    setStatus: (t) => { $('#bstatus').textContent = t; },
+    setTerrain: renderTerrBadge,
+    onEnd: () => closeSpectate(),
+  });
+  // spela upp de drag som redan hunnit ske
+  for (const act of P.acts || []) state.battle.applyRemote(act);
+  renderBattleFeed(state.battles);
+}
+
+function closeSpectate() {
+  state.spectate = false;
+  state.battle?.destroy?.();
+  state.battle = null;
+  $('#battle').classList.remove('show');
+  $('#klinch').style.display = 'none';
+  show($('#bRetreat'), true);
+  show($('#bClose'), false);
+  renderBattleFeed(state.battles);
+}
+
+$('#bClose').addEventListener('click', () => closeSpectate());
 
 // ---------- erövringsläge (solo-prototyp) ----------
 function startSolo() {

@@ -75,6 +75,13 @@ export class BattleA {
     const defCols = [COLS - 1, COLS - 2, COLS - 3, COLS - 4, COLS - 5];
     for (const u of this.units) place(u, u.side === 0 ? atkCols : defCols);
 
+    // PvP: båda spelarna styr sin egen sida — ingen AI spelar åt någon.
+    // opts.pvp = { role: 'att' | 'def', send(action) }
+    // role 'spec' = åskådare (TV:n) som bara ser striden spelas upp
+    this.pvp = opts.pvp || null;
+    this.mySide = this.pvp?.role === 'def' ? 1 : (this.pvp?.role === 'spec' ? -1 : 0);
+    this._remoteQ = [];
+
     this.turn = 0;
     this.sel = null;
     this.reach = new Map();
@@ -217,24 +224,27 @@ export class BattleA {
   }
 
   async tapTile(tx, ty) {
-    if (this.busy || this.done || this.turn !== 0) return;
+    if (this.busy || this.done || this.turn !== this.mySide) return;
     if (tx >= 0 && ty >= 0 && tx < COLS && ty < ROWS) this.o.setTerrain?.(this.terr[ty][tx]);
+    const me = this.mySide, foe = 1 - this.mySide;
     const target = this.unitAt(tx, ty);
     if (this.sel) {
-      if (target && target.side === 1 && this.attackFrom.has(target)) {
+      if (target && target.side === foe && this.attackFrom.has(target)) {
         const from = this.attackFrom.get(target);
         this.sel.tx = from.tx; this.sel.ty = from.ty;
+        this._sendAct({ t: 'atk', u: this.units.indexOf(this.sel), v: this.units.indexOf(target), x: from.tx, y: from.ty });
         await this._attack(this.sel, target);
         this._deselect();
         this._checkAllMoved();
         return;
       }
-      if (target && target.side === 0 && !target.moved && target !== this.sel) {
+      if (target && target.side === me && !target.moved && target !== this.sel) {
         this.sel = target; this._computeReach(target);
         this._selStatus(target);
         return;
       }
       if (!target && this.reach.has(tx + ',' + ty)) {
+        this._sendAct({ t: 'mv', u: this.units.indexOf(this.sel), x: tx, y: ty });
         this.sel.tx = tx; this.sel.ty = ty;
         this.sel.moved = true;
         this._deselect();
@@ -244,11 +254,63 @@ export class BattleA {
       this._deselect();
       return;
     }
-    if (target && target.side === 0 && !target.moved) {
+    if (target && target.side === me && !target.moved) {
       this.sel = target;
       this._computeReach(target);
       this._selStatus(target);
     }
+  }
+
+  // ---------- PvP-synk: varje drag speglas till motståndaren ----------
+  _sendAct(act) { if (this.pvp) this.pvp.send?.(act); }
+
+  // motståndarens drag kommer in via värden — kön ser till att inget tappas
+  // medan en klinch-animation spelas
+  applyRemote(act) {
+    this._remoteQ.push(act);
+    this._drainRemote();
+  }
+
+  async _drainRemote() {
+    if (this._draining || this.done) return;
+    this._draining = true;
+    while (this._remoteQ.length && !this.done) {
+      if (this.busy) { await new Promise((r) => setTimeout(r, 120)); continue; }
+      const act = this._remoteQ.shift();
+      if (act.t === 'mv') {
+        const u = this.units[act.u];
+        if (u) { u.tx = act.x; u.ty = act.y; u.moved = true; }
+      } else if (act.t === 'atk') {
+        const u = this.units[act.u], v = this.units[act.v];
+        if (u && v) { u.tx = act.x; u.ty = act.y; await this._attack(u, v); }
+      } else if (act.t === 'end') {
+        this._beginTurn(1 - this.turn);
+      } else if (act.t === 'retreat') {
+        this._foeRetreated();
+      }
+    }
+    this._draining = false;
+  }
+
+  _beginTurn(side) {
+    this.turn = side;
+    for (const u of this.units) u.moved = false;
+    this._deselect();
+    this._status(this.mySide < 0
+      ? (side === 0 ? 'ANFALLARENS TUR' : 'FÖRSVARARENS TUR')
+      : (side === this.mySide ? 'DIN TUR' : 'MOTSTÅNDARENS TUR…'));
+    this._roundGuard();
+  }
+
+  _foeRetreated() {
+    if (this.done) return;
+    this.done = true;
+    this.o.onEnd?.({
+      winner: this.mySide === 0 ? 0 : 1,
+      foeRetreat: true,
+      survivors: this.units.filter((u) => u.side === 0).map(({ type, hp }) => ({ type, hp })),
+      defSurvivors: this.units.filter((u) => u.side === 1).map(({ type, hp }) => ({ type, hp })),
+    });
   }
 
   _selStatus(u) {
@@ -257,29 +319,56 @@ export class BattleA {
     this._status(`${UNIT_TYPES[u.type].name} HP ${u.hp} • ${t}${d ? ` (FÖRSVAR +${d})` : ''} — VÄLJ RUTA/FIENDE`);
   }
 
-  _deselect() { this.sel = null; this.reach.clear(); this.attackFrom.clear(); if (this.turn === 0) this._status('DIN TUR'); }
+  _deselect() { this.sel = null; this.reach.clear(); this.attackFrom.clear(); if (this.turn === this.mySide) this._status('DIN TUR'); }
 
   _checkAllMoved() {
-    if (this.units.every((u) => u.side !== 0 || u.hp <= 0 || u.moved)) this.endTurn();
+    if (this.units.every((u) => u.side !== this.mySide || u.hp <= 0 || u.moved)) this.endTurn();
   }
 
   endTurn() {
-    if (this.busy || this.done || this.turn !== 0) return;
+    if (this.busy || this.done || this.turn !== this.mySide) return;
     this._deselect();
+    if (this.pvp) {
+      // PvP: motståndaren spelar sin egen tur på sin skärm
+      this._sendAct({ t: 'end' });
+      this._beginTurn(1 - this.mySide);
+      return;
+    }
     this.turn = 1;
     this._status('FIENDENS TUR…');
     this._enemyTurn();
   }
 
+  // gemensam rundräknare — ingen strid får pågå i evighet
+  _roundGuard() {
+    if (this.turn !== 0) return;
+    this.round = (this.round || 0) + 1;
+    if (this.round < 30 || this.done) return;
+    const atk = this.units.filter((u) => u.side === 0);
+    const def = this.units.filter((u) => u.side === 1);
+    const val = (l) => l.reduce((a, u) => a + ({ INF: 1, TANK: 1.9, FLYG: 2.5 }[u.type] || 1) * (u.hp / 10), 0);
+    this.done = true;
+    this._status('STRIDEN HAR DRAGIT UT PÅ TIDEN — AVGÖRS PÅ STYRKEFÖRHÅLLANDET');
+    this.o.onEnd?.({
+      winner: val(atk) >= val(def) ? 0 : 1,
+      survivors: atk.map(({ type, hp }) => ({ type, hp })),
+      defSurvivors: def.map(({ type, hp }) => ({ type, hp })),
+      timeout: true,
+    });
+  }
+
   async _attack(att, def) {
     this.busy = true;
     att.moved = true;
-    const boost = this.o.atkBoost || {};
-    const dA = Math.min(10, attackDamage(att, def, this.terrDef(def)) + (att.side === 0 ? (boost[att.type] || 0) : 0));
+    // sida 0 får anfallarens bonus, sida 1 försvararens (PvP) — annars ingen
+    const b0 = this.o.atkBoost || {};
+    const b1 = this.o.defBoost || {};
+    const bonus = (u) => ((u.side === 0 ? b0 : b1)[u.type] || 0);
+    const dA = Math.min(10, attackDamage(att, def, this.terrDef(def)) + bonus(att));
     const hpAfter = def.hp - dA;
     const adjacent = Math.abs(att.tx - def.tx) + Math.abs(att.ty - def.ty) === 1;
     const dD = hpAfter > 0 && adjacent
-      ? Math.min(10, attackDamage({ ...def, hp: hpAfter }, att, this.terrDef(att)) + (def.side === 0 ? (boost[def.type] || 0) : 0))
+      ? Math.min(10, attackDamage({ ...def, hp: hpAfter }, att, this.terrDef(att)) + bonus(def))
       : 0;
     await this._playKlinch(att, def, dA, dD);
     def.hp = Math.max(0, def.hp - dA);
@@ -307,9 +396,10 @@ export class BattleA {
 
   retreat() {
     if (this.done) return;
+    this._sendAct({ t: 'retreat' });
     this.done = true;
     this.o.onEnd?.({
-      winner: 1, retreat: true,
+      winner: this.mySide === 0 ? 1 : 0, retreat: true,
       survivors: this.units.filter((u) => u.side === 0).map(({ type, hp }) => ({ type, hp })),
       defSurvivors: this.units.filter((u) => u.side === 1).map(({ type, hp }) => ({ type, hp })),
     });
@@ -415,7 +505,9 @@ export class BattleA {
       : u.hp - Math.round(k.dA * phase1));
     const firingNow = (u) => (u === k.att ? attackerFiring : defenderFiring);
     const flashingNow = (u) => (u === k.att ? defenderFiring : attackerFiring);
-    const leftU = k.att.side === 0 ? k.att : k.def;
+    // egna trupper alltid till vänster (åskådare ser anfallaren till vänster)
+    const mine = this.mySide < 0 ? 0 : this.mySide;
+    const leftU = k.att.side === mine ? k.att : k.def;
     const rightU = leftU === k.att ? k.def : k.att;
 
     const panel = (u, hpShown, x0, facing, color, flashing, firing) => {
@@ -657,7 +749,7 @@ export class BattleA {
     const KENNEY_UNIT = { INF: 16, TANK: 8, FLYG: 10 };
     for (const u of this.units) {
       const px = u.tx * TILE, py = u.ty * TILE + 2;
-      if (u.side === 0 && u.moved && this.turn === 0) c.globalAlpha = 0.5;
+      if (u.side === this.mySide && u.moved && this.turn === this.mySide) c.globalAlpha = 0.5;
       if (TILEIMG.complete && TILEIMG.naturalWidth) {
         // Kenney-enheter: spelaren röd (rad 8), fienden blå (rad 7, speglad)
         const col = KENNEY_UNIT[u.type], row = u.side === 0 ? (this.o.kenneyRow ?? 8) : 7;
