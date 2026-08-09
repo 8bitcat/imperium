@@ -25,7 +25,7 @@ const SOLO_COLOR = '#ff4f4f';
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '4.12.0';
+export const VERSION = '4.12.1';
 export const VERSION_DATE = '2026-08-10';
 export const VERSION_NAME = 'HÅLLNINGAR & LEVANDE VÄRLD';
 
@@ -67,6 +67,21 @@ function toast(msg, cls = '', ms = 3500) {
   el.textContent = msg;
   $('#toasts').appendChild(el);
   setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 450); }, ms);
+  // allt av betydelse hamnar också i världshistoriken (☰ uppe i hörnet)
+  if (ms >= 4000) logEvent(msg, { war: cls === 'red', mine: isAboutMe(msg) });
+}
+
+// rör händelsen mitt eget rike? (styr historikens MITT RIKE-filter)
+function isAboutMe(msg) {
+  const s = state.solo;
+  if (/\bDU\b|\bDITT\b|\bDINA\b|\bDIN\b|\bDIG\b/.test(msg)) return true;
+  if (!s?.claims) return false;
+  const up = msg.toUpperCase();
+  for (const cid of Object.keys(s.claims)) {
+    const n = globe.getCountry(cid)?.name;
+    if (n && up.includes(n.toUpperCase())) return true;
+  }
+  return false;
 }
 
 function fmtPop(p) {
@@ -983,9 +998,16 @@ function ownedResources() {
 // ---------- VÄRLDSHISTORIK: allt som händer loggas och går att bläddra i ----------
 function logEvent(text, opts = {}) {
   state.history ||= [];
+  const clean = String(text).replace(/<[^>]*>/g, '');
+  // samma händelse loggas inte två gånger (toast + explicit anrop)
+  if (state.history[0]?.text === clean) {
+    if (opts.mine) state.history[0].mine = true;
+    if (opts.war) state.history[0].war = true;
+    return;
+  }
   state.history.unshift({
     day: state.solo?.clock?.day || state.hostDay || 0,
-    text: String(text).replace(/<[^>]*>/g, ''),
+    text: clean,
     mine: !!opts.mine,
     war: !!opts.war,
   });
