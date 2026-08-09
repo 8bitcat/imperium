@@ -25,7 +25,7 @@ const SOLO_COLOR = '#ff4f4f';
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '4.12.1';
+export const VERSION = '4.13.0';
 export const VERSION_DATE = '2026-08-10';
 export const VERSION_NAME = 'HÅLLNINGAR & LEVANDE VÄRLD';
 
@@ -2532,7 +2532,22 @@ function renderIdeologyTab(body) {
 // ---------- FORSKNING-fliken ----------
 function renderResearchTab(body) {
   const s = state.solo;
-  body.innerHTML = `<div style="font-size:7px;color:var(--holo-dim);margin-bottom:10px">DU HAR <span style="color:var(--amber)">${s.res.rp} \u{1F52C}</span> FORSKNINGSPOÄNG — RESEARCH OUTPUT GER FLER PER DAG</div>`;
+  const q = s.researchQueue || [];
+  body.innerHTML = `<div style="font-size:7px;color:var(--holo-dim);margin-bottom:8px">DU HAR <span style="color:var(--amber)">${s.res.rp} \u{1F52C}</span> FORSKNINGSPOÄNG — RESEARCH OUTPUT GER FLER PER DAG</div>`;
+  // FORSKNINGSKÖN högst upp: vad som pågår och vad som står på tur
+  const qbox = document.createElement('div');
+  qbox.id = 'resqueue';
+  qbox.innerHTML = q.length
+    ? `<div class="qhead">\u{1F52C} FORSKNINGSKÖ (${q.length})</div>` + q.map((r, i) => {
+      const pct = i === 0 ? Math.round(((r.total - r.left) / r.total) * 100) : 0;
+      return `<div class="qrow">
+        <div class="qname">${i === 0 ? '\u{25B6} ' : `${i + 1}. `}${r.name.toUpperCase()}</div>
+        <div class="pbar"><div class="pfill" style="width:${pct}%"></div></div>
+        <div class="qsub">${i === 0 ? `${Math.max(0, r.left)} DAGAR KVAR` : `I KÖ — ${r.total} DAGAR`}</div>
+      </div>`;
+    }).join('')
+    : '<div class="qhead" style="color:var(--holo-dim)">INGEN FORSKNING PÅGÅR — VÄLJ NEDAN (FLERA KAN KÖAS)</div>';
+  body.appendChild(qbox);
   for (const [gname, gid] of [['CIVIL FORSKNING', 'civil'], ['MILITÄR FORSKNING', 'militar']]) {
     const gt = document.createElement('div');
     gt.className = 'gtitle';
@@ -2547,12 +2562,18 @@ function renderResearchTab(body) {
       nm.textContent = `${branch.icon} ${branch.name.toUpperCase()}`;
       row.appendChild(nm);
       const done = s.nation.research[bid] || 0;
+      const inQueue = q.filter((r) => r.branch === bid).length; // köade nivåer i grenen
       branch.tiers.forEach((t, i) => {
-        const active = (s.researchQueue || []).find((r) => r.branch === bid && r.tier === i + 1);
+        const qi = q.findIndex((r) => r.branch === bid && r.tier === i + 1);
+        const active = qi === 0;
+        const queued = qi > 0;
+        const canQueue = i === done + inQueue;    // nästa nivå som går att köa
         const box = document.createElement('button');
-        box.className = 'tierbox ' + (i < done ? 'done' : i === done ? 'avail' : 'locked');
+        box.className = 'tierbox ' + (i < done ? 'done' : (active || queued || canQueue) ? 'avail' : 'locked');
         box.innerHTML = active
-          ? `T${i + 1} \u{23F3} PÅGÅR (${active.left}d)<br>${t.name}`
+          ? `T${i + 1} \u{25B6} PÅGÅR (${q[0].left}d)<br>${t.name}`
+          : queued
+          ? `T${i + 1} \u{23F3} I KÖ (${qi + 1}:A)<br>${t.name}`
           : `T${i + 1} ${i < done ? '\u{2713}' : `(${TIER_COST[i]} \u{1F52C})`}<br>${t.name}`;
         box.addEventListener('mouseenter', () => {
           const extra = (t.unlock === 'nuke' ? ' <span class="dn">\u{2622}\u{FE0F} LÅSER UPP KÄRNVAPEN</span>' : '')
@@ -2561,15 +2582,17 @@ function renderResearchTab(body) {
         });
         box.addEventListener('mouseleave', () => setPreview());
         box.addEventListener('click', () => {
-          if (i < done || active) return;
-          if (i > done) { warn('KRÄVER FÖREGÅENDE NIVÅ'); return; }
-          if (s.researchQueue?.length) { warn('ETT FORSKNINGSPROJEKT I TAGET — SE KÖN I HÖRNET'); return; }
+          if (i < done || active || queued) return;
+          if (!canQueue) { warn('KRÄVER FÖREGÅENDE NIVÅ'); return; }
+          if (q.length >= 6) { warn('MAX 6 PROJEKT I KÖN'); return; }
           if (s.res.rp < TIER_COST[i]) { warn(`KRÄVER ${TIER_COST[i]} \u{1F52C} — DU HAR ${s.res.rp}`); return; }
           s.res.rp -= TIER_COST[i];
           const days = [6, 10, 15, 20, 26][i];
           (s.researchQueue ||= []).push({ branch: bid, tier: i + 1, name: t.name, left: days, total: days, unlock: t.unlock });
           renderBuildCorner(); renderResbar(); renderNationTab();
-          toast(`\u{1F52C} FORSKNING STARTAD: ${t.name.toUpperCase()} — KLAR OM ${days} DAGAR`, 'amber', 5000);
+          toast(q.length
+            ? `\u{1F52C} ${t.name.toUpperCase()} LAGD I FORSKNINGSKÖN (PLATS ${q.length + 1})`
+            : `\u{1F52C} FORSKNING STARTAD: ${t.name.toUpperCase()} — KLAR OM ${days} DAGAR`, 'amber', 5000);
         });
         row.appendChild(box);
       });
