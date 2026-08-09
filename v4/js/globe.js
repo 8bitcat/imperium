@@ -25,6 +25,41 @@ function shade(hex, f) {
 
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
+// Större bergskedjor som polylines (lon/lat) — ger terrängläget höjd och djup.
+// snow = vita toppar, big = bredare massiv.
+const MOUNTAIN_RANGES = [
+  { pts: [[-72, -40], [-70, -33], [-68, -27], [-66, -20], [-70, -14], [-75, -9], [-78, -2], [-77, 4]], snow: true, big: true },  // Anderna
+  { pts: [[-114, 49], [-111, 44], [-107, 39], [-105, 35]], snow: true, big: true },   // Klippiga bergen
+  { pts: [[-152, 63], [-146, 62], [-141, 61]], snow: true },                          // Alaska Range
+  { pts: [[-106, 28], [-103, 23], [-99, 19]] },                                       // Sierra Madre
+  { pts: [[-79, 36], [-76, 39], [-73, 43]] },                                         // Appalacherna
+  { pts: [[7, 60], [12, 64], [16, 67], [20, 69]], snow: true },                       // Skanderna
+  { pts: [[6, 45.5], [8, 46], [10, 46.5], [13, 47]], snow: true, big: true },         // Alperna
+  { pts: [[-1, 42.8], [1, 42.6]] },                                                   // Pyrenéerna
+  { pts: [[22, 49], [25, 47.5], [26, 46]] },                                          // Karpaterna
+  { pts: [[16, 44], [19, 43], [21, 42]] },                                            // Dinariderna
+  { pts: [[41, 43.5], [44, 43], [47, 42.5]], snow: true },                            // Kaukasus
+  { pts: [[59, 66], [59, 61], [58, 56], [59, 52]] },                                  // Ural
+  { pts: [[30, 37.5], [34, 37.5], [38, 38.5]] },                                      // Taurus/Anatolien
+  { pts: [[45, 37], [48, 34], [51, 31], [54, 29]] },                                  // Zagros
+  { pts: [[65, 36], [68, 35.5], [71, 36]], snow: true },                              // Hindukush
+  { pts: [[74, 35], [78, 33], [82, 29.5], [86, 28.5], [90, 28], [95, 29]], snow: true, big: true }, // Himalaya
+  { pts: [[80, 32], [84, 33], [88, 32], [92, 32]], snow: true, big: true },           // Tibetanska platån
+  { pts: [[72, 42], [76, 42], [80, 42.5], [84, 43]], snow: true },                    // Tien Shan
+  { pts: [[86, 49], [90, 48.5], [94, 48]] },                                          // Altai
+  { pts: [[128, 66], [132, 64], [136, 62]] },                                         // Verchojansk
+  { pts: [[158, 54], [160, 56]] },                                                    // Kamtjatka
+  { pts: [[137.5, 36], [138.5, 35.2]] },                                              // Japanska alperna
+  { pts: [[-7, 31], [-4, 32.5], [0, 34], [5, 35.5]] },                                // Atlas
+  { pts: [[37, 8], [39, 10], [38, 12]] },                                             // Etiopiska höglandet
+  { pts: [[35, -3], [33, -8]] },                                                      // Östafrikanska riften
+  { pts: [[28, -30], [29.5, -28.5]] },                                                // Drakensberg
+  { pts: [[148, -37], [150, -33], [152, -28]] },                                      // Great Dividing Range
+  { pts: [[138, -4], [142, -5], [145, -6]] },                                         // Nya Guineas högland
+  { pts: [[168, -45], [170.5, -43.5]], snow: true },                                  // Sydalperna NZ
+  { pts: [[-44, -20], [-42, -22]] },                                                  // Brasilianska höglandet
+];
+
 const SATELLITES = [
   { inc: 38, spdLon: 0.011, spdLat: 0.0016, phase: 0 },
   { inc: 62, spdLon: -0.008, spdLat: 0.0011, phase: 140 },
@@ -191,6 +226,7 @@ export class Globe {
   setShowTrade(on) { this.showTrade = on; }
   setShowTerrain(on) { this.showTerrain = on; this.sceneDirty = true; }
   setTerrainColors(map) { this.terrainColors = map || {}; this.sceneDirty = true; } // cid → naturfärg
+  setResourceMarkers(list) { this.resourceMarkers = list || []; } // {ll, icons} — tillgångar på kartan
 
   animateTo(lonlat, zoom, dur = 1600, cb = null) {
     const from = [this.rot[0], this.rot[1], this.zoom];
@@ -391,6 +427,7 @@ export class Globe {
     x.drawImage(this.buf, 0, 0, this.buf.width, this.buf.height, 0, 0, this.canvas.width, this.canvas.height);
 
     this._drawLabels(x);
+    if (this.resourceMarkers?.length) this._drawResourceMarkers(x);
     this._armyHit = null;
     if (this.army) this._drawArmy(x, t);
     if (this.garrisons?.length) this._drawGarrisons(x, t);
@@ -1028,6 +1065,89 @@ export class Globe {
     }
   }
 
+  // liten repeterbar brusplatta för landstruktur i terrängläget
+  _makeTerrainPattern(ctx) {
+    const c = document.createElement('canvas');
+    c.width = 48; c.height = 48;
+    const g = c.getContext('2d');
+    for (let y = 0; y < 48; y++) {
+      for (let x = 0; x < 48; x++) {
+        const h = hashId('tp' + (((x * 73856093) ^ (y * 19349663)) >>> 0).toString(36));
+        if (h % 100 < 10) { g.fillStyle = 'rgba(18,24,16,0.18)'; g.fillRect(x, y, 1, 1); }
+        else if (h % 100 < 18) { g.fillStyle = 'rgba(255,252,238,0.09)'; g.fillRect(x, y, 1, 1); }
+      }
+    }
+    return ctx.createPattern(c, 'repeat');
+  }
+
+  // Bergskedjor med hillshade: mörk skugga i sydost, ljus kant i nordväst, snötoppar
+  _drawRelief(s) {
+    if (!this._reliefPts) {
+      this._reliefPts = [];
+      for (const r of MOUNTAIN_RANGES) {
+        for (let i = 0; i < r.pts.length - 1; i++) {
+          const [a, b] = [r.pts[i], r.pts[i + 1]];
+          const segLen = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          const n = Math.max(2, Math.ceil(segLen / 1.1));
+          for (let j = 0; j < n; j++) {
+            const k = j / n;
+            const h = hashId('mt' + r.pts[0][0] + '_' + i + '_' + j);
+            this._reliefPts.push({
+              ll: [
+                a[0] + (b[0] - a[0]) * k + ((h % 9) - 4) * 0.11,
+                a[1] + (b[1] - a[1]) * k + (((h >> 4) % 9) - 4) * 0.11,
+              ],
+              big: r.big && h % 3 === 0,
+              snow: r.snow && h % 2 === 0,
+            });
+          }
+        }
+      }
+    }
+    for (const pt of this._reliefPts) {
+      const p = this.proj(pt.ll);
+      if (!p) continue;
+      const px = Math.round(p[0]), py = Math.round(p[1]);
+      const w = pt.big ? 2 : 1;
+      s.globalAlpha = 0.45;
+      s.fillStyle = '#2e2a1e';
+      s.fillRect(px + 1, py + 1, w, 1);          // skugga (SO)
+      s.globalAlpha = 0.85;
+      s.fillStyle = pt.snow ? '#ded9c8' : '#8f8266';
+      s.fillRect(px, py, w, 1);                  // massivet
+      s.globalAlpha = 0.4;
+      s.fillStyle = '#fdf6e3';
+      s.fillRect(px - 1, py - 1, 1, 1);          // ljuskant (NV)
+      if (pt.snow) {
+        s.globalAlpha = 0.9;
+        s.fillStyle = '#ffffff';
+        s.fillRect(px, py - 1, 1, 1);            // snötopp
+      }
+    }
+    s.globalAlpha = 1;
+  }
+
+  // Tillgångsikoner på respektive land (TILLGÅNGAR-toggeln) — skarpa i skärmupplösning
+  _drawResourceMarkers(x) {
+    const ps = this.pixelSize;
+    const iconPx = this.zoom >= 2 ? 13 : 10;
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.font = `${iconPx}px "Segoe UI Emoji", sans-serif`;
+    for (const m of this.resourceMarkers) {
+      if (!this._front(m.ll, 1.02)) continue;
+      const p = this.proj(m.ll);
+      if (!p) continue;
+      const sx = p[0] * ps, sy = p[1] * ps + 14;
+      if (sx < -30 || sy < -30 || sx > this.canvas.width + 30 || sy > this.canvas.height + 30) continue;
+      x.lineWidth = 3;
+      x.strokeStyle = 'rgba(2,10,16,0.8)';
+      x.strokeText(m.icons, sx, sy);
+      x.fillStyle = '#ffffff';
+      x.fillText(m.icons, sx, sy);
+    }
+  }
+
   _renderScene() {
     const s = this.sctx;
     const W = this.scene.width, H = this.scene.height;
@@ -1065,6 +1185,11 @@ export class Globe {
         s.fill();
         s.strokeStyle = BORDER; s.lineWidth = 0.55; s.stroke();
       }
+      // terrängläge: subtil bruskstruktur ger landmassorna djup
+      if (terr) {
+        s.fillStyle = (this._terrPattern ||= this._makeTerrainPattern(s));
+        s.fill();
+      }
       // säsongssnö: länder norr/söder om snögränsen får ett vitt täcke
       if (this._snowN != null) {
         const lat = c.centroid[1];
@@ -1074,6 +1199,9 @@ export class Globe {
         if (a > 0.03) { s.fillStyle = `rgba(235,244,252,${a})`; s.fill(); }
       }
     }
+
+    // bergskedjor med hillshade ovanpå naturfärgerna
+    if (this.showTerrain) this._drawRelief(s);
 
     // transportnätet: vägar, järnvägar, sjörutter, flygrutter
     if (this.showTrade && this._routeLines) {
@@ -1128,20 +1256,24 @@ export class Globe {
       }
     }
 
-    // etikettlistan (ritas skarpt i skärmupplösning i kompositpasset)
+    // etikettlistan (ritas skarpt i skärmupplösning i kompositpasset).
+    // Bara länder vars mittpunkt faktiskt SYNS på skärmen kandiderar — annars
+    // äter jättar utanför bild upp alla platser och inzoomade vyer blir namnlösa.
     this._labels = [];
     const entries = [];
+    const LW = this.buf.width, LH = this.buf.height;
     for (const c of this.countries) {
       const area = this.mpath.area(c.feature);
       if (area < 550) continue;
       const p = this.proj(c.centroid);
       if (!p) continue;
+      if (p[0] < -6 || p[1] < -6 || p[0] > LW + 6 || p[1] > LH + 6) continue;
       const rp = this.proj(this.proj.invert(p));
       if (!rp || Math.hypot(rp[0] - p[0], rp[1] - p[1]) > 1.5) continue;
       entries.push({ area, x: p[0], y: p[1], text: c.name.toUpperCase(), kind: 'country', claimed: !!this.claims[c.id] });
     }
     entries.sort((a, b) => b.area - a.area);
-    this._labels = entries.slice(0, 22);
+    this._labels = entries.slice(0, 28);
 
     if (this.showCities && this.zoom >= 2.2) {
       let count = 0;

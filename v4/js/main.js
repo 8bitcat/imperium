@@ -2086,6 +2086,17 @@ $('#bRetreat').addEventListener('click', () => state.battle?.retreat?.());
 
 // ---------- togglar + legend ----------
 // terrängläge: globen färgas som en riktig jordglob — öken gul, djungel grön, polerna vita
+let resourceMarkerList = null;
+function buildResourceMarkers() {
+  const list = [];
+  for (const c of globe.countries) {
+    const rs = resourcesOf(c.id);
+    if (!rs.length) continue;
+    list.push({ ll: c.centroid, icons: rs.map((r) => RESOURCES[r].icon).join('') });
+  }
+  return list;
+}
+
 let terrainColorMap = null;
 function buildTerrainColors() {
   const BIOME_COLORS = {
@@ -2125,6 +2136,8 @@ function wireToggles() {
     const open = $('#legendpanel').style.display !== 'block';
     show($('#legendpanel'), open);
     tgL.classList.toggle('on', open);
+    // tillgångarna ritas på respektive land — inte bara i hörnpanelen
+    globe.setResourceMarkers(open ? (resourceMarkerList ||= buildResourceMarkers()) : null);
   });
 }
 
