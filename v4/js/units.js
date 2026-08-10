@@ -56,15 +56,28 @@ export function compOf(units) {
 // Stora arméer slås ihop till DUBBELENHETER i strid: två likadana enheter
 // blir en med hp upp till 20 (dubbel styrka, dubbel tålighet) så taktikkartan
 // aldrig svämmar över. hp/10 skalar redan skadan, så en 20:a slår dubbelt.
+// Slår ihop förband tills de får plats på kartan. Det finns INGET hp-tak —
+// behövs det blir en bricka en hel armékår med t.ex. 80 HP. Sammanslagningen
+// sker mellan de SVAGASTE av samma sort först, så styrkan fördelas jämnt.
 export function consolidate(units, maxUnits = 12) {
   const out = units.map((u) => ({ ...u }));
-  while (out.length > maxUnits) {
+  let guard = 0;
+  while (out.length > maxUnits && guard++ < 4000) {
     let pair = null;
+    // i första hand: slå ihop två av samma truppslag
     for (const t of ['INF', 'TANK', 'FLYG']) {
-      const l = out.filter((u) => u.type === t && u.hp < 20).sort((a, b) => a.hp - b.hp);
-      if (l.length >= 2 && l[0].hp + l[1].hp <= 20) { pair = [l[0], l[1]]; break; }
+      const l = out.filter((u) => u.type === t).sort((a, b) => a.hp - b.hp);
+      if (l.length >= 2) {
+        if (!pair || l[0].hp + l[1].hp < pair[0].hp + pair[1].hp) pair = [l[0], l[1]];
+      }
     }
-    if (!pair) break;
+    // sista utväg: bara ett förband av varje sort kvar → slå ihop de svagaste
+    if (!pair) {
+      const l = [...out].sort((a, b) => a.hp - b.hp);
+      if (l.length < 2) break;
+      pair = [l[0], l[1]];
+      pair[0].type = pair[0].hp >= pair[1].hp ? pair[0].type : pair[1].type;
+    }
     pair[0].hp += pair[1].hp;
     out.splice(out.indexOf(pair[1]), 1);
   }
@@ -75,11 +88,13 @@ export function consolidate(units, maxUnits = 12) {
 export function expandUnits(units) {
   const out = [];
   for (const u of units) {
-    if (u.hp > 10) {
-      out.push({ ...u, hp: 10 });
-      out.push({ ...u, hp: u.hp - 10 });
-    } else {
-      out.push({ ...u });
+    let left = Math.max(0, u.hp);
+    if (left <= 10) { if (left > 0) out.push({ ...u, hp: left }); continue; }
+    // en armékår delas upp i så många vanliga förband som styrkan räcker till
+    while (left > 0 && out.length < 400) {
+      const take = Math.min(10, left);
+      out.push({ ...u, hp: take });
+      left -= take;
     }
   }
   return out;
@@ -332,7 +347,7 @@ export function warSprite(type, side, facing) {
 // HP-siffra (1–10) i Advance Wars-stil — större bricka med kant så den syns
 export function drawHpBadge(ctx, hp, x, y, s = 1) {
   const shown = Math.max(1, Math.floor(hp)); // aldrig decimaler, avrunda nedåt
-  const w = (shown >= 10 ? 12 : 8) * s;
+  const w = (4 + String(shown).length * 6) * s; // växer med antalet siffror
   const h = 9 * s;
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(x - s, y - s, w + 2 * s, h + 2 * s);

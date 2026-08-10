@@ -25,9 +25,9 @@ const SOLO_COLOR = '#ff4f4f';
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '4.14.0';
+export const VERSION = '4.15.0';
 export const VERSION_DATE = '2026-08-10';
-export const VERSION_NAME = 'OCKUPATIONSSTYRKA';
+export const VERSION_NAME = 'OBEGRÄNSADE ARMÉER';
 
 const globe = new Globe($('#globe'));
 
@@ -885,8 +885,8 @@ function openInterceptBattle(m) {
     klinchCanvas: $('#kcanvas'),
     klinchEl: $('#klinch'),
     biome,
-    atk: consolidate(state.solo.army.units.map((u) => ({ ...u }))),
-    def: consolidate(m.units.map((u) => ({ ...u }))),
+    atk: state.solo.army.units.map((u) => ({ ...u })),
+    def: m.units.map((u) => ({ ...u })),
     seed: seedFrom(m.att),
     atkBoost: battleBoost(),
     kenneyRow: FACTIONS[state.solo.faction]?.kenneyRow ?? 8,
@@ -3046,10 +3046,10 @@ function seedFrom(id) {
 
 function startBattle(kind) {
   const target = state.pendingTarget;
-  // stora arméer slås ihop till dubbelenheter (hp ≤ 20) så kartan aldrig svämmar över
-  const def = consolidate((state.mode === 'solo' ? countryArmy(target.id).units : defenderArmy(target, state.facts[target.id])).map((u) => ({ ...u })));
+  // hela arméerna skickas in — BattleA slår själv ihop dem så att de får plats
+  const def = (state.mode === 'solo' ? countryArmy(target.id).units : defenderArmy(target, state.facts[target.id])).map((u) => ({ ...u }));
   if (!def.length) def.push(mkUnit('INF', 1)); // sista garnisonen
-  const atk = consolidate(state.solo.army.units.map((u) => ({ ...u })));
+  const atk = state.solo.army.units.map((u) => ({ ...u }));
   const biome = biomeFor(target);
   $('#battle').classList.add('show');
   $('#btitle').textContent = `PROTOTYP ${kind} — ${kind === 'A' ? 'TAKTIK' : 'REALTID'} • ${target.name.toUpperCase()}`;
@@ -3712,7 +3712,7 @@ function resolvePvp(entry) {
 function sanitizeUnits(list, side) {
   return (Array.isArray(list) ? list : []).slice(0, 40)
     .filter((u) => UNIT_TYPES[u?.type])
-    .map((u) => ({ type: u.type, hp: Math.max(1, Math.min(20, Math.floor(Number(u.hp) || 1))), side }));
+    .map((u) => ({ type: u.type, hp: Math.max(1, Math.min(400, Math.floor(Number(u.hp) || 1))), side }));
 }
 
 function finalizePvp(battleId, result) {
@@ -3954,8 +3954,8 @@ function startPvpBattle(d) {
   }
   if (state.battle) { state.battle.destroy?.(); state.battle = null; }
   // BÅDA sidorna byggs från värdens listor → identiska kartor och enhetsordning
-  const atk = consolidate(sanitizeUnits(d.atkUnits, 0));
-  const def = consolidate(sanitizeUnits(d.defUnits, 1));
+  const atk = sanitizeUnits(d.atkUnits, 0);
+  const def = sanitizeUnits(d.defUnits, 1);
   if (!atk.length) atk.push(mkUnit('INF', 0));
   if (!def.length) def.push(mkUnit('INF', 1));
   state.pvpBattleId = d.battleId;
@@ -4229,8 +4229,8 @@ function toggleSpectate() {
     klinchCanvas: $('#kcanvas'),
     klinchEl: $('#klinch'),
     biome: biomeFor(target),
-    atk: consolidate(sanitizeUnits(P.atkUnits, 0)),
-    def: consolidate(sanitizeUnits(P.defUnits, 1)),
+    atk: sanitizeUnits(P.atkUnits, 0),
+    def: sanitizeUnits(P.defUnits, 1),
     seed: seedFrom(P.target),
     atkBoost: P.atkBoost || {},
     defBoost: P.defBoost || {},

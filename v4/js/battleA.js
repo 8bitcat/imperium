@@ -1,7 +1,7 @@
 // IMPERIUM v3 — PROTOTYP A: turbaserad taktikstrid à la Advance Wars
 // Karta med vägar (snabb förflyttning), flod med bro, skog/berg/städer
 // (försvarsbonus), klinch-skärm där antalet sprites speglar HP.
-import { UNIT_TYPES, attackDamage, drawUnit, drawHpBadge, BIOMES, drawTree, drawHouse, drawMountain, tint, lighten, warSprite } from './units.js';
+import { UNIT_TYPES, attackDamage, drawUnit, drawHpBadge, BIOMES, drawTree, drawHouse, drawMountain, tint, lighten, warSprite, consolidate } from './units.js';
 
 const COLS = 13, ROWS = 8, TILE = 32;
 const P_COL = '#ff4f4f', E_COL = '#4fa8ff';
@@ -47,12 +47,26 @@ export class BattleA {
 
     this._genMap(mulberry(opts.seed || 7));
 
-    // Utplacering: fyll kolumnvis inåt från respektive sida. Den gamla loopen
-    // letade bara i EN kolumn (8 rutor) och hängde sig för evigt när stora
-    // försvarsarméer (upp till 20 enheter) inte fick plats — frysning vid invasion.
+    // KARTAN bestämmer hur många brickor som får plats. Vi räknar de faktiskt
+    // farbara rutorna på varje sida och slår ihop förbanden tills de ryms —
+    // så det finns inget hårt tak på arméstorleken, hur stor den än blir.
+    const atkCols = [0, 1, 2, 3, 4, 5];
+    const defCols = [COLS - 1, COLS - 2, COLS - 3, COLS - 4, COLS - 5, COLS - 6];
+    const capacity = (cols) => {
+      let n = 0;
+      for (const tx of cols) {
+        for (let ty = 0; ty < ROWS; ty++) if (this.terr[ty][tx] !== 4 && this.terr[ty][tx] !== 2) n++;
+      }
+      return Math.max(1, n);
+    };
+    // sikta på fyra kolumner så det finns luft att manövrera i — placeringen
+    // får sedan använda sex kolumner om terrängen kräver det
+    const atkFit = consolidate(opts.atk || [], capacity(atkCols.slice(0, 4)));
+    const defFit = consolidate(opts.def || [], capacity(defCols.slice(0, 4)));
+
     this.units = [];
-    opts.atk.forEach((u) => this.units.push({ ...u, side: 0, tx: 0, ty: 0, moved: false }));
-    opts.def.forEach((u) => this.units.push({ ...u, side: 1, tx: COLS - 1, ty: 0, moved: false }));
+    atkFit.forEach((u) => this.units.push({ ...u, side: 0, tx: 0, ty: 0, moved: false }));
+    defFit.forEach((u) => this.units.push({ ...u, side: 1, tx: COLS - 1, ty: 0, moved: false }));
     const seen = new Set();
     const place = (u, cols) => {
       for (const tx of cols) {
@@ -71,8 +85,6 @@ export class BattleA {
         }
       }
     };
-    const atkCols = [0, 1, 2, 3, 4];
-    const defCols = [COLS - 1, COLS - 2, COLS - 3, COLS - 4, COLS - 5];
     for (const u of this.units) place(u, u.side === 0 ? atkCols : defCols);
 
     // PvP: båda spelarna styr sin egen sida — ingen AI spelar åt någon.
@@ -364,11 +376,13 @@ export class BattleA {
     const b0 = this.o.atkBoost || {};
     const b1 = this.o.defBoost || {};
     const bonus = (u) => ((u.side === 0 ? b0 : b1)[u.type] || 0);
-    const dA = Math.min(10, attackDamage(att, def, this.terrDef(def)) + bonus(att));
+    // stora förband (sammanslagna armékårer) slår proportionellt hårdare —
+    // skadan kan aldrig överstiga vad motståndaren har kvar
+    const dA = Math.min(def.hp, attackDamage(att, def, this.terrDef(def)) + bonus(att));
     const hpAfter = def.hp - dA;
     const adjacent = Math.abs(att.tx - def.tx) + Math.abs(att.ty - def.ty) === 1;
     const dD = hpAfter > 0 && adjacent
-      ? Math.min(10, attackDamage({ ...def, hp: hpAfter }, att, this.terrDef(att)) + bonus(def))
+      ? Math.min(att.hp, attackDamage({ ...def, hp: hpAfter }, att, this.terrDef(att)) + bonus(def))
       : 0;
     await this._playKlinch(att, def, dA, dD);
     def.hp = Math.max(0, def.hp - dA);
