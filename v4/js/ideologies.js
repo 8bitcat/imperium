@@ -7,6 +7,40 @@
 export const IDEOLOGY_COST = 150;   // Political power för ideologibyte
 export const DOCTRINE_COST = 50;    // Political power för doktrinbyte
 
+// ---------- IDEOLOGISKA LED ----------
+// Ideologierna står i lodräta led. Man vandrar ETT steg i taget uppåt eller
+// nedåt i sitt eget led — man hoppar inte fritt mellan ytterligheter. Vill man
+// byta led måste man först ta sig upp till toppen av sitt nuvarande led;
+// därifrån går det över till toppen av ett angränsande led.
+export const IDEOLOGY_TRACKS = [
+  { name: 'VÄNSTER', icon: '\u{270A}', ids: ['socialdemocracy', 'socialism', 'communism', 'anarchism'] },
+  { name: 'MITTEN', icon: '\u{2696}\u{FE0F}', ids: ['democracy', 'liberalism', 'populism'] },
+  { name: 'HÖGER', icon: '\u{1F3DB}\u{FE0F}', ids: ['conservatism', 'nationalism', 'imperialism'] },
+  { name: 'AUKTORITÄRT', icon: '\u{1F451}', ids: ['monarchism', 'theocracy', 'fascism', 'natsoc'] },
+];
+
+export function trackOf(id) {
+  for (let t = 0; t < IDEOLOGY_TRACKS.length; t++) {
+    const i = IDEOLOGY_TRACKS[t].ids.indexOf(id);
+    if (i >= 0) return { track: t, step: i };
+  }
+  return null;
+}
+
+// Får man byta från `from` till `to`? null = det går, annars skälet.
+export function switchBlockedBy(from, to) {
+  if (from === to) return 'DETTA ÄR DIN NUVARANDE IDEOLOGI';
+  const a = trackOf(from), b = trackOf(to);
+  if (!a || !b) return null;
+  if (a.track === b.track) {
+    return Math.abs(a.step - b.step) === 1 ? null : 'ETT STEG I TAGET — GÅ VIA MELLANLIGGANDE IDEOLOGI';
+  }
+  if (a.step !== 0) return `GÅ FÖRST UPP TILL ${(IDEOLOGIES[IDEOLOGY_TRACKS[a.track].ids[0]]?.name || '').toUpperCase()} FÖR ATT BYTA LED`;
+  if (b.step !== 0) return `IN I DETTA LED KOMMER MAN BARA VIA ${(IDEOLOGIES[IDEOLOGY_TRACKS[b.track].ids[0]]?.name || '').toUpperCase()}`;
+  if (Math.abs(a.track - b.track) !== 1) return 'BARA TILL ETT ANGRÄNSANDE LED';
+  return null;
+}
+
 export const IDEOLOGIES = {
   liberalism: {
     name: 'Liberalism', icon: '\u{1F54A}\u{FE0F}',

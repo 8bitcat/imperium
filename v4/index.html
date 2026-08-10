@@ -234,6 +234,21 @@
   #finteg .igar { font-size: 7px; line-height: 1.9; padding: 5px 6px; margin: 5px 0; border: 1px solid; }
   #finteg .igar.ok { color: #4ae37a; border-color: rgba(74,227,122,0.5); background: rgba(10,40,22,0.5); }
   #finteg .igar.bad { color: var(--red); border-color: rgba(255,79,79,0.6); background: rgba(50,12,12,0.55); }
+  /* ideologiska led — lodräta spår man vandrar i */
+  .ideotracks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-items: start; }
+  .ideotrack { display: flex; flex-direction: column; }
+  .trackhead {
+    font-size: 7px; letter-spacing: 1px; color: var(--amber); text-align: center;
+    padding: 5px 2px; border-bottom: 1px solid rgba(255,176,46,0.35); margin-bottom: 6px;
+  }
+  .tracklink { text-align: center; font-size: 9px; color: var(--holo-faint); line-height: 1.2; margin: 1px 0; }
+  .ideotracks .ideocard { margin: 0; }
+  .ideocard.reach { border-color: rgba(57,215,255,0.55); }
+  .ideocard.far { opacity: 0.38; }
+  .ideocard.far:hover { opacity: 0.6; }
+  @media (max-width: 820px) {
+    .ideotracks { grid-template-columns: repeat(2, 1fr); }
+  }
   /* forskningskön överst i FORSKNING-fliken */
   #resqueue {
     border: 1px solid rgba(57,215,255,0.3); background: rgba(8,18,28,0.6);

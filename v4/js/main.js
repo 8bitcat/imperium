@@ -8,7 +8,7 @@ import { BattleA } from './battleA.js';
 import { BattleB } from './battleB.js';
 import { STATS, STAT_GROUPS, computeStats, statGoodness } from './stats.js';
 import { LAWS, defaultLaws, lawMods, lawChangeCost, lawOption } from './laws.js';
-import { IDEOLOGIES, countryIdeology, ideologyMods, lawLockedBy, enforceRequirements, IDEOLOGY_COST, DOCTRINE_COST } from './ideologies.js';
+import { IDEOLOGIES, countryIdeology, ideologyMods, lawLockedBy, enforceRequirements, IDEOLOGY_COST, DOCTRINE_COST, IDEOLOGY_TRACKS, switchBlockedBy } from './ideologies.js';
 import { RESEARCH, TIER_COST, researchMods, combatBonus, hasUnlock, logisticsRange, satCoverage, espionageTier } from './research.js';
 import { BUILDINGS, CITY_SLOTS, UNIT_NEEDS_BUILDING, TRADE_PRICES, TRADE_DEFAULT } from './buildings.js';
 import { countryIncomeOf, armySizeOf, econOf, WEALTH_TIER } from './economy.js';
@@ -25,9 +25,9 @@ const SOLO_COLOR = '#ff4f4f';
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '4.15.0';
+export const VERSION = '4.16.0';
 export const VERSION_DATE = '2026-08-10';
-export const VERSION_NAME = 'OBEGRÄNSADE ARMÉER';
+export const VERSION_NAME = 'IDEOLOGISKA LED';
 
 const globe = new Globe($('#globe'));
 
@@ -2502,27 +2502,54 @@ function renderIdeologyTab(body) {
   gt.className = 'gtitle';
   gt.textContent = `▸ BYT IDEOLOGI (${IDEOLOGY_COST} \u{2696}\u{FE0F} + TILLFÄLLIG ORO)`;
   body.appendChild(gt);
+  // Ideologierna står i lodräta LED — man vandrar ett steg i taget, uppifrån
+  // och ner, och byter led bara via ledens toppar.
   const grid = document.createElement('div');
-  grid.className = 'ideogrid';
-  for (const [iid, ideo] of Object.entries(IDEOLOGIES)) {
-    const card = document.createElement('div');
-    card.className = 'ideocard' + (s.nation.ideology === iid ? ' cur' : '');
-    card.innerHTML = `<div class="iname">${ideo.icon} ${ideo.name.toUpperCase()}</div><div class="imods">${modSummary(ideo.mods, 4)}</div>`;
-    card.addEventListener('mouseenter', () => {
-      if (s.nation.ideology === iid) { setPreview('<span class="dc">NUVARANDE IDEOLOGI</span>'); return; }
-      setPreview(`<span class="dc">${ideo.name.toUpperCase()} — ${IDEOLOGY_COST} \u{2696}\u{FE0F} + TILLFÄLLIG ORO</span> &nbsp; ` + deltaHtml(diffMods(ideo.mods, ideologyMods(s.nation))));
+  grid.className = 'ideotracks';
+  for (const track of IDEOLOGY_TRACKS) {
+    const col = document.createElement('div');
+    col.className = 'ideotrack';
+    const th = document.createElement('div');
+    th.className = 'trackhead';
+    th.textContent = `${track.icon} ${track.name}`;
+    col.appendChild(th);
+    track.ids.forEach((iid, step) => {
+      const ideo = IDEOLOGIES[iid];
+      if (!ideo) return;
+      if (step > 0) {
+        const link = document.createElement('div');
+        link.className = 'tracklink';
+        link.textContent = '\u{2193}';
+        col.appendChild(link);
+      }
+      const blocked = switchBlockedBy(s.nation.ideology, iid);
+      const isCur = s.nation.ideology === iid;
+      const card = document.createElement('div');
+      card.className = 'ideocard' + (isCur ? ' cur' : blocked ? ' far' : ' reach');
+      card.innerHTML = `<div class="iname">${ideo.icon} ${ideo.name.toUpperCase()}</div>`
+        + `<div class="imods">${modSummary(ideo.mods, 3)}</div>`;
+      card.addEventListener('mouseenter', () => {
+        if (isCur) { setPreview('<span class="dc">NUVARANDE IDEOLOGI</span>'); return; }
+        if (blocked) { setPreview(`<span class="dn">\u{1F512} ${blocked}</span>`); return; }
+        setPreview(`<span class="dc">${ideo.name.toUpperCase()} — ${IDEOLOGY_COST} \u{2696}\u{FE0F} + TILLFÄLLIG ORO</span> &nbsp; ` + deltaHtml(diffMods(ideo.mods, ideologyMods(s.nation))));
+      });
+      card.addEventListener('mouseleave', () => setPreview());
+      card.addEventListener('click', () => {
+        if (isCur) return;
+        if (blocked) { warn(blocked); return; }
+        natIdeoPick = natIdeoPick === iid ? null : iid;
+        renderNationTab();
+      });
+      if (natIdeoPick === iid) card.style.borderColor = 'var(--amber)';
+      col.appendChild(card);
     });
-    card.addEventListener('mouseleave', () => setPreview());
-    // klick = FÖRHANDSGRANSKA — bekräftelsen sker i rutan längst ner
-    card.addEventListener('click', () => {
-      if (s.nation.ideology === iid) return;
-      natIdeoPick = natIdeoPick === iid ? null : iid;
-      renderNationTab();
-    });
-    if (natIdeoPick === iid) card.style.borderColor = 'var(--amber)';
-    grid.appendChild(card);
+    grid.appendChild(col);
   }
   body.appendChild(grid);
+  const hint = document.createElement('div');
+  hint.style.cssText = 'font-size:6px;color:var(--holo-dim);line-height:2;margin-top:6px';
+  hint.textContent = 'DU VANDRAR ETT STEG I TAGET I DITT LED. FÖR ATT BYTA LED MÅSTE DU FÖRST TA DIG UPP TILL LEDETS TOPP.';
+  body.appendChild(hint);
 
   // bekräftelserutan längst ner
   if (natIdeoPick && natIdeoPick !== s.nation.ideology) {
