@@ -332,7 +332,10 @@
   }
   .demrow input { accent-color: var(--amber); width: 14px; height: 14px; flex: 0 0 14px; }
   .demrow .dd { color: var(--holo-dim); font-size: 7px; }
-  .seizeopt { display: flex; gap: 6px; margin: 8px 0; }
+  .seizeopt { display: flex; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
+  .seizebtn { font: inherit; font-size: 6px; padding: 5px 7px; cursor: pointer; line-height: 1.5;
+    background: rgba(0,12,20,0.8); color: var(--holo-dim); border: 1px solid rgba(55,224,255,0.3); }
+  .seizebtn.on { background: rgba(255,176,0,0.18); color: var(--amber); border-color: var(--amber); }
   .pbar { height: 8px; background: rgba(0,12,20,0.8); border: 1px solid rgba(55,224,255,0.3); margin: 5px 0; }
   .pfill { height: 100%; background: var(--amber); transition: width 0.4s; }
   #cbchooser, #demands { z-index: 88; }
@@ -595,6 +598,18 @@
   <div id="histlist"></div>
 </div>
 
+<!-- FLAGGVAL: byt fana vid rikesutrop eller ideologibyte -->
+<div id="flagpick" class="overlay">
+  <div class="card">
+    <div class="logo" style="font-size:14px">&#128681; NY FANA</div>
+    <div id="flagPreview" style="margin:14px 0"></div>
+    <div id="flagName" style="color:var(--amber);font-size:10px;margin-bottom:8px"></div>
+    <div id="flagText" style="font-size:7px;color:var(--holo-dim);line-height:2;margin-bottom:12px"></div>
+    <button id="flagYes" class="btn amber">&#128681; HISSA DEN NYA FANAN</button>
+    <button id="flagNo" class="btn">BEHÅLL DEN GAMLA</button>
+  </div>
+</div>
+
 <!-- KRIGSVARNING: går inte att missa -->
 <div id="waralert">
   <div class="wabox">
@@ -624,6 +639,7 @@
   <div class="ptitle">&#9654; LANDSFAKTA <button class="pclose" id="infoclose">&#10005;</button></div>
   <div id="facthead">
     <img id="fflag" alt="">
+    <div id="fownflag" style="display:none"></div>
     <div id="iname"></div>
   </div>
   <div class="frow" id="fpop"></div>
@@ -718,7 +734,6 @@
     <button id="btnJoinGo" class="btn amber">ANSLUT</button>
     <button id="btnResume" class="btn" style="display:none">&#8635; FORTSÄTT DIN GAMLA SESSION</button>
     <button id="btnJoinBack" class="btn">TILLBAKA</button>
-    <div class="err" id="joinerr"></div>
   </div>
 </div>
 
@@ -736,6 +751,7 @@
       <button class="nattab" data-tab="ideologi">IDEOLOGI</button>
       <button class="nattab" data-tab="forskning">FORSKNING</button>
       <button class="nattab" data-tab="kabinett">KABINETT</button>
+      <button class="nattab" data-tab="block">BLOCK</button>
     </div>
     <div id="natstatus">
       <div id="natres"></div>

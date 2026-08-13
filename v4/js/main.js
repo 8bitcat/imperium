@@ -8,7 +8,7 @@ import { BattleA } from './battleA.js';
 import { BattleB } from './battleB.js';
 import { STATS, STAT_GROUPS, computeStats, statGoodness } from './stats.js';
 import { LAWS, defaultLaws, lawMods, lawChangeCost, lawOption } from './laws.js';
-import { IDEOLOGIES, countryIdeology, ideologyMods, lawLockedBy, enforceRequirements, IDEOLOGY_COST, DOCTRINE_COST, IDEOLOGY_TRACKS, switchBlockedBy } from './ideologies.js';
+import { IDEOLOGIES, countryIdeology, ideologyMods, lawLockedBy, enforceRequirements, IDEOLOGY_COST, DOCTRINE_COST, IDEOLOGY_TRACKS, trackOf, switchBlockedBy } from './ideologies.js';
 import { RESEARCH, TIER_COST, researchMods, combatBonus, hasUnlock, logisticsRange, satCoverage, espionageTier } from './research.js';
 import { BUILDINGS, CITY_SLOTS, UNIT_NEEDS_BUILDING, TRADE_PRICES, TRADE_DEFAULT } from './buildings.js';
 import { countryIncomeOf, armySizeOf, econOf, WEALTH_TIER } from './economy.js';
@@ -22,6 +22,8 @@ import { relLabel, naturalRelation, REL_EVENTS, sanctionFor, ALLY_MIN_REL, TRUCE
   aiAcceptsAlliance, BLOC_TYPES, BLOC_COST } from './diplomacy.js';
 import { scoreCountry, medalFor } from './ranking.js';
 import { POSTS, MINISTER_COST, makeCandidate, clashOf, cabinetMods, loyaltyLevel } from './ministers.js';
+import { BLOC_RULES, BLOC_FOUND_COST, BLOC_INVITE_COST, BLOC_NAMES, canJoinBloc,
+  IDEO_FLAGS, EMPIRE_FLAGS, flagHtml } from './blocs.js';
 
 const $ = (s) => document.querySelector(s);
 const PLAYER_COLORS = ['#ff4f4f', '#4fa8ff', '#ffd24f', '#b06bff', '#ff9f3e', '#3ee6c8', '#ff6fd8', '#a4e34a'];
@@ -29,9 +31,9 @@ const SOLO_COLOR = '#ff4f4f';
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.0.0';
-export const VERSION_DATE = '2026-08-10';
-export const VERSION_NAME = 'DIPLOMATI & VÄRLDSPOLITIK';
+export const VERSION = '5.1.0';
+export const VERSION_DATE = '2026-08-13';
+export const VERSION_NAME = 'BLOCK, FANOR & DELAD FRED';
 
 const globe = new Globe($('#globe'));
 
@@ -56,6 +58,8 @@ state.debug = {
   startInteg: (cid) => startIntegration(cid), tickDay: () => tickDay(), applyState: () => applyState(),
   aiCanReach: (w, a, t) => aiCanReach(w, a, t), aiDistanceTo: (w, a, t) => aiDistanceTo(w, a, t),
   aiReach: (w, c) => aiReach(w, c), warAlert: (a, t, w) => warAlert(a, t, w), saveGame: () => saveGame(), loadGame: () => loadGame(),
+  openDemands: (t, cb, r) => openDemands(t, cb, r), offerFlag: (ty, id) => offerFlag(ty, id),
+  saveSession: () => saveSession(), aiBlocs: () => tickAiBlocs(),
 };
 
 document.fonts?.load('10px "Press Start 2P"').then(() => { globe.sceneDirty = true; }).catch(() => {});
@@ -309,7 +313,12 @@ function refreshInfoPanel() {
   $('#iname').textContent = c.name.toUpperCase();
 
   const flag = $('#fflag');
-  if (fact.a2) {
+  // V5: har du hissat en egen fana visas den över dina länder
+  const ownFlag = state.solo?.claims[c.id] && myFlag();
+  const fw = $('#fownflag');
+  fw.innerHTML = ownFlag ? flagHtml(ownFlag, 34, 22) : '';
+  fw.style.display = ownFlag ? 'block' : 'none';
+  if (!ownFlag && fact.a2) {
     flag.src = `https://flagcdn.com/w80/${fact.a2.toLowerCase()}.png`;
     flag.style.display = 'block';
   } else {
@@ -366,11 +375,13 @@ function refreshInfoPanel() {
   $('#freli').innerHTML = `<b>RELIGION:</b> ${RELIGIONS[rel]?.icon || ''} ${RELIGIONS[rel]?.name.toUpperCase() || '?'}`
     + `<br><b>HÅLLNING:</b> <span style="color:${st.color}">${st.icon} ${st.name}</span>`
     + `<br><span style="font-size:6px;color:var(--holo-dim)">${st.desc}</span>`;
-  const inc = countryIncomeOf(fact.p, c.id);
+  const part = state.solo?.partial?.[c.id];
+  const inc = countryIncomeOf(fact.p, c.id) * (part?.share ?? 1);
   const mineInc = state.solo?.claims[c.id];
   const itg = integOf(c.id);
   const factor = itg ? phaseOf(itg.pct).income : 1;
-  $('#finc').innerHTML = `<b>INKOMST:</b> ${mineInc ? '' : '+'}${Math.round(inc * (mineInc ? factor : 1))} \u{1F4B0}/DAG`
+  $('#finc').innerHTML = (part ? `<b style="color:var(--amber)">DELVIS ANNEKTERAT:</b> ${part.taken}/${part.of} STÄDER<br>` : '')
+    + `<b>INKOMST:</b> ${mineInc ? '' : '+'}${Math.round(inc * (mineInc ? factor : 1))} \u{1F4B0}/DAG`
     + (mineInc ? (factor < 1 ? ` <span style="color:var(--red)">(AV ${inc} — EJ INTEGRERAT)</span>` : '')
       : ' <span style="color:var(--holo-dim)">VID ERÖVRING</span>');
 
@@ -505,6 +516,29 @@ function renderFactDiplomacy(c) {
   head.innerHTML = `<b>RELATION:</b> <span style="color:${lab.color}">${rel > 0 ? '+' : ''}${rel} ${lab.name}</span>`
     + (ally ? ' <span style="color:#4ae37a">\u{1F91D} ALLIERAD</span>' : '');
   el.appendChild(head);
+  // tillhör landet ett AI-block? det gör en attack farligare — hela blocket ser det
+  const aib = aiBlocOf(c.id);
+  if (aib) {
+    const bi = document.createElement('div');
+    bi.style.cssText = 'font-size:7px;color:var(--amber);line-height:2';
+    bi.innerHTML = `\u{1F91D} <b>${aib.name}</b> <span style="color:var(--holo-dim)">— ${aib.members.length} MEDLEMMAR`
+      + `${aib.rules.includes('defense') ? ', FÖRSVARSPAKT' : ''}</span>`;
+    el.appendChild(bi);
+  }
+  // block: bjud in landet
+  const bl = myBloc();
+  if (bl && !bl.members.includes(c.id)) {
+    const ib = document.createElement('button');
+    ib.className = 'btn';
+    ib.innerHTML = `\u{1F91D} BJUD IN TILL ${bl.name} <small>(${BLOC_INVITE_COST} \u{2696}\u{FE0F})</small>`;
+    ib.addEventListener('click', () => inviteToBloc(c.id));
+    el.appendChild(ib);
+  } else if (bl) {
+    const m = document.createElement('div');
+    m.style.cssText = 'font-size:7px;color:#4ae37a;line-height:2';
+    m.textContent = `\u{1F91D} MEDLEM I ${bl.name}`;
+    el.appendChild(m);
+  }
   if (!ally) {
     const btn = document.createElement('button');
     btn.className = 'btn';
@@ -1070,6 +1104,7 @@ function initNation(countryId) {
   s.cityB = { [countryId + ':' + capIdx]: ['kasern'] };
   s.trade = [];
   s.rel = {}; s.allies = []; s.truces = {}; s.disarmed = [];   // V5-diplomatin
+  s.partial = {}; s.bloc = null; s.aiBlocs = [];                // V5: delvis annekterat + block
   recomputeNation();
   $('#resbar').style.display = 'flex';
   renderResbar();
@@ -1178,6 +1213,79 @@ function tickDiplomacy() {
   }
   // allierade driver uppåt
   for (const cid of s.allies) s.rel[cid] = Math.min(100, (s.rel[cid] || 50) + 0.2);
+  tickAiBlocs();
+}
+
+// V5: AI-länderna sluter sina EGNA allianser. Var 40:e dag söker likasinnade,
+// obundna länder varandra och bildar — eller växer — ett block. Står du utanför
+// märks det: deras medlemmar ser dig som konkurrent.
+function tickAiBlocs() {
+  const s = state.solo;
+  s.aiBlocs ||= [];
+  const day = s.clock?.day || 0;
+  // de första åren håller sig världen avvaktande — block växer fram med tiden
+  if (day < 150 || day % 60 !== 0) return;
+  const pool = globe.countries.filter((c) => !s.claims[c.id] && !s.aiOwned[c.id] && c.id !== s.home);
+  if (pool.length < 6) return;
+  const ideoOf = (cid) => (state.world?.[cid] || countryIdeology(cid)).ideology;
+  const inBloc = new Set(s.aiBlocs.flatMap((b) => b.members));
+
+  // 1) växa befintliga block med likasinnade
+  for (const b of s.aiBlocs) {
+    if (b.members.length >= 8) continue;
+    const cand = pool.find((c) => !inBloc.has(c.id) && ideoOf(c.id) === b.ideology);
+    if (!cand) continue;
+    b.members.push(cand.id);
+    inBloc.add(cand.id);
+    logEvent(`\u{1F91D} ${cname(cand.id)} GICK MED I ${b.name}`);
+    if (!b.members.includes(s.home)) relChange(cand.id, -4);
+  }
+
+  // 2) nytt block när minst tre obundna länder delar ideologi — högst ett vart 3:e år
+  if (s.aiBlocs.length < 4 && day >= 150 + s.aiBlocs.length * 900) {
+    const byIdeo = {};
+    for (const c of pool) if (!inBloc.has(c.id)) (byIdeo[ideoOf(c.id)] ||= []).push(c.id);
+    const [ideo, members] = Object.entries(byIdeo).sort((a, b) => b[1].length - a[1].length)[0] || [];
+    if (members && members.length >= 3) {
+      const taken = new Set(s.aiBlocs.map((b) => b.name));
+      const name = BLOC_NAMES.find((n) => !taken.has(n) && n !== s.bloc?.name) || `${cname(members[0])}-PAKTEN`;
+      // ytterligheterna sluter sig samman kring ideologin, mitten kring handeln
+      const tr = trackOf(ideo);
+      const hardline = tr && (tr.track === 3 || tr.step >= 2);
+      const rules = hardline ? ['defense', 'ideology'] : ['defense', 'trade'];
+      const bloc = { name, rules, ideology: ideo, founder: members[0], members: members.slice(0, 5) };
+      s.aiBlocs.push(bloc);
+      const kinds = rules.map((r) => BLOC_RULES[r].name).join(' + ');
+      toast(`\u{1F91D} ${name} HAR BILDATS — ${bloc.members.length} LÄNDER (${kinds})`, 'amber', 9000);
+      logEvent(`\u{1F91D} ${name} BILDADES AV ${bloc.members.map(cname).join(', ')} — ${kinds}`, { war: true });
+      const same = ideo === s.nation.ideology;
+      for (const m of bloc.members) relChange(m, same ? 6 : -6);
+    }
+  }
+}
+
+// Ingår landet i ett AI-block? (visas i landsfaktan)
+function aiBlocOf(cid) { return (state.solo?.aiBlocs || []).find((b) => b.members.includes(cid)) || null; }
+
+// Övriga världens block — vem har slutit sig samman mot vem?
+function renderRivalBlocs(body) {
+  const blocs = state.solo?.aiBlocs || [];
+  const g = document.createElement('div');
+  g.className = 'natgroup';
+  g.innerHTML = '<div class="gtitle">\u{1F30D} ÖVRIGA BLOCK I VÄRLDEN</div>';
+  if (!blocs.length) {
+    g.innerHTML += '<div style="font-size:7px;color:var(--holo-dim);line-height:2">INGA ANDRA BLOCK HAR BILDATS ÄN.</div>';
+  } else {
+    for (const b of blocs) {
+      const io = IDEOLOGIES[b.ideology];
+      g.innerHTML += `<div style="margin:8px 0;border-left:2px solid var(--amber);padding-left:7px">`
+        + `<div style="font-size:7px;color:var(--amber);line-height:2">\u{1F91D} ${b.name} <span style="color:var(--holo-dim)">`
+        + `${b.rules.map((r) => BLOC_RULES[r].name).join(' + ')}</span></div>`
+        + `<div style="font-size:6px;color:var(--holo-dim);line-height:2">${io?.icon || ''} ${io?.name.toUpperCase() || ''} \u{2022} ${b.members.length} MEDLEMMAR</div>`
+        + `<div style="font-size:6px;color:var(--text);line-height:2">${b.members.map(cname).join(' \u{2022} ')}</div></div>`;
+    }
+  }
+  body.appendChild(g);
 }
 
 // hur hårt sanktioneras jag av omvärlden? (medel av de mest fientliga)
@@ -1191,6 +1299,81 @@ function worldSanction() {
   const avg = worst.reduce((a, b) => a + b, 0) / worst.length;
   return sanctionFor(avg);
 }
+
+// ---------- V5: BLOCK (faktioner) ----------
+function myBloc() { return state.solo?.bloc || null; }
+
+function foundBloc(rules, name) {
+  const s = state.solo;
+  if (!s?.nation) return;
+  s.res.pp -= BLOC_FOUND_COST;
+  s.bloc = {
+    name: name || BLOC_NAMES[Math.floor(Math.random() * BLOC_NAMES.length)],
+    rules, ideology: s.nation.ideology, founder: s.home, members: [s.home],
+  };
+  const kinds = rules.map((r) => BLOC_RULES[r].name).join(' + ');
+  toast(`\u{1F91D} ${s.bloc.name} HAR GRUNDATS — ${kinds}`, 'amber', 9000);
+  logEvent(`\u{1F91D} DU GRUNDADE ${s.bloc.name} (${kinds})`, { mine: true });
+  renderResbar();
+  renderNationTab();
+}
+
+// Bjud in ett land. Ideologiska block släpper bara in likasinnade.
+function inviteToBloc(cid) {
+  const s = state.solo;
+  const b = myBloc();
+  if (!b || b.members.includes(cid)) return;
+  const theirIdeo = (state.world?.[cid] || countryIdeology(cid)).ideology;
+  if (!canJoinBloc(b, theirIdeo)) { warn(`${cname(cid)} HAR FEL IDEOLOGI FÖR DETTA BLOCK`); return; }
+  if (s.res.pp < BLOC_INVITE_COST) { warn(`KRÄVER ${BLOC_INVITE_COST} \u{2696}\u{FE0F}`); return; }
+  s.res.pp -= BLOC_INVITE_COST;
+  const chance = (relOf(cid) + 20) / 100 + (b.rules.includes('trade') ? 0.15 : 0);
+  if (Math.random() < chance) {
+    b.members.push(cid);
+    relChange(cid, 15, `GICK MED I ${b.name}`);
+    toast(`\u{1F91D} ${cname(cid)} GÅR MED I ${b.name}!`, 'amber', 8000);
+    logEvent(`\u{1F91D} ${cname(cid)} GICK MED I ${b.name}`, { mine: true });
+  } else {
+    relChange(cid, -3);
+    toast(`${cname(cid)} TACKAR NEJ TILL ${b.name}`, 'red', 6000);
+  }
+  renderResbar();
+  refreshInfoPanel();
+}
+
+// ---------- V5: FLAGGOR ----------
+function myFlag() {
+  const s = state.solo;
+  if (!s?.flag) return null;
+  return s.flag.type === 'empire' ? EMPIRE_FLAGS[s.flag.id] : IDEO_FLAGS[s.flag.id];
+}
+
+// Erbjud flaggbyte när man utropar ett rike eller byter ideologi
+function offerFlag(type, id) {
+  const flag = type === 'empire' ? EMPIRE_FLAGS[id] : IDEO_FLAGS[id];
+  if (!flag) return;
+  state.flagOffer = { type, id, flag };
+  $('#flagPreview').innerHTML = flagHtml(flag, 90, 58);
+  $('#flagName').textContent = flag.name;
+  $('#flagText').textContent = type === 'empire'
+    ? 'DITT NYA RIKE HAR EN EGEN FANA — VILL DU HISSA DEN?'
+    : 'DIN NYA IDEOLOGI HAR EN EGEN FANA — VILL DU HISSA DEN?';
+  overlay('#flagpick', true);
+}
+
+$('#flagYes').addEventListener('click', () => {
+  const o = state.flagOffer;
+  if (o && state.solo) {
+    state.solo.flag = { type: o.type, id: o.id };
+    toast(`\u{1F6A9} ${o.flag.name} HISSAS ÖVER DITT RIKE`, 'amber', 8000);
+    logEvent(`\u{1F6A9} DU HISSADE ${o.flag.name}`, { mine: true });
+    applyState();
+    refreshInfoPanel();
+  }
+  state.flagOffer = null;
+  overlay('#flagpick', false);
+});
+$('#flagNo').addEventListener('click', () => { state.flagOffer = null; overlay('#flagpick', false); });
 
 // ---------- V5: VÄRLDSRANKNING ----------
 function computeRanking() {
@@ -1544,7 +1727,8 @@ function tickDay() {
   // inget förrän de integrerats: i ockupationsfasen kostar de i stället.
   let occUnrest = 0;
   for (const cid of Object.keys(s.claims)) {
-    const base = countryIncomeOf(state.facts[cid]?.p, cid);
+    // tog du bara en del av städerna får du bara den delen av inkomsten
+    const base = Math.round(countryIncomeOf(state.facts[cid]?.p, cid) * (s.partial?.[cid]?.share ?? 1));
     const it = integOf(cid);
     if (!it) { s.res.money += base; continue; }
     const ph = phaseOf(it.pct);
@@ -2486,6 +2670,7 @@ function renderNationTab() {
   if (natTab === 'ideologi') return renderIdeologyTab(body);
   if (natTab === "forskning") return renderResearchTab(body);
   if (natTab === "kabinett") return renderCabinetTab(body);
+  if (natTab === "block") return renderBlocTab(body);
   const stats = state.solo.stats;
   body.innerHTML = '';
 
@@ -2586,6 +2771,7 @@ function renderNationTab() {
         recomputeNation(); renderResbar(); renderNationTab(); renderTopbar();
         toast(`${e.icon} ${e.name.toUpperCase()} HAR UTROPATS!`, 'amber', 8000);
         globe.addFireworks(capitalLL(s.home), 9000);
+        offerFlag("empire", e.id);
       }, e.mods);
     }
     for (const f of FEDERATION_FORMS) {
@@ -2836,6 +3022,7 @@ function renderIdeologyTab(body) {
       natIdeoPick = null;
       recomputeNation(); renderResbar(); renderNationTab();
       toast(`NY IDEOLOGI: ${pick.icon} ${pick.name.toUpperCase()} (+30 ORO ETT TAG)`, 'amber', 5000);
+      offerFlag("ideology", s.nation.ideology);
       if (forced.length) toast('LAGAR TVINGADES OM: ' + forced.map((c) => LAWS[c].name.toUpperCase()).join(', '), 'red', 6000);
     });
     const noBtn = document.createElement('button');
@@ -2851,6 +3038,59 @@ function renderIdeologyTab(body) {
 }
 
 // ---------- FORSKNING-fliken ----------
+// V5: BLOCK — grunda en faktion och bjud in länder
+let blocPick = [];
+function renderBlocTab(body) {
+  const s = state.solo;
+  const b = myBloc();
+  body.innerHTML = '';
+  if (b) {
+    const kinds = b.rules.map((r) => `${BLOC_RULES[r].icon} ${BLOC_RULES[r].name}`).join(' \u{2022} ');
+    const head = document.createElement('div');
+    head.className = 'natgroup';
+    head.innerHTML = `<div class="gtitle">\u{1F91D} ${b.name}</div>`
+      + `<div style="font-size:7px;color:var(--amber);line-height:2">${kinds}</div>`
+      + (b.rules.includes('ideology')
+        ? `<div style="font-size:6px;color:var(--holo-dim);line-height:2">BARA ${IDEOLOGIES[b.ideology]?.name.toUpperCase()} SLÄPPS IN</div>` : '')
+      + `<div style="font-size:7px;color:var(--holo);line-height:2;margin-top:6px">MEDLEMMAR (${b.members.length}):</div>`
+      + `<div style="font-size:7px;color:var(--text);line-height:2">${b.members.map((m) => cname(m)).join(' \u{2022} ')}</div>`;
+    body.appendChild(head);
+    const tip = document.createElement('div');
+    tip.style.cssText = 'font-size:6px;color:var(--holo-dim);line-height:2;margin-top:8px';
+    tip.textContent = `BJUD IN FLER GENOM ATT KLICKA PÅ ETT LAND PÅ GLOBEN (${BLOC_INVITE_COST} \u{2696}\u{FE0F} PER INBJUDAN).`;
+    body.appendChild(tip);
+    renderRivalBlocs(body);
+    return;
+  }
+  body.innerHTML = `<div style="font-size:7px;color:var(--holo-dim);line-height:2;margin-bottom:10px">`
+    + `GRUNDA ETT EGET BLOCK FÖR ${BLOC_FOUND_COST} \u{2696}\u{FE0F} (DU HAR ${s.res.pp}). `
+    + `VÄLJ EN ELLER FLERA REGLER — DE KAN KOMBINERAS.</div>`;
+  const list = document.createElement('div');
+  for (const [rid, r] of Object.entries(BLOC_RULES)) {
+    const row = document.createElement('button');
+    row.className = 'lawopt' + (blocPick.includes(rid) ? ' cur' : '');
+    row.style.cssText = 'display:block;width:100%;text-align:left;margin:5px 0;padding:8px 10px;line-height:1.9';
+    row.innerHTML = `${r.icon} <b>${r.name}</b><br><span style="font-size:6px;color:var(--holo-dim)">${r.desc}</span>`;
+    row.addEventListener('click', () => {
+      blocPick = blocPick.includes(rid) ? blocPick.filter((x) => x !== rid) : [...blocPick, rid];
+      renderNationTab();
+    });
+    list.appendChild(row);
+  }
+  body.appendChild(list);
+  const go = document.createElement('button');
+  go.className = 'btn amber';
+  go.textContent = blocPick.length ? '\u{1F91D} GRUNDA BLOCKET' : 'VÄLJ MINST EN REGEL';
+  go.disabled = !blocPick.length || s.res.pp < BLOC_FOUND_COST;
+  go.addEventListener('click', () => {
+    if (s.res.pp < BLOC_FOUND_COST) { warn(`KRÄVER ${BLOC_FOUND_COST} \u{2696}\u{FE0F}`); return; }
+    foundBloc([...blocPick]);
+    blocPick = [];
+  });
+  body.appendChild(go);
+  renderRivalBlocs(body);
+}
+
 // V5: KABINETTET — ministrar med egna ideologier
 function renderCabinetTab(body) {
   const s = state.solo;
@@ -3157,7 +3397,63 @@ function openDemands(target, cbKey, result) {
     row.innerHTML = `<input type="checkbox" id="dem_${id}" ${checked ? 'checked' : ''}><span>${label}<div class="dd">${sub}</div></span>`;
     list.appendChild(row);
   };
-  if (cb.demands.annex) addCheck('annex', 'ANNEKTERA LANDET', 'Territoriet blir ditt', true);
+  if (cb.demands.annex) {
+    addCheck('annex', 'ANNEKTERA LANDET', 'Territoriet blir ditt', true);
+    // V5: du väljer VILKA STÄDER du tar — gränsen följer städerna, ingen frihandsritning
+    const cities = state.cities[target.id] || [];
+    const pick = cities.map((city, i) => ({ city, i }))
+      .sort((a, b) => (b.city.c ? 1 : 0) - (a.city.c ? 1 : 0) || (b.city.p || 0) - (a.city.p || 0))
+      .slice(0, 12);
+    if (pick.length > 1) {
+      demandState.cities = pick.map((x) => x.i);            // förvalt: hela landet
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'margin:4px 0 8px 18px;font-size:6px;color:var(--holo-dim);line-height:1.9';
+      const head = document.createElement('div');
+      const upd = () => { head.textContent = `VILKA STÄDER TAR DU? ${demandState.cities.length}/${pick.length} VALDA — GRÄNSEN FÖLJER STÄDERNA`; };
+      wrap.appendChild(head);
+      const grid = document.createElement('div');
+      grid.className = 'seizeopt';
+      for (const { city, i } of pick) {
+        const b = document.createElement('button');
+        b.className = 'seizebtn on';
+        b.innerHTML = `${city.c ? '\u{2B50} ' : ''}${(city.n || '?').toUpperCase()}`;
+        b.addEventListener('click', () => {
+          const on = demandState.cities.includes(i);
+          demandState.cities = on ? demandState.cities.filter((x) => x !== i) : [...demandState.cities, i];
+          b.classList.toggle('on', !on);
+          upd();
+        });
+        grid.appendChild(b);
+      }
+      upd();
+      wrap.appendChild(grid);
+      list.appendChild(wrap);
+    }
+    // V5: avträd landet till en allierad i stället — båda skriver under
+    const allies = (s.allies || []).filter((a) => !s.claims[a] && a !== target.id);
+    if (allies.length) {
+      demandState.cede = null;
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'margin:4px 0 8px 18px;font-size:6px;color:var(--holo-dim);line-height:1.9';
+      wrap.innerHTML = 'AVTRÄD LANDET TILL EN ALLIERAD? DE BETALAR OCH RELATIONEN STÄRKS';
+      const grid = document.createElement('div');
+      grid.className = 'seizeopt';
+      const mk = (id, label) => {
+        const b = document.createElement('button');
+        b.className = 'seizebtn' + (id === null ? ' on' : '');
+        b.innerHTML = label;
+        b.addEventListener('click', () => {
+          demandState.cede = id;
+          [...grid.children].forEach((x) => x.classList.toggle('on', x === b));
+        });
+        grid.appendChild(b);
+      };
+      mk(null, 'BEHÅLL SJÄLV');
+      for (const a of allies) mk(a, `\u{1F91D} ${cname(a)}`);
+      wrap.appendChild(grid);
+      list.appendChild(wrap);
+    }
+  }
   if (cb.demands.puppet) {
     addCheck('puppet', 'GÖR TILL LYDSTAT', 'Betalar ALLTID halva sin inkomst, forskning och politiska makt till dig varje månad', true);
     addCheck('disarm', 'TVINGA AVVÄPNING', 'Lydstaten får ingen armé så länge den lyder under dig', false);
@@ -3273,9 +3569,35 @@ $('#demConfirm').addEventListener('click', () => {
     }
 
     if (cb.demands.annex && checked('annex')) {
-      s.claims[target.id] = { color: SOLO_COLOR, playerName: 'DU' };
-      startIntegration(target.id);
-      got.push('ANNEKTERAT');
+      const cities = state.cities[target.id] || [];
+      const taken = demandState.cities;
+      const pickable = Math.min(12, cities.length);
+      if (demandState.cede) {
+        // V5: avträd till allierad — de betalar för landet och relationen stärks
+        const ally = demandState.cede;
+        const pay = Math.max(80, Math.round(countryIncomeOf(pop, target.id) * 90));
+        s.res.money += pay;
+        relChange(ally, 25, `DU AVTRÄDDE ${cname(target.id)}`);
+        s.aiOwned[target.id] = ally;
+        ensureAiEmpire(s, ally).owned.push(target.id);
+        got.push(`AVTRÄTT TILL ${cname(ally)} MOT ${pay} \u{1F4B0}`);
+        logEvent(`\u{1F91D} DU AVTRÄDDE ${cname(target.id)} TILL ${cname(ally)} MOT ${pay} \u{1F4B0}`, { mine: true });
+      } else {
+        s.claims[target.id] = { color: SOLO_COLOR, playerName: 'DU' };
+        startIntegration(target.id);
+        // tar du bara en del av städerna följer gränsen dem: mindre inkomst,
+        // trögare integration och kvarvarande motstånd i resten av landet
+        if (taken && pickable > 1 && taken.length < pickable) {
+          const share = Math.max(0.15, taken.length / pickable);
+          (s.partial ||= {})[target.id] = { share, taken: taken.length, of: pickable };
+          const it = s.integ?.[target.id];
+          if (it) it.pct = Math.max(0, it.pct - Math.round((1 - share) * 25));
+          got.push(`${taken.length} AV ${pickable} STÄDER ANNEKTERADE (${Math.round(share * 100)}% AV LANDET)`);
+        } else {
+          delete s.partial?.[target.id];
+          got.push('ANNEKTERAT');
+        }
+      }
     }
     if (cb.demands.puppet && checked('puppet')) {
       s.claims[target.id] = { color: '#ff9f8a', playerName: 'DIN LYDSTAT', puppet: true };
@@ -4442,6 +4764,7 @@ function saveGame() {
           researchQueue: s.researchQueue, garrisons: s.garrisons, cityB: s.cityB, trade: s.trade,
           integ: s.integ, countryArmies: s.countryArmies, aiWars: s.aiWars, aiGoals: s.aiGoals,
           rel: s.rel, allies: s.allies, truces: s.truces, disarmed: s.disarmed, stance: s.stance,
+          partial: s.partial, bloc: s.bloc, aiBlocs: s.aiBlocs, flag: s.flag,
           dev: s.dev, dream: s.dream, spaceNations: s.spaceNations, aiInteg: s.aiInteg,
           known: [...(s.known || [])],
         },
@@ -4487,6 +4810,7 @@ function saveSession() {
       cityB: s.cityB, trade: s.trade, buildQueue: s.buildQueue, researchQueue: s.researchQueue,
       garrisons: s.garrisons, army: s.army, integ: s.integ, wars: s.wars, day: s.clock?.day || 1,
       rel: s.rel, allies: s.allies, truces: s.truces, disarmed: s.disarmed, cabinet: s.nation?.cabinet,
+      partial: s.partial, bloc: s.bloc, aiBlocs: s.aiBlocs, flag: s.flag,
     }));
   } catch (e) { /* privat läge / fullt lager — strunt samma */ }
 }
@@ -4523,6 +4847,10 @@ function restoreSession(snap, home) {
   s.allies = snap.allies || [];
   s.truces = snap.truces || {};
   s.disarmed = snap.disarmed || [];
+  s.partial = snap.partial || {};
+  s.bloc = snap.bloc || null;
+  s.aiBlocs = snap.aiBlocs || [];
+  if (snap.flag) s.flag = snap.flag;
   if (snap.cabinet && s.nation) s.nation.cabinet = snap.cabinet;
   s.wars = snap.wars || {};
   s.army = snap.army || { units: [], ll: capitalLL(home), at: home };
