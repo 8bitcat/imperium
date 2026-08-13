@@ -234,6 +234,14 @@
   #finteg .igar { font-size: 7px; line-height: 1.9; padding: 5px 6px; margin: 5px 0; border: 1px solid; }
   #finteg .igar.ok { color: #4ae37a; border-color: rgba(74,227,122,0.5); background: rgba(10,40,22,0.5); }
   #finteg .igar.bad { color: var(--red); border-color: rgba(255,79,79,0.6); background: rgba(50,12,12,0.55); }
+  /* V5: kabinettet */
+  .cabrow {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+    border: 1px solid rgba(57,215,255,0.22); padding: 7px 9px;
+  }
+  .cabrow .cabname { font-size: 7px; color: var(--amber); flex: 0 0 130px; line-height: 1.8; }
+  .cabrow .cabinfo { font-size: 6px; color: var(--text); flex: 1; line-height: 2; }
+  .cabrow .armybtn { flex: 0 0 auto; }
   /* ideologiska led — lodräta spår man vandrar i */
   .ideotracks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-items: start; }
   .ideotrack { display: flex; flex-direction: column; }
@@ -582,6 +590,7 @@
     <button class="htab on" data-h="all">ALLT</button>
     <button class="htab" data-h="mine">MITT RIKE</button>
     <button class="htab" data-h="war">KRIG</button>
+    <button class="htab" data-h="rank">&#127942; RANKNING</button>
   </div>
   <div id="histlist"></div>
 </div>
@@ -625,7 +634,9 @@
   <div class="frow" id="fleader"></div>
   <div class="frow" id="ftype"></div>
   <div class="frow" id="freli"></div>
+  <div class="frow" id="frank"></div>
   <div class="frow" id="finc"></div>
+  <div id="fdiplo" style="display:none"></div>
   <div id="finteg" style="display:none"></div>
   <div id="fres"></div>
   <div id="istatus"></div>
@@ -724,6 +735,7 @@
       <button class="nattab" data-tab="lagar">LAGAR</button>
       <button class="nattab" data-tab="ideologi">IDEOLOGI</button>
       <button class="nattab" data-tab="forskning">FORSKNING</button>
+      <button class="nattab" data-tab="kabinett">KABINETT</button>
     </div>
     <div id="natstatus">
       <div id="natres"></div>

@@ -18,6 +18,10 @@ import { applyFaction } from './units.js';
 import { pickLeader, leaderDesc } from './leaders.js';
 import { RELIGIONS, religionOf, startPercent, PHASES, phaseOf, phaseIndex, pushCost, dailyRate, garrisonNeeded } from './integration.js';
 import { STANCES, stanceOf, setStance } from './stance.js';
+import { relLabel, naturalRelation, REL_EVENTS, sanctionFor, ALLY_MIN_REL, TRUCE_DAYS,
+  aiAcceptsAlliance, BLOC_TYPES, BLOC_COST } from './diplomacy.js';
+import { scoreCountry, medalFor } from './ranking.js';
+import { POSTS, MINISTER_COST, makeCandidate, clashOf, cabinetMods, loyaltyLevel } from './ministers.js';
 
 const $ = (s) => document.querySelector(s);
 const PLAYER_COLORS = ['#ff4f4f', '#4fa8ff', '#ffd24f', '#b06bff', '#ff9f3e', '#3ee6c8', '#ff6fd8', '#a4e34a'];
@@ -25,9 +29,9 @@ const SOLO_COLOR = '#ff4f4f';
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '4.16.0';
+export const VERSION = '5.0.0';
 export const VERSION_DATE = '2026-08-10';
-export const VERSION_NAME = 'IDEOLOGISKA LED';
+export const VERSION_NAME = 'DIPLOMATI & VÄRLDSPOLITIK';
 
 const globe = new Globe($('#globe'));
 
@@ -349,6 +353,13 @@ function refreshInfoPanel() {
   const BIOME_ICON = { GRAS: '\u{1F33E}', SNO: '\u{2744}\u{FE0F}', OKEN: '\u{1F3DC}\u{FE0F}', DJUNGEL: '\u{1F334}' };
   const bio = biomeFor(c);
   $('#ftype').innerHTML = `<b>LANDSTYP:</b> ${BIOME_ICON[bio]} ${BIOMES[bio].name}`;
+  // V5: världsplacering i landkortet
+  const rk = (state.rankCache ||= { at: 0, rows: [] });
+  if (Date.now() - rk.at > 4000) { rk.rows = computeRanking(); rk.at = Date.now(); }
+  const myRank = rk.rows.find((r) => r.cid === c.id);
+  $('#frank').innerHTML = myRank
+    ? `<b>VÄRLDSPLACERING:</b> ${medalFor(myRank.place)} #${myRank.place} <span style="color:var(--holo-dim)">(${myRank.score} POÄNG)</span>`
+    : '';
   const rel = religionFor(c.id);
   const stKey = stanceOf(worldCtx().world || {}, c.id);
   const st = STANCES[stKey] || STANCES.neutral;
@@ -395,6 +406,8 @@ function refreshInfoPanel() {
   show(ftr, false);
   $('#finteg').innerHTML = '';
   show($('#finteg'), false);
+  $('#fdiplo').innerHTML = '';
+  show($('#fdiplo'), false);
 
   if (state.mode === 'solo' || (state.mode === 'player' && state.solo)) {
     const s = state.solo;
@@ -435,9 +448,17 @@ function refreshInfoPanel() {
       if (threat) conqTxt += ` • \u{26A0}\u{FE0F} HOTAS AV ${cname(threat.att)}`;
       const war = s.wars[c.id];
       if (!war) {
+        const truce = truceLeft(c.id);
         $('#istatus').textContent = `FÖRSVAR: ${defN} ENHETER${conqTxt}`;
         $('#istatus').style.color = '';
-        if (s.army?.units.length && !state.battle) show(justifyBtn, true);
+        if (truce) {
+          $('#istatus').innerHTML += `<br><span style="color:var(--holo)">\u{1F54A}\u{FE0F} VAPENVILA — ${Math.ceil(truce)} DAGAR KVAR</span>`;
+        } else if (isAlly(c.id)) {
+          $('#istatus').innerHTML += `<br><span style="color:#4ae37a">\u{1F91D} ALLIERAD — NI FÖRSVARAR VARANDRA</span>`;
+        } else if (s.army?.units.length && !state.battle) {
+          show(justifyBtn, true);
+        }
+        renderFactDiplomacy(c);
         renderFactTrade(c);
       } else if (war.status === 'justifying') {
         $('#istatus').textContent = `RÄTTFÄRDIGAR KRIG (${CASUS_BELLI[war.cb].name.toUpperCase()}) — ${war.days} DAGAR KVAR${conqTxt}`;
@@ -468,6 +489,70 @@ function refreshInfoPanel() {
     show(claimBtn, state.mode === 'player');
   }
   show(panel, true);
+}
+
+// V5: relationsraden + allians-knappen i landkortet
+function renderFactDiplomacy(c) {
+  const s = state.solo;
+  const el = $('#fdiplo');
+  el.innerHTML = '';
+  if (!s?.nation || s.claims[c.id]) { show(el, false); return; }
+  const rel = Math.round(relOf(c.id));
+  const lab = relLabel(rel);
+  const ally = isAlly(c.id);
+  const head = document.createElement('div');
+  head.style.cssText = 'font-size:7px;line-height:1.9;margin-bottom:4px';
+  head.innerHTML = `<b>RELATION:</b> <span style="color:${lab.color}">${rel > 0 ? '+' : ''}${rel} ${lab.name}</span>`
+    + (ally ? ' <span style="color:#4ae37a">\u{1F91D} ALLIERAD</span>' : '');
+  el.appendChild(head);
+  if (!ally) {
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.innerHTML = `\u{1F91D} FÖRESLÅ ALLIANS <small>(KRÄVER RELATION ${ALLY_MIN_REL})</small>`;
+    const blocked = rel < ALLY_MIN_REL ? `RELATIONEN ÄR FÖR SVAG (${rel}/${ALLY_MIN_REL})`
+      : s.wars[c.id] ? 'NI ÄR I KONFLIKT' : null;
+    if (blocked) { btn.disabled = true; btn.title = blocked; }
+    btn.addEventListener('click', () => {
+      if (blocked) { warn(blocked); return; }
+      const world = worldCtx().world;
+      const threatened = (world.aiWars || []).some((w) => w.target === c.id);
+      if (aiAcceptsAlliance(rel, stanceOf(world, c.id), threatened)) {
+        (s.allies ||= []).push(c.id);
+        relChange(c.id, REL_EVENTS.ally, 'ALLIANS SLUTEN');
+        toast(`\u{1F91D} ALLIANS MED ${c.name.toUpperCase()} — NI FÖRSVARAR VARANDRA`, 'amber', 8000);
+        logEvent(`\u{1F91D} ALLIANS MED ${cname(c.id)}`, { mine: true });
+      } else {
+        relChange(c.id, -5);
+        toast(`${c.name.toUpperCase()} TACKAR NEJ TILL ALLIANS — BYGG RELATIONEN FÖRST`, 'red', 6000);
+      }
+      refreshInfoPanel();
+    });
+    el.appendChild(btn);
+    const gift = document.createElement('button');
+    gift.className = 'btn';
+    gift.innerHTML = '\u{1F381} SKICKA GÅVA (200 \u{1F4B0}) <small>+12 RELATION</small>';
+    gift.addEventListener('click', () => {
+      if (s.res.money < 200) { warn('FÖR LITE PENGAR'); return; }
+      s.res.money -= 200;
+      relChange(c.id, REL_EVENTS.gift, 'GÅVA MOTTAGEN');
+      renderResbar();
+      toast(`\u{1F381} GÅVA TILL ${c.name.toUpperCase()} — RELATIONEN FÖRBÄTTRAS`, 'amber', 5000);
+      refreshInfoPanel();
+    });
+    el.appendChild(gift);
+  } else {
+    const brk = document.createElement('button');
+    brk.className = 'btn warbtn';
+    brk.textContent = '\u{1F494} BRYT ALLIANSEN';
+    brk.addEventListener('click', () => {
+      s.allies = s.allies.filter((x) => x !== c.id);
+      relChange(c.id, REL_EVENTS.breakAlly, 'ALLIANSEN BRUTEN');
+      toast(`ALLIANSEN MED ${c.name.toUpperCase()} ÄR BRUTEN`, 'red', 6000);
+      refreshInfoPanel();
+    });
+    el.appendChild(brk);
+  }
+  show(el, true);
 }
 
 // Integrationspanelen: mätare, faser och möjligheten att köpa på integrationen
@@ -984,6 +1069,7 @@ function initNation(countryId) {
   const capIdx = Math.max(0, (state.cities[countryId] || []).findIndex((x) => x.c));
   s.cityB = { [countryId + ':' + capIdx]: ['kasern'] };
   s.trade = [];
+  s.rel = {}; s.allies = []; s.truces = {}; s.disarmed = [];   // V5-diplomatin
   recomputeNation();
   $('#resbar').style.display = 'flex';
   renderResbar();
@@ -998,7 +1084,7 @@ function recomputeNation() {
     laws: lawMods(s.nation.laws),
     ideology: ideologyMods(s.nation),
     research: researchMods(s.nation),
-    extra: mergeMods(mergeMods(mergeMods(s.extra, s.permMods), s.factionMods), s.leaderMods),
+    extra: mergeMods(mergeMods(mergeMods(mergeMods(s.extra, s.permMods), s.factionMods), s.leaderMods), cabinetMods(s.nation)),
   };
   s.stats = computeStats(s.nation, s.nationSources);
 }
@@ -1009,6 +1095,136 @@ function ownedResources() {
   for (const b of allBuildings()) if (BUILDINGS[b]?.resource) set.add(BUILDINGS[b].resource);
   for (const d of state.solo?.trade || []) set.add(d.res);
   return set;
+}
+
+// ---------- V5: DIPLOMATI ----------
+// Relationen till varje land driver långsamt mot ett naturligt läge och
+// hoppar till vid händelser. Allt annat i diplomatin läser detta värde.
+function relOf(cid) {
+  const s = state.solo;
+  if (!s?.nation || !cid || cid === s.home) return 100;
+  s.rel ||= {};
+  if (s.rel[cid] == null) {
+    const theirIdeo = (state.world?.[cid] || countryIdeology(cid)).ideology;
+    s.rel[cid] = naturalRelation(s.nation.ideology, theirIdeo, religionFor(s.home), religionFor(cid));
+  }
+  return s.rel[cid];
+}
+
+function relChange(cid, delta, why) {
+  const s = state.solo;
+  if (!s?.nation || !cid) return;
+  const before = relOf(cid);
+  s.rel[cid] = Math.max(-100, Math.min(100, before + delta));
+  if (Math.abs(delta) >= 20 && why) {
+    logEvent(`${delta > 0 ? '\u{1F91D}' : '\u{1F4A2}'} ${cname(cid)}: ${why} (${delta > 0 ? '+' : ''}${delta})`, { mine: true });
+  }
+}
+
+// Varje avslutat krig ger en treårig vapenvila — ingen får gå till krig igen
+function endWarTruce(cid) {
+  const s = state.solo;
+  if (!s?.clock || !cid) return;
+  (s.truces ||= {})[cid] = s.clock.day + TRUCE_DAYS;
+  relChange(cid, REL_EVENTS.truce);
+  toast(`\u{1F54A}\u{FE0F} VAPENVILA MED ${cname(cid)} I 3 ÅR — INGA KRIG UNDER TIDEN`, '', 7000);
+  logEvent(`\u{1F54A}\u{FE0F} VAPENVILA MED ${cname(cid)} (3 ÅR)`, { mine: true });
+}
+
+// V5: genomfart. Ligger ett främmande land mellan dig och målet kan det
+// genskjuta dig — men bra militärforskning gör det osannolikt.
+function transitInterception(targetId) {
+  const s = state.solo;
+  if (!s?.army || !targetId) return null;
+  const from = capitalLL(s.prevAt || s.home), to = capitalLL(targetId);
+  const mid = d3.geoInterpolate(from, to)(0.5);
+  const between = globe.countryAtLL(mid);
+  if (!between || between.id === targetId || s.claims[between.id]) return null;
+  if (isAlly(between.id) || truceLeft(between.id)) return null;
+  const tech = (s.nation?.research?.infantry || 0) + (s.nation?.research?.logistics || 0);
+  const rel = relOf(between.id);
+  let risk = 0.4 - tech * 0.06 - Math.max(0, rel) / 250;   // vänliga länder släpper förbi
+  if (rel < -30) risk += 0.2;
+  return Math.random() < Math.max(0, risk) ? between.id : null;
+}
+
+function isAlly(cid) { return !!state.solo?.allies?.includes(cid); }
+function truceLeft(cid) {
+  const t = state.solo?.truces?.[cid];
+  return t ? Math.max(0, t - (state.solo.clock?.day || 0)) : 0;
+}
+
+// daglig drift mot det naturliga läget + sanktionernas effekt
+function tickDiplomacy() {
+  const s = state.solo;
+  if (!s?.nation) return;
+  s.rel ||= {}; s.allies ||= []; s.truces ||= {};
+  const keys = Object.keys(s.rel);
+  // driva några länder per dag räcker — hela världen varje dag vore slöseri
+  for (let i = 0; i < Math.min(8, keys.length); i++) {
+    const cid = keys[(s.relCursor = ((s.relCursor || 0) + 1) % keys.length)];
+    if (isAlly(cid)) continue;
+    const theirIdeo = (state.world?.[cid] || countryIdeology(cid)).ideology;
+    const target = naturalRelation(s.nation.ideology, theirIdeo, religionFor(s.home), religionFor(cid));
+    const cur = s.rel[cid];
+    if (Math.abs(cur - target) > 0.5) s.rel[cid] = cur + Math.sign(target - cur) * 0.35;
+  }
+  // vapenvilor löper ut
+  for (const [cid, until] of Object.entries(s.truces)) {
+    if ((s.clock?.day || 0) >= until) {
+      delete s.truces[cid];
+      toast(`\u{1F54A}\u{FE0F} VAPENVILAN MED ${cname(cid)} HAR LÖPT UT`, '', 5000);
+    }
+  }
+  // allierade driver uppåt
+  for (const cid of s.allies) s.rel[cid] = Math.min(100, (s.rel[cid] || 50) + 0.2);
+}
+
+// hur hårt sanktioneras jag av omvärlden? (medel av de mest fientliga)
+function worldSanction() {
+  const s = state.solo;
+  if (!s?.rel) return null;
+  const worst = Object.entries(s.rel)
+    .filter(([cid]) => !isAlly(cid) && !s.claims[cid])
+    .map(([, v]) => v).sort((a, b) => a - b).slice(0, 8);
+  if (worst.length < 3) return null;
+  const avg = worst.reduce((a, b) => a + b, 0) / worst.length;
+  return sanctionFor(avg);
+}
+
+// ---------- V5: VÄRLDSRANKNING ----------
+function computeRanking() {
+  const s = state.solo;
+  const world = worldCtx().world;
+  const rows = [];
+  for (const c of globe.countries) {
+    const pop = state.facts[c.id]?.p || 0;
+    if (!pop) continue;
+    const mine = s?.claims[c.id];
+    const owner = world?.aiOwned?.[c.id];
+    if (owner && owner !== c.id) continue;                 // provinser räknas in i sitt rike
+    // utan stående armé används landets normalstyrka
+    let army = world?.countryArmies?.[c.id]?.units?.length ?? armySizeOf(pop, c.id);
+    let popSum = pop;
+    if (mine && s.home === c.id) {
+      army = (s.army?.units.length || 0) + Object.values(s.garrisons || {}).flat().length;
+      for (const cid of Object.keys(s.claims)) if (cid !== c.id) popSum += state.facts[cid]?.p || 0;
+    } else if (world?.aiEmpires?.[c.id]?.owned?.length) {
+      for (const o of world.aiEmpires[c.id].owned) popSum += state.facts[o]?.p || 0;
+    } else if (mine) continue;                             // egna provinser räknas i hemlandet
+    const [[x0, y0], [x1, y1]] = c.bounds;
+    const areaRank = Math.min(1, (Math.abs(x1 - x0) * Math.abs(y1 - y0)) / 4000);
+    const sc = scoreCountry({ pop: popSum, cid: c.id, areaRank, army, stats: mine ? s.stats : null });
+    rows.push({
+      cid: c.id,
+      name: mine && s.home === c.id && s.nation?.formation ? s.nation.formation.name
+        : (world?.aiEmpires?.[c.id]?.name || c.name),
+      mine: !!mine, score: sc.total, parts: sc.parts,
+    });
+  }
+  rows.sort((a, b) => b.score - a.score);
+  rows.forEach((r, i) => { r.place = i + 1; });
+  return rows;
 }
 
 // ---------- VÄRLDSHISTORIK: allt som händer loggas och går att bläddra i ----------
@@ -1034,6 +1250,21 @@ function logEvent(text, opts = {}) {
 let histFilter = 'all';
 function renderHistory() {
   const list = $('#histlist');
+  // V5: rankningsfliken visar världens starkaste nationer
+  if (histFilter === 'rank') {
+    const rk = computeRanking().slice(0, 25);
+    list.innerHTML = rk.length
+      ? rk.map((r) => `<div class="hrow${r.mine ? ' mine' : ''}">`
+        + `<span class="hday">${medalFor(r.place) || '#' + r.place}</span> ${r.name.toUpperCase()}`
+        + ` <span style="color:var(--holo-dim)">${r.score}</span>`
+        + `<br><span style="font-size:5px;color:var(--holo-dim)">`
+        + `\u{2694}${Math.round(r.parts.military)} \u{1F4B0}${Math.round(r.parts.economy)} `
+        + `\u{1F5FA}\u{FE0F}${Math.round(r.parts.size)} \u{1F465}${Math.round(r.parts.population)} `
+        + `\u{2696}\u{FE0F}${Math.round(r.parts.stability)} \u{1F60A}${Math.round(r.parts.qol)} `
+        + `\u{1F4DA}${Math.round(r.parts.hdi)}</span></div>`).join('')
+      : '<div class="hrow" style="color:var(--holo-dim)">VÄRLDEN LADDAS…</div>';
+    return;
+  }
   const rows = (state.history || []).filter((h) =>
     histFilter === 'all' || (histFilter === 'mine' && h.mine) || (histFilter === 'war' && h.war));
   list.innerHTML = rows.length
@@ -1322,6 +1553,32 @@ function tickDay() {
     occUnrest += ph.unrest * 0.25;                      // oron RÄKNAS OM varje dag
   }
   tickIntegration();
+  tickDiplomacy();
+  // V5: lydstaterna betalar halva sin inkomst, forskning och politiska makt till
+  // sin herre varje månad — kärnregel, oavsett vad fredsavtalet i övrigt sa
+  if (s.clock.day % 30 === 0) {
+    let tax = 0, taxRp = 0, taxPp = 0, n = 0;
+    for (const [cid, cl] of Object.entries(s.claims)) {
+      if (!cl.puppet) continue;
+      tax += Math.round(countryIncomeOf(state.facts[cid]?.p, cid) * 15);
+      taxRp += Math.round(econOf(state.facts[cid]?.p, cid) * 0.5);
+      taxPp += 3;
+      n++;
+    }
+    if (n) {
+      s.res.money += tax; s.res.rp += taxRp; s.res.pp += taxPp;
+      toast(`\u{1F4B0} LYDSTATSSKATT FRÅN ${n} LYDSTAT${n > 1 ? 'ER' : ''}: +${tax} \u{1F4B0} +${taxRp} \u{1F52C} +${taxPp} \u{2696}\u{FE0F}`, 'amber', 7000);
+    }
+  }
+  // V5: omvärldens sanktioner biter på ekonomin
+  s.sanction = worldSanction();
+  if (s.sanction) {
+    const hit = Math.round(Math.abs(s.sanction.income) * 30);
+    s.res.money = Math.max(0, s.res.money - hit);
+    if (s.clock.day % 40 === 0) {
+      toast(`${s.sanction.icon} ${s.sanction.name} — ${s.sanction.desc} (\u{2212}${hit} \u{1F4B0}/DAG)`, 'red', 8000);
+    }
+  }
   // integrationskontorens upkeep
   const offices = allBuildings().filter((b) => BUILDINGS[b]?.upkeep).length;
   s.res.money -= offices * 6;
@@ -2227,7 +2484,8 @@ function renderNationTab() {
   recomputeNation();
   if (natTab === 'lagar') return renderLawsTab(body);
   if (natTab === 'ideologi') return renderIdeologyTab(body);
-  if (natTab === 'forskning') return renderResearchTab(body);
+  if (natTab === "forskning") return renderResearchTab(body);
+  if (natTab === "kabinett") return renderCabinetTab(body);
   const stats = state.solo.stats;
   body.innerHTML = '';
 
@@ -2593,6 +2851,48 @@ function renderIdeologyTab(body) {
 }
 
 // ---------- FORSKNING-fliken ----------
+// V5: KABINETTET — ministrar med egna ideologier
+function renderCabinetTab(body) {
+  const s = state.solo;
+  s.nation.cabinet ||= {};
+  const loyalty = loyaltyLevel(s.nation);
+  const loyTxt = loyalty >= 4 ? 'HELT LINJETROGET — MINISTRARNA DELAR DIN IDEOLOGI'
+    : loyalty >= 2 ? 'DELVIS LINJETROGET — DE FLESTA FÖLJER PARTILINJEN'
+    : 'FRITT — KANDIDATERNA HAR EGNA ÅSIKTER';
+  body.innerHTML = `<div style="font-size:7px;color:var(--holo-dim);margin-bottom:10px;line-height:2">`
+    + `TILLSÄTT MINISTRAR FÖR ${MINISTER_COST} \u{2696}\u{FE0F} STYCKET. EN MINISTER SOM STÅR LÅNGT FRÅN DIN `
+    + `IDEOLOGI GER SVAGARE EFFEKT OCH SKAPAR ORO.<br><span style="color:var(--amber)">${loyTxt}</span></div>`;
+  for (const [pid, post] of Object.entries(POSTS)) {
+    const m = s.nation.cabinet[pid];
+    const clash = m ? clashOf(s.nation, m) : 0;
+    const eff = clash === 0 ? '100%' : clash === 1 ? '75%' : clash === 2 ? '40%' : '0%';
+    const col = clash === 0 ? '#4ae37a' : clash === 1 ? 'var(--amber)' : 'var(--red)';
+    const row = document.createElement('div');
+    row.className = 'cabrow';
+    row.innerHTML = `<div class="cabname">${post.icon} ${post.name}</div>`
+      + (m
+        ? `<div class="cabinfo">${m.n.toUpperCase()} \u{2022} ${IDEOLOGIES[m.ideo]?.icon || ''} ${(IDEOLOGIES[m.ideo]?.name || '?').toUpperCase()}`
+          + `<br><span style="color:${col}">EFFEKT ${eff}${clash >= 2 ? ' \u{2022} SKAPAR ORO' : ''}</span> `
+          + `<span style="color:var(--holo-dim)">${modSummary(post.mods, 3)}</span></div>`
+        : `<div class="cabinfo" style="color:var(--holo-dim)">POSTEN ÄR VAKANT \u{2022} ${modSummary(post.mods, 3)}</div>`);
+    const btn = document.createElement('button');
+    btn.className = 'armybtn';
+    btn.innerHTML = `${m ? 'BYT UT' : 'TILLSÄTT'}<br>${MINISTER_COST} \u{2696}\u{FE0F}`;
+    btn.addEventListener('click', () => {
+      if (s.res.pp < MINISTER_COST) { warn(`KRÄVER ${MINISTER_COST} \u{2696}\u{FE0F}`); return; }
+      s.res.pp -= MINISTER_COST;
+      const cand = makeCandidate(s.nation);
+      s.nation.cabinet[pid] = cand;
+      recomputeNation(); renderResbar(); renderNationTab();
+      const c2 = clashOf(s.nation, cand);
+      toast(`${post.icon} ${cand.n.toUpperCase()} TILLTRÄDER SOM ${post.name}`
+        + (c2 >= 2 ? ' — MEN STÅR LÅNGT FRÅN DIN LINJE!' : ''), c2 >= 2 ? 'red' : 'amber', 6000);
+    });
+    row.appendChild(btn);
+    body.appendChild(row);
+  }
+}
+
 function renderResearchTab(body) {
   const s = state.solo;
   const q = s.researchQueue || [];
@@ -2775,6 +3075,10 @@ function tickDefenses(ctx) {
 $('#justifybtn').addEventListener('click', () => {
   if (!selectedCountry || !state.solo?.nation) return;
   const s = state.solo;
+  // V5: vapenvila och allianser hindrar krigsförklaring
+  const tl = truceLeft(selectedCountry.id);
+  if (tl) { warn(`VAPENVILA — ${Math.ceil(tl)} DAGAR KVAR INNAN DU FÅR GÅ TILL KRIG`); return; }
+  if (isAlly(selectedCountry.id)) { warn('NI ÄR ALLIERADE — BRYT ALLIANSEN FÖRST'); return; }
   const days = justifyDays(s.stats.justtime.total);
   $('#cbTarget').textContent = `MOT ${selectedCountry.name.toUpperCase()} — TAR ${days} DAGAR`;
   const list = $('#cblist');
@@ -2854,12 +3158,35 @@ function openDemands(target, cbKey, result) {
     list.appendChild(row);
   };
   if (cb.demands.annex) addCheck('annex', 'ANNEKTERA LANDET', 'Territoriet blir ditt', true);
-  if (cb.demands.puppet) addCheck('puppet', 'GÖR TILL LYDSTAT', 'Behåller självstyre men följer dig — du måste försvara den', true);
+  if (cb.demands.puppet) {
+    addCheck('puppet', 'GÖR TILL LYDSTAT', 'Betalar ALLTID halva sin inkomst, forskning och politiska makt till dig varje månad', true);
+    addCheck('disarm', 'TVINGA AVVÄPNING', 'Lydstaten får ingen armé så länge den lyder under dig', false);
+  }
   if (cb.demands.ideology) addCheck('ideology', 'TVINGA DIN IDEOLOGI', 'Lydstaten tar din ideologi', false);
   if (cb.demands.laws) addCheck('laws', 'TVINGA DINA LAGAR', 'Lydstaten tar dina lagar', false);
   if (cb.demands.liberate) {
     const holdings = Object.entries(s.aiOwned).filter(([, conq]) => conq === target.id).length;
     addCheck('liberate', `BEFRIA ALLA LÄNDER UNDER DESS STYRE (${holdings} ST)`, 'Imperiet upplöses — länderna blir fria', true);
+    // V5: kupp — störta regeringen och välj deras nya ideologi
+    addCheck('coup', 'GENOMFÖR EN KUPP', 'Störta regeringen och välj landets nya ideologi', false);
+    const cw = document.createElement('div');
+    cw.style.cssText = 'margin:4px 0 8px 18px;font-size:6px;color:var(--holo-dim);line-height:1.9';
+    cw.innerHTML = 'NY IDEOLOGI EFTER KUPPEN:';
+    const sel = document.createElement('div');
+    sel.className = 'seizeopt';
+    demandState.coupIdeo = s.nation.ideology;
+    for (const [iid, io] of Object.entries(IDEOLOGIES)) {
+      const b = document.createElement('button');
+      b.className = 'seizebtn' + (iid === demandState.coupIdeo ? ' on' : '');
+      b.innerHTML = `${io.icon} ${io.name.toUpperCase()}`;
+      b.addEventListener('click', () => {
+        demandState.coupIdeo = iid;
+        [...sel.children].forEach((x) => x.classList.toggle('on', x === b));
+      });
+      sel.appendChild(b);
+    }
+    cw.appendChild(sel);
+    list.appendChild(cw);
   }
   if (cb.demands.seize) {
     const wrap = document.createElement('div');
@@ -2952,7 +3279,12 @@ $('#demConfirm').addEventListener('click', () => {
     }
     if (cb.demands.puppet && checked('puppet')) {
       s.claims[target.id] = { color: '#ff9f8a', playerName: 'DIN LYDSTAT', puppet: true };
-      got.push('LYDSTAT');
+      got.push('LYDSTAT — BETALAR HALVA SIN INKOMST VARJE MÅNAD');
+      if (checked('disarm')) {
+        countryArmy(target.id).units = [];
+        (s.disarmed ||= []).push(target.id);
+        got.push('AVVÄPNAD');
+      }
       if (checked('ideology')) {
         (state.world ||= {})[target.id] = { ...(state.world?.[target.id] || countryIdeology(target.id)), ideology: s.nation.ideology, doctrine: s.nation.doctrine };
         got.push('IDEOLOGI TVINGAD');
@@ -2970,6 +3302,19 @@ $('#demConfirm').addEventListener('click', () => {
       startIntegration(target.id);
       got.push(`${freed} LÄNDER BEFRIADE`);
     }
+    // V5: KUPP — regeringen störtas och du väljer landets nya ideologi
+    if (cb.demands.liberate && checked('coup')) {
+      const ni = demandState.coupIdeo || s.nation.ideology;
+      const wn = ((state.world ||= {})[target.id] ||= { laws: defaultLaws(), ...countryIdeology(target.id) });
+      wn.ideology = ni;
+      wn.doctrine = Object.keys(IDEOLOGIES[ni]?.doctrines || {})[0] || wn.doctrine;
+      const world = worldCtx().world;
+      world.leaders ||= {};
+      world.leaders[target.id] = pickLeader(target.id);
+      relChange(target.id, REL_EVENTS.coup, 'KUPP GENOMFÖRD');
+      got.push(`KUPP — ${IDEOLOGIES[ni]?.name.toUpperCase()} INFÖRD, NY LEDARE TILLSATT`);
+      logEvent(`\u{1F5E1}\u{FE0F} KUPP I ${cname(target.id)} — ${IDEOLOGIES[ni]?.name.toUpperCase()} INFÖRD`, { mine: true, war: true });
+    }
   }
   if (cb.demands.seize && choices.seize) {
     const amt = seizeAmount(pop, choices.seize);
@@ -2984,6 +3329,7 @@ $('#demConfirm').addEventListener('click', () => {
   }
 
   delete s.wars[target.id];
+  endWarTruce(target.id);
   s.army.units = expandUnits(result.survivors);
   s.army.units.push(mkUnit('INF', 0));
   s.army.at = target.id;
@@ -3024,6 +3370,15 @@ $('#attackbtn').addEventListener('click', () => {
   globe.animateTo(dest, Math.max(2, globe.zoom), 1500);
   armyFlyTo(dest, 1500, () => {
     state.solo.army.at = target.id;
+    // V5: marscherar du genom främmande land kan deras trupper genskjuta dig
+    const blocker = transitInterception(target.id);
+    if (blocker) {
+      state.pendingTarget = globe.getCountry(blocker);
+      state.solo.wars[blocker] = { status: 'ready', cb: 'annexation', days: 0, total: 0 };
+      relChange(blocker, REL_EVENTS.war, 'DU KRÄNKTE DERAS TERRITORIUM');
+      toast(`\u{26A0}\u{FE0F} ${cname(blocker)}S TRUPPER GENSKJUTER DIN ARMÉ — NI ÄR I KRIG!`, 'red', 10000);
+      logEvent(`\u{26A0}\u{FE0F} ${cname(blocker)} GENSKÖT DIN ARMÉ PÅ VÄG MOT ${cname(target.id)}`, { mine: true, war: true });
+    }
     startBattle('A'); // krig är alltid taktikstriden
   });
 });
@@ -3134,6 +3489,7 @@ function finishBattle(result) {
     const penalty = Math.round(s.res.money * 0.15);
     s.res.money -= penalty;
     delete s.wars[target.id];
+    endWarTruce(target.id);
     $('#bresTitle').textContent = 'NEDERLAG';
     $('#bresTitle').style.color = 'var(--red)';
     $('#bresText').innerHTML = `ARMÉN KROSSADES${result.auto ? ` (AUTO, ${result.defLeft} FIENDER KVAR)` : ''} — EN NY ARMÉ MOBILISERAS I HEMLANDET.<br>${target.name.toUpperCase()} KRÄVER SKADESTÅND: \u{2212}${penalty} \u{1F4B0}`;
@@ -4085,6 +4441,7 @@ function saveGame() {
           leader: s.leader, leaderMods: s.leaderMods, buildQueue: s.buildQueue,
           researchQueue: s.researchQueue, garrisons: s.garrisons, cityB: s.cityB, trade: s.trade,
           integ: s.integ, countryArmies: s.countryArmies, aiWars: s.aiWars, aiGoals: s.aiGoals,
+          rel: s.rel, allies: s.allies, truces: s.truces, disarmed: s.disarmed, stance: s.stance,
           dev: s.dev, dream: s.dream, spaceNations: s.spaceNations, aiInteg: s.aiInteg,
           known: [...(s.known || [])],
         },
@@ -4129,6 +4486,7 @@ function saveSession() {
       faction: s.faction, factionMods: s.factionMods, leader: s.leader, leaderMods: s.leaderMods,
       cityB: s.cityB, trade: s.trade, buildQueue: s.buildQueue, researchQueue: s.researchQueue,
       garrisons: s.garrisons, army: s.army, integ: s.integ, wars: s.wars, day: s.clock?.day || 1,
+      rel: s.rel, allies: s.allies, truces: s.truces, disarmed: s.disarmed, cabinet: s.nation?.cabinet,
     }));
   } catch (e) { /* privat läge / fullt lager — strunt samma */ }
 }
@@ -4161,6 +4519,11 @@ function restoreSession(snap, home) {
   s.researchQueue = snap.researchQueue || [];
   s.garrisons = snap.garrisons || {};
   s.integ = snap.integ || {};
+  s.rel = snap.rel || {};
+  s.allies = snap.allies || [];
+  s.truces = snap.truces || {};
+  s.disarmed = snap.disarmed || [];
+  if (snap.cabinet && s.nation) s.nation.cabinet = snap.cabinet;
   s.wars = snap.wars || {};
   s.army = snap.army || { units: [], ll: capitalLL(home), at: home };
   s.clock = { day: snap.day || 1, paused: false, acc: 0, msPerDay: 2000 };

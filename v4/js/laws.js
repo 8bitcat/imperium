@@ -235,6 +235,26 @@ export const LAWS = {
       { id: 'isolationist', name: 'Isolationist', mods: { factory: 10, statepower: 12, ideopower: 8, income: -20, gdp: -15, research: -10, immigration: -20, justtime: -12 } },
     ],
   },
+  popgrowth: {
+    name: 'Population growth', icon: '\u{1F476}',
+    options: [
+      { id: 'none', name: 'None compulsory', mods: { freedom: 8, qol: 5, manpower: -12 } },
+      { id: 'discouraged', name: 'Not encouraged', mods: { freedom: 4, qol: 3, manpower: -6 } },
+      { id: 'balanced', name: 'Balanced', default: true, mods: {} },
+      { id: 'encouraged', name: 'Encouraged', mods: { manpower: 8, income: -4, welfare: 4 } },
+      { id: 'mandatory', name: 'Mandatory', mods: { manpower: 18, freedom: -15, qol: -8, unrest: 8, income: -8 } },
+    ],
+  },
+  workhours: {
+    name: 'Working hours', icon: '\u{23F1}\u{FE0F}',
+    options: [
+      { id: 'minimum', name: 'Minimum', mods: { qol: 12, hdi: 6, freedom: 5, factory: -12, income: -8 } },
+      { id: 'limited', name: 'Limited', mods: { qol: 6, hdi: 3, factory: -5, income: -3 } },
+      { id: 'mixed', name: 'Mixed', default: true, mods: {} },
+      { id: 'extended', name: 'Extended', mods: { factory: 8, income: 6, qol: -6, unrest: 4 } },
+      { id: 'maximum', name: 'Maximum', mods: { factory: 18, income: 12, qol: -15, hdi: -8, unrest: 12, approval: -8 } },
+    ],
+  },
 };
 
 export function defaultLaws() {
