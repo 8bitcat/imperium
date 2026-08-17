@@ -1,3 +1,4 @@
+import { Globe3D } from './globe3d.js';
 // IMPERIUM v3 — pixelerad jordglob med städer, skarpa etiketter, levande handel
 // och arméer som markörer med truppsammansättning + antal.
 import { drawUnit } from './units.js';
@@ -74,6 +75,10 @@ export class Globe {
     this.bctx = this.buf.getContext('2d');
     this.scene = document.createElement('canvas');
     this.sctx = this.scene.getContext('2d');
+    this.scene2d = this.scene;      // pixelläget ritar klotvyn hit
+    this.sctx2d = this.sctx;
+    this.mode3d = false;            // 3D-läget ritar i stället en världstextur
+    this.g3 = null;
 
     this.rot = [-15, -30];
     this.zoom = 1;
@@ -321,10 +326,12 @@ export class Globe {
     this.pixelSize = Math.max(2, Math.floor(Math.min(w, h) / 220));
     this.buf.width = Math.max(96, Math.ceil(w / this.pixelSize));
     this.buf.height = Math.max(96, Math.ceil(h / this.pixelSize));
-    this.scene.width = this.buf.width;
-    this.scene.height = this.buf.height;
-    this.spath = d3.geoPath(this.proj, this.sctx);
+    this.scene2d.width = this.buf.width;
+    this.scene2d.height = this.buf.height;
+    this.spath2d = d3.geoPath(this.proj, this.sctx2d);
     this.bpath = d3.geoPath(this.proj, this.bctx);
+    this.spath = this.mode3d ? this.tpath : this.spath2d;
+    if (this.mode3d && this.g3) this.g3.resize(w, h, this.buf.width, this.buf.height);
     this._makeStars();
     this._applyProjection();
   }
@@ -335,6 +342,15 @@ export class Globe {
       .rotate([this.rot[0], this.rot[1], 0])
       .scale(Math.max(10, r * this.zoom))
       .translate([this.buf.width / 2, this.buf.height / 2]);
+    if (this.mode3d && this.g3) {
+      const c = this._viewCenter();
+      this.g3.setCamera(c[0], c[1], Math.max(10, r * this.zoom));
+      // världstexturen beror INTE på vridningen — bygg bara om den när
+      // innehållet faktiskt ändras, annars kostar varje musdrag en omritning
+      const bucket = [1.6, 1.8, 2.2, 2.6, 3.8, 5, 6.5].reduce((a, z) => a + (this.zoom >= z ? 1 : 0), 0);
+      if (bucket !== this._zbucket) { this._zbucket = bucket; this.sceneDirty = true; }
+      return;
+    }
     this.sceneDirty = true;
   }
 
@@ -353,12 +369,19 @@ export class Globe {
 
   _viewCenter() { return [-this.rot[0], -this.rot[1]]; }
 
-  _front(ll, slack = 1.45) { return d3.geoDistance(ll, this._viewCenter()) < slack; }
+  _front(ll, slack = 1.45) {
+    if (this.mode3d) return this.g3.visible(ll, slack);
+    return d3.geoDistance(ll, this._viewCenter()) < slack;
+  }
 
+  // Enda stället som vet vilket läge vi är i — allt markörritande går här.
   _project(ll) {
-    if (!this._front(ll, 1.55)) return null;
+    if (this.mode3d) return this.g3.project(ll);
     return this.proj(ll);
   }
+
+  // klotets radie i buffertpixlar — effekter som skalar mot klotet frågar den
+  _sphereR() { return this.mode3d ? this.g3.screenRadius() : this.proj.scale(); }
 
   _zoomBy(f) {
     this.anim = null;
@@ -368,7 +391,7 @@ export class Globe {
 
   _rotateByPx(dx, dy) {
     this.anim = null;
-    const k = 57 / this.proj.scale();
+    const k = 57 / this._sphereR();
     this.rot[0] += dx * k;
     this.rot[1] = Math.max(-89, Math.min(89, this.rot[1] - dy * k));
     this._applyProjection();
@@ -377,9 +400,13 @@ export class Globe {
   pickAt(screenX, screenY) {
     const bx = screenX / this.pixelSize;
     const by = screenY / this.pixelSize;
+    if (this.mode3d) {
+      const hit = this.g3.unproject(bx, by);
+      return hit ? this.countryAtLL(hit) : null;
+    }
     const ll = this.proj.invert([bx, by]);
     if (!ll || !isFinite(ll[0]) || !isFinite(ll[1])) return null;
-    const rp = this.proj(ll);
+    const rp = this._project(ll);
     if (!rp || Math.hypot(rp[0] - bx, rp[1] - by) > 1.5) return null;
     return this.countryAtLL(ll);
   }
@@ -461,15 +488,30 @@ export class Globe {
       this._applyProjection();
     }
 
-    if (this.sceneDirty) { this._renderScene(); this.sceneDirty = false; }
+    if (this.sceneDirty) {
+      this._renderScene();
+      this.sceneDirty = false;
+      if (this.mode3d) this.g3.setDayTexture(this.tex);
+    }
 
     const b = this.bctx;
     b.clearRect(0, 0, this.buf.width, this.buf.height);
-    b.drawImage(this.scene, 0, 0);
+    if (this.mode3d) {
+      // klotet ritas i WebGL bakom; här ovanpå ligger bara pixelkonsten
+      this._computeSun();
+      if (this._sun) this.g3.setSun(this._sun);
+      this._updateSelTex();
+      this.g3.setSelAlpha(this.selectedId ? 0.55 + 0.35 * Math.sin(t / 180) : 0);
+      this.g3.render(t);
+      this._computeOverlay(b, this.buf.width, this.buf.height);
+      this._computeLabels();
+    } else {
+      b.drawImage(this.scene, 0, 0);
+    }
 
     this._drawWarSmoke(b, t);
-    this._drawClouds(b, t);
-    this._drawNight(b);
+    // moln och nattskugga är 3D-lagrets jobb när det är påslaget
+    if (!this.mode3d) { this._drawClouds(b, t); this._drawNight(b); }
     this._drawAurora(b, t);
     this._drawShootingStars(b, t);
     this._drawMoon(b, t);
@@ -482,7 +524,7 @@ export class Globe {
     if (this.showCities) this._drawCityLife(b, t);
     this._drawSatellites(b, t);
 
-    if (this.selectedId) {
+    if (this.selectedId && !this.mode3d) {
       const c = this.byId.get(this.selectedId);
       if (c) {
         const pulse = 0.35 + 0.3 * Math.sin(t / 180);
@@ -517,7 +559,7 @@ export class Globe {
     const ps = this.pixelSize;
     for (const g of this.garrisons) {
       if (!this._front(g.ll, 1.5)) continue;
-      const p = this.proj(g.ll);
+      const p = this._project(g.ll);
       if (!p) continue;
       const sx = p[0] * ps, sy = p[1] * ps + 18;
       const n = Object.values(g.comp).reduce((a, b) => a + b, 0);
@@ -569,7 +611,7 @@ export class Globe {
     const ps = this.pixelSize;
     for (const a of this.countryArmies || []) {
       if (!this._front(a.ll, 1.5)) continue;
-      const p = this.proj(a.ll);
+      const p = this._project(a.ll);
       if (!p) continue;
       // utan spionage T4 syns ingen sammansättning — bara en figur och antal (eller ?)
       const comp = a.comp;
@@ -609,7 +651,7 @@ export class Globe {
       const k = Math.max(0, Math.min(1, (performance.now() - m.start) / m.dur));
       const ll = m.interp(k);
       if (!this._front(ll, 1.5)) continue;
-      const p = this.proj(ll);
+      const p = this._project(ll);
       if (!p) continue;
       const sx = p[0] * ps, sy = p[1] * ps;
       const mcomp = m.comp || (m.units || []).reduce((a, u) => (a[u.type] = (a[u.type] || 0) + 1, a), {});
@@ -652,7 +694,7 @@ export class Globe {
   _drawArmy(x, t) {
     const a = this.army;
     if (!this._front(a.ll, 1.5)) return;
-    const p = this.proj(a.ll);
+    const p = this._project(a.ll);
     if (!p) return;
     const ps = this.pixelSize;
     const sx = p[0] * ps, sy = p[1] * ps;
@@ -711,7 +753,7 @@ export class Globe {
       for (const [f, alpha] of positions) {
         const ll = r.interp(f);
         if (!this._front(ll)) continue;
-        const p = this.proj(ll);
+        const p = this._project(ll);
         if (!p) continue;
         b.globalAlpha = alpha;
         b.fillStyle = r.kind === 'air' ? '#f2fbff' : r.color;
@@ -721,7 +763,7 @@ export class Globe {
           // contrail: avtagande kondensstrimma bakom planet
           for (let j = 1; j <= 4; j++) {
             const llc = r.interp(Math.max(0, Math.min(1, f - 0.016 * j * dir)));
-            const pc = this._front(llc) ? this.proj(llc) : null;
+            const pc = this._front(llc) ? this._project(llc) : null;
             if (!pc) break;
             b.globalAlpha = alpha * 0.5 * (1 - j / 5);
             b.fillStyle = '#dff4ff';
@@ -730,7 +772,7 @@ export class Globe {
         } else {
           // liten svans
           const ll2 = r.interp(Math.max(0, Math.min(1, f - 0.025 * dir)));
-          const p2 = this._front(ll2) ? this.proj(ll2) : null;
+          const p2 = this._front(ll2) ? this._project(ll2) : null;
           if (p2) { b.globalAlpha = alpha * 0.35; b.fillRect(Math.round(p2[0]), Math.round(p2[1]), 1, 1); }
         }
       }
@@ -740,20 +782,17 @@ export class Globe {
 
   // Dag & natt: solen vandrar runt globen med speltiden — natthalvan mörknar
   _drawNight(b) {
-    if (this.dayFloat == null) return;
-    const SUN_LAP_DAYS = 10; // ett soldygn = 10 speldagar (~20 sek)
-    const sunLon = -((this.dayFloat / SUN_LAP_DAYS) % 1) * 360 + 180;
-    this._sun = [sunLon, 0];
+    if (!this._computeSun()) return;
     const center = this._viewCenter();
-    const cp = this.proj(center);
+    const cp = this._project(center);
     if (!cp) return;
     const toward = d3.geoInterpolate(center, this._sun)(0.12);
-    const tp = this.proj(toward);
+    const tp = this._project(toward);
     if (!tp) return;
     let dx = cp[0] - tp[0], dy = cp[1] - tp[1]; // bort från solen
     const len = Math.hypot(dx, dy) || 1;
     dx /= len; dy /= len;
-    const R = this.proj.scale();
+    const R = this._sphereR();
     const lit = Math.cos(d3.geoDistance(center, this._sun)); // 1 = mitt på dagen
     const off = -lit * R;
     const g = b.createLinearGradient(
@@ -769,7 +808,7 @@ export class Globe {
     b.fillRect(0, 0, this.buf.width, this.buf.height);
     // sol-glint: varmt sken där solen träffar klotet
     if (this._front(this._sun, 1.4)) {
-      const sp = this.proj(this._sun);
+      const sp = this._project(this._sun);
       if (sp) {
         const g2 = b.createRadialGradient(sp[0], sp[1], 0, sp[0], sp[1], R * 0.5);
         g2.addColorStop(0, 'rgba(255,238,190,0.20)');
@@ -809,7 +848,7 @@ export class Globe {
       const lon = ((c.lon0 - t * c.spd) % 360 + 540) % 360 - 180;
       const ll = [lon, c.lat];
       if (!this._front(ll)) continue;
-      const p = this.proj(ll);
+      const p = this._project(ll);
       if (!p) continue;
       const night = this._isNight(ll);
       b.globalAlpha = night ? 0.18 : 0.45;
@@ -827,7 +866,7 @@ export class Globe {
         const lat = baseLat + 3.5 * Math.sin(lon * 0.09 + t / 1100) + 1.5 * Math.sin(lon * 0.23 - t / 700);
         const ll = [lon, lat];
         if (!this._front(ll) || !this._isNight(ll)) continue;
-        const p = this.proj(ll);
+        const p = this._project(ll);
         if (!p) continue;
         const a = 0.3 + 0.25 * (0.5 + 0.5 * Math.sin(lon * 0.4 + t / 480));
         b.globalAlpha = a;
@@ -849,7 +888,7 @@ export class Globe {
     const h = hashId('ss' + idx);
     const W = this.buf.width, H = this.buf.height;
     const [cx, cy] = this.proj.translate();
-    const R = this.proj.scale();
+    const R = this._sphereR();
     const x0 = h % W, y0 = (h >> 4) % Math.max(20, H >> 2);
     const dx = 1 + ((h >> 7) % 2), dy = 0.5 + ((h >> 9) % 2) * 0.4;
     for (let i = 0; i < 5; i++) {
@@ -865,7 +904,7 @@ export class Globe {
   // Månen kretsar sakta runt klotet ute i rymden
   _drawMoon(b, t) {
     const [cx, cy] = this.proj.translate();
-    const R = this.proj.scale();
+    const R = this._sphereR();
     const ang = t / 42000;
     const mx = cx + Math.cos(ang) * (R + 13), my = cy + Math.sin(ang) * (R + 13) * 0.92;
     if (mx < 2 || my < 2 || mx > this.buf.width - 2 || my > this.buf.height - 2) return;
@@ -900,7 +939,7 @@ export class Globe {
     }
     const site = this._rk.site;
     if (!this._front(site, 1.15)) return;
-    const p = this.proj(site);
+    const p = this._project(site);
     if (!p) return;
     const [cx, cy] = this.proj.translate();
     let dx = p[0] - cx, dy = p[1] - cy; // radiellt utåt = "uppåt"
@@ -931,7 +970,7 @@ export class Globe {
     this._fireworks = this._fireworks.filter((f) => t < f.until);
     for (const f of this._fireworks) {
       if (!this._front(f.ll, 1.2)) continue;
-      const p = this.proj(f.ll);
+      const p = this._project(f.ll);
       if (!p) continue;
       // två samtidiga skurar med olika fas och offset
       for (let s = 0; s < 2; s++) {
@@ -971,7 +1010,7 @@ export class Globe {
     const h = hashId('li' + idx);
     const ll = [(h % 360) - 180, ((h >> 5) % 36) - 18];
     if (!this._front(ll, 1.1)) return;
-    const p = this.proj(ll);
+    const p = this._project(ll);
     if (!p) return;
     const bx = Math.round(p[0]), by = Math.round(p[1]);
     b.globalAlpha = 0.35;
@@ -992,13 +1031,13 @@ export class Globe {
       const frac = ((t / 70000) + (r.phase % 1000) / 1000) % 1;
       const ll = r.interp(frac);
       if (!this._front(ll) || !this._isNight(ll)) continue;
-      const p = this.proj(ll);
+      const p = this._project(ll);
       if (!p) continue;
       b.globalAlpha = 0.85;
       b.fillStyle = '#ffd9a0';
       b.fillRect(Math.round(p[0]), Math.round(p[1]), 1, 1);
       const ll2 = r.interp(Math.max(0, frac - 0.02));
-      const p2 = this._front(ll2) ? this.proj(ll2) : null;
+      const p2 = this._front(ll2) ? this._project(ll2) : null;
       if (p2) { b.globalAlpha = 0.3; b.fillRect(Math.round(p2[0]), Math.round(p2[1]), 1, 1); }
     }
     b.globalAlpha = 1;
@@ -1015,11 +1054,15 @@ export class Globe {
     b.save();
     b.setLineDash([3, 4]);
     b.lineDashOffset = -(t / 200) % 7;
-    b.beginPath();
-    this.bpath(ring);
     b.strokeStyle = 'rgba(57,215,255,0.5)';
     b.lineWidth = 1;
-    b.stroke();
+    if (this.mode3d) {
+      this._strokeGeoLine(b, ring0);
+    } else {
+      b.beginPath();
+      this.bpath(ring);
+      b.stroke();
+    }
     b.restore();
 
     // dina egna satelliter patrullerar längs täckningsgränsen
@@ -1030,7 +1073,7 @@ export class Globe {
         const k = ((t / 26000) + i / n) % 1;
         const pt = path[Math.floor(k * path.length) % path.length];
         if (!pt || !this._front(pt, 1.2)) continue;
-        const p = this.proj(pt);
+        const p = this._project(pt);
         if (!p) continue;
         b.fillStyle = Math.floor(t / 300 + i) % 4 ? '#cfe8ff' : '#39d7ff';
         b.fillRect(Math.round(p[0]), Math.round(p[1]), 1, 1);
@@ -1045,7 +1088,7 @@ export class Globe {
   _drawWarSmoke(b, t) {
     for (const z of this.warZones || []) {
       if (!this._front(z.ll, 1.2)) continue;
-      const p = this.proj(z.ll);
+      const p = this._project(z.ll);
       if (!p) continue;
       const bx = Math.round(p[0]), by = Math.round(p[1]);
       for (let i = 0; i < 4; i++) {
@@ -1108,7 +1151,7 @@ export class Globe {
       const lat = s.inc * Math.sin(t * s.spdLat + s.phase);
       const ll = [lon, lat];
       if (!this._front(ll, 1.35)) continue;
-      const p = this.proj(ll);
+      const p = this._project(ll);
       if (!p) continue;
       const blink = Math.floor(t / 500) % 3 !== 0;
       b.fillStyle = blink ? '#ffffff' : '#39d7ff';
@@ -1123,7 +1166,7 @@ export class Globe {
       const lat = inc * Math.sin(t * 0.0013 + i * 1.7);
       const ll = [lon, lat];
       if (!this._front(ll, 1.35)) continue;
-      const p = this.proj(ll);
+      const p = this._project(ll);
       if (!p) continue;
       b.fillStyle = Math.floor(t / 400 + i) % 3 ? '#cfe8ff' : '#39d7ff';
       b.fillRect(Math.round(p[0]), Math.round(p[1]) - 2, 1, 1);
@@ -1137,7 +1180,7 @@ export class Globe {
         const lat = Math.asin(Math.sin(inc) * Math.sin(u)) * 180 / Math.PI;
         const lon = ((node + Math.atan2(Math.cos(inc) * Math.sin(u), Math.cos(u)) * 180 / Math.PI) % 360 + 540) % 360 - 180;
         const ll = [lon, lat];
-        pts.push(this._front(ll, 1.3) ? this.proj(ll) : null);
+        pts.push(this._front(ll, 1.3) ? this._project(ll) : null);
       }
       b.strokeStyle = 'rgba(57,215,255,0.22)';
       b.lineWidth = 0.5;
@@ -1160,7 +1203,7 @@ export class Globe {
       const lat = inc * Math.sin(t * 0.0009 + i);
       const ll = [lon, Math.max(-80, Math.min(80, lat))];
       if (!this._front(ll, 1.35)) continue;
-      const p = this.proj(ll);
+      const p = this._project(ll);
       if (!p) continue;
       b.fillStyle = Math.floor(t / 350 + i) % 4 ? sn.color : '#ffffff';
       b.fillRect(Math.round(p[0]), Math.round(p[1]) - 3, 1, 1);
@@ -1173,7 +1216,7 @@ export class Globe {
     for (let i = 5; i >= 0; i--) {
       const ll = issAt(t - i * 300);
       if (!this._front(ll, 1.35)) continue;
-      const p = this.proj(ll);
+      const p = this._project(ll);
       if (!p) continue;
       if (i === 0) {
         b.globalAlpha = 1;
@@ -1254,7 +1297,7 @@ export class Globe {
       }
     }
     for (const pt of this._reliefPts) {
-      const p = this.proj(pt.ll);
+      const p = this._project(pt.ll);
       if (!p) continue;
       const px = Math.round(p[0]), py = Math.round(p[1]);
       const w = pt.big ? 2 : 1;
@@ -1285,7 +1328,7 @@ export class Globe {
     x.font = `${iconPx}px "Segoe UI Emoji", sans-serif`;
     for (const m of this.resourceMarkers) {
       if (!this._front(m.ll, 1.02)) continue;
-      const p = this.proj(m.ll);
+      const p = this._project(m.ll);
       if (!p) continue;
       const sx = p[0] * ps, sy = p[1] * ps + 14;
       if (sx < -30 || sy < -30 || sx > this.canvas.width + 30 || sy > this.canvas.height + 30) continue;
@@ -1297,18 +1340,147 @@ export class Globe {
     }
   }
 
+
+  // ---------- 3D-läget ----------
+  // Klotet renderas i WebGL med världskartan som ekvirektangulär textur.
+  // Misslyckas WebGL stannar vi kvar i pixelläget och säger ifrån.
+  setMode3D(on) {
+    on = !!on;
+    if (on === this.mode3d) return on;
+    if (on && !this._init3D()) return false;
+    this.mode3d = on;
+    if (this.canvas3d) this.canvas3d.style.display = on ? 'block' : 'none';
+    this.canvas.style.imageRendering = 'pixelated';
+    if (on) { this.scene = this.tex; this.sctx = this.texCtx; }
+    else { this.scene = this.scene2d; this.sctx = this.sctx2d; }
+    this._selTexId = undefined;
+    this._zbucket = undefined;
+    this.resize();
+    this.sceneDirty = true;
+    return on;
+  }
+
+  _init3D() {
+    if (this.g3) return this.g3.ok;
+    const cv = document.createElement('canvas');
+    cv.id = 'globe3d';
+    this.canvas.parentNode.insertBefore(cv, this.canvas);
+    const g3 = new Globe3D(cv);
+    if (!g3.ok) { cv.remove(); return false; }
+    this.canvas3d = cv;
+    this.g3 = g3;
+    // världstexturen: samma ritkod som pixelläget, fast utrullad platt
+    const TW = g3.texSize, TH = g3.texSize / 2;
+    this.tex = document.createElement('canvas');
+    this.tex.width = TW; this.tex.height = TH;
+    this.texCtx = this.tex.getContext('2d');
+    this.texProj = d3.geoEquirectangular().scale(TW / (2 * Math.PI)).translate([TW / 2, TH / 2]);
+    this.tpath = d3.geoPath(this.texProj, this.texCtx);
+    // markeringen ligger i en egen mask så den kan pulsera utan omritning
+    const SW = 1024, SH = 512;
+    this.selCanvas = document.createElement('canvas');
+    this.selCanvas.width = SW; this.selCanvas.height = SH;
+    this.selCtx = this.selCanvas.getContext('2d');
+    this.selPath = d3.geoPath(
+      d3.geoEquirectangular().scale(SW / (2 * Math.PI)).translate([SW / 2, SH / 2]), this.selCtx);
+    g3.setHeightField(this._makeHeightField());
+    return true;
+  }
+
+  // Bergskedjorna som höjdfält — samma data som terrängrelieffen i 2D, så
+  // Anderna och Himalaya reser sig verkligen ur klotet i 3D.
+  _makeHeightField() {
+    const W = 2048, H = 1024;
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const g = c.getContext('2d');
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, W, H);
+    // Varje kedja ritas som EN linje i några koncentriskt smalnande drag.
+    // (Staplade cirklar längs linjen mättade fältet till 1.0 över hela
+    // Alp-Karpaterna-Kaukasus-klustret, och då lade shadern snö över halva
+    // Europa.) Med ett fast antal drag per kedja är toppvärdet förutsägbart,
+    // och där kedjor verkligen korsas — Tibet — blir det högre. Precis rätt.
+    g.globalCompositeOperation = 'lighter';
+    g.strokeStyle = '#ffffff';
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    const PASSES = 6;
+    for (const r of MOUNTAIN_RANGES) {
+      const rad = r.big ? 30 : 19;
+      const line = () => {
+        g.beginPath();
+        r.pts.forEach(([lon, lat], i) => {
+          const x = ((lon + 180) / 360) * W, y = ((90 - lat) / 180) * H;
+          if (i) g.lineTo(x, y); else g.moveTo(x, y);
+        });
+        g.stroke();
+      };
+      g.globalAlpha = (r.big ? 0.115 : 0.09);
+      for (let p = 0; p < PASSES; p++) {
+        g.lineWidth = Math.max(2, rad * (1 - p / PASSES));
+        line();
+      }
+    }
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+    return c;
+  }
+
+  // solens läge — i pixelläget ritar _drawNight skuggan, i 3D gör shadern det,
+  // men BÅDA behöver _sun för att veta var det är natt (stadsljus, fartyg)
+  _computeSun() {
+    if (this.dayFloat == null) return false;
+    const SUN_LAP_DAYS = 10;
+    this._sun = [-((this.dayFloat / SUN_LAP_DAYS) % 1) * 360 + 180, 0];
+    return true;
+  }
+
+  _updateSelTex() {
+    if (this._selTexId === this.selectedId) return;
+    this._selTexId = this.selectedId;
+    const c = this.selectedId ? this.byId.get(this.selectedId) : null;
+    this.selCtx.clearRect(0, 0, this.selCanvas.width, this.selCanvas.height);
+    if (c) {
+      this.selCtx.beginPath();
+      this.selPath(c.feature);
+      this.selCtx.fillStyle = '#fff';
+      this.selCtx.fill();
+    }
+    this.g3.setSelTexture(this.selCanvas);
+  }
+
+  // geo-linje som polyline via _project — ersätter d3-path i 3D
+  _strokeGeoLine(b, coords) {
+    let pen = false;
+    b.beginPath();
+    for (const ll of coords) {
+      const p = this._front(ll, 1.4) ? this._project(ll) : null;
+      if (!p) { pen = false; continue; }
+      if (pen) b.lineTo(p[0], p[1]); else b.moveTo(p[0], p[1]);
+      pen = true;
+    }
+    b.stroke();
+  }
+
   _renderScene() {
     const s = this.sctx;
     const W = this.scene.width, H = this.scene.height;
-    s.fillStyle = SPACE;
-    s.fillRect(0, 0, W, H);
-    for (const st of this.stars) { s.fillStyle = st.c; s.fillRect(st.x, st.y, st.s, st.s); }
-
-    s.beginPath(); this.spath({ type: 'Sphere' });
-    s.fillStyle = OCEAN; s.fill();
-    s.strokeStyle = 'rgba(57,215,255,0.22)'; s.lineWidth = 3; s.stroke();
-    s.beginPath(); this.spath({ type: 'Sphere' });
-    s.strokeStyle = RIM; s.lineWidth = 1; s.stroke();
+    const flat = this.mode3d;   // 3D: hela världen rullas ut som textur
+    if (flat) {
+      // ingen rymd och ingen klotkontur i texturen — WebGL äger bakgrunden
+      s.fillStyle = OCEAN;
+      s.fillRect(0, 0, W, H);
+    } else {
+      s.fillStyle = SPACE;
+      s.fillRect(0, 0, W, H);
+      for (const st of this.stars) { s.fillStyle = st.c; s.fillRect(st.x, st.y, st.s, st.s); }
+      s.beginPath(); this.spath({ type: 'Sphere' });
+      s.fillStyle = OCEAN; s.fill();
+      s.strokeStyle = 'rgba(57,215,255,0.22)'; s.lineWidth = 3; s.stroke();
+      s.beginPath(); this.spath({ type: 'Sphere' });
+      s.strokeStyle = RIM; s.lineWidth = 1; s.stroke();
+    }
 
     s.beginPath(); this.spath(this.grat);
     s.strokeStyle = 'rgba(45,140,170,0.20)'; s.lineWidth = 0.5; s.stroke();
@@ -1337,17 +1509,22 @@ export class Globe {
         s.fill();
         if (!useMesh) { s.strokeStyle = BORDER; s.lineWidth = 0.55; s.stroke(); }
       }
-      // terrängläge: subtil bruskstruktur ger landmassorna djup
-      if (terr) {
+      // terrängläge: subtil bruskstruktur ger landmassorna djup i pixelläget.
+      // I 3D gör bergsgeometrin samma jobb, och uppskalat brus blir bara gröt.
+      if (terr && !flat) {
         s.fillStyle = (this._terrPattern ||= this._makeTerrainPattern(s));
         s.fill();
       }
-      // säsongssnö: länder norr/söder om snögränsen får ett vitt täcke
+      // säsongssnö: länder norr/söder om snögränsen får ett vitt täcke.
+      // I pixelläget dämpas täcket av nattgradienten som läggs ovanpå — i 3D
+      // lyser dagsidan rakt igenom, så där måste det vara betydligt tunnare
+      // annars bleks hela norra halvklotet vitt.
       if (this._snowN != null) {
         const lat = c.centroid[1];
         let a = 0;
         if (lat > this._snowN) a = Math.min(0.55, ((lat - this._snowN) / 18) * 0.55 + 0.12);
         else if (lat < this._snowS) a = Math.min(0.55, ((this._snowS - lat) / 18) * 0.55 + 0.12);
+        if (flat) a *= 0.4;
         if (a > 0.03) { s.fillStyle = `rgba(235,244,252,${a})`; s.fill(); }
       }
     }
@@ -1375,8 +1552,9 @@ export class Globe {
       }
     }
 
-    // bergskedjor med hillshade ovanpå naturfärgerna
-    if (this.showTerrain) this._drawRelief(s);
+    // bergskedjor med hillshade ovanpå naturfärgerna. I 3D behövs de inte —
+    // där reser sig samma bergskedjor som riktig geometri ur klotet.
+    if (this.showTerrain && !flat) this._drawRelief(s);
 
     // transportnätet: vägar, järnvägar, sjörutter, flygrutter
     if (this.showTrade && this._routeLines) {
@@ -1403,14 +1581,23 @@ export class Globe {
       stroke(L.air, 'rgba(232,246,255,0.20)', 0.5, [1, 3]);
     }
 
-    // städer (prickar i scenen; ljus/blink sker i kompositpasset)
+    // städer: i pixelläget ritas prickarna in i scenen, i 3D ritas de skarpt
+    // per bildruta i kompositpasset (_computeOverlay) i stället
+    if (!flat) this._computeOverlay(s, W, H);
+    if (!flat) this._computeLabels();
+  }
+
+  // Stadsprickar + synlighet. ctx = dit prickarna ska ritas (scenen i pixelläget,
+  // bufferten i 3D där de måste följa med när klotet vrids).
+  _computeOverlay(ctx, W, H) {
+    const s = ctx;
     this._visCities = [];
     if (this.showCities) {
       const maxTier = this.zoom < 1.6 ? 0 : this.zoom < 2.6 ? 1 : this.zoom < 3.8 ? 2 : 3;
       for (const city of this.cities) {
         if (city.tier > maxTier && !city.c) continue;
         if (!this._front(city.ll, 1.5)) continue;
-        const p = this.proj(city.ll);
+        const p = this._project(city.ll);
         if (!p || p[0] < -4 || p[1] < -4 || p[0] > W + 4 || p[1] > H + 4) continue;
         const px = Math.round(p[0]), py = Math.round(p[1]);
         this._visCities.push({ x: px, y: py, city });
@@ -1436,20 +1623,25 @@ export class Globe {
       }
     }
 
-    // etikettlistan (ritas skarpt i skärmupplösning i kompositpasset).
-    // Bara länder vars mittpunkt faktiskt SYNS på skärmen kandiderar — annars
-    // äter jättar utanför bild upp alla platser och inzoomade vyer blir namnlösa.
+  }
+
+  // etikettlistan (ritas skarpt i skärmupplösning i kompositpasset).
+  // Bara länder vars mittpunkt faktiskt SYNS på skärmen kandiderar — annars
+  // äter jättar utanför bild upp alla platser och inzoomade vyer blir namnlösa.
+  _computeLabels() {
     this._labels = [];
     const entries = [];
     const LW = this.buf.width, LH = this.buf.height;
     for (const c of this.countries) {
       const area = this.mpath.area(c.feature);
       if (area < 550) continue;
-      const p = this.proj(c.centroid);
+      const p = this._project(c.centroid);
       if (!p) continue;
       if (p[0] < -6 || p[1] < -6 || p[0] > LW + 6 || p[1] > LH + 6) continue;
-      const rp = this.proj(this.proj.invert(p));
-      if (!rp || Math.hypot(rp[0] - p[0], rp[1] - p[1]) > 1.5) continue;
+      if (!this.mode3d) {
+        const rp = this._project(this.proj.invert(p));
+        if (!rp || Math.hypot(rp[0] - p[0], rp[1] - p[1]) > 1.5) continue;
+      }
       // erövrade länder bär erövrarens namn — under integrationen visas hur långt den kommit
       const lbl = this.labelOverride?.[c.id];
       entries.push({

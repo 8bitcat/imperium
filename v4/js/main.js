@@ -31,9 +31,9 @@ const SOLO_COLOR = '#ff4f4f';
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.1.0';
-export const VERSION_DATE = '2026-08-13';
-export const VERSION_NAME = 'BLOCK, FANOR & DELAD FRED';
+export const VERSION = '5.2.0';
+export const VERSION_DATE = '2026-08-17';
+export const VERSION_NAME = '3D-PLANETEN';
 
 const globe = new Globe($('#globe'));
 
@@ -3873,6 +3873,21 @@ function wireToggles() {
     globe.setShowTerrain(on);
     tgTe.classList.toggle('on', on);
   });
+  // 3D-planeten: samma värld och samma spel — klotet renderas i WebGL med
+  // riktig sol, atmosfärsrand och bergskedjor som reser sig ur ytan.
+  // Pixelkonsten (arméer, etiketter, effekter) ligger kvar ovanpå.
+  const tg3 = $('#tg3d');
+  tg3.addEventListener('click', () => {
+    const want = !globe.mode3d;
+    const got = globe.setMode3D(want);
+    if (want && got !== true) { warn('DIN WEBBLÄSARE SAKNAR WEBGL — PIXELLÄGET ÄR KVAR'); return; }
+    tg3.classList.toggle('on', !!got);
+    try { localStorage.setItem('imperium.mode3d', got ? '1' : '0'); } catch (e) { /* privat läge */ }
+    toast(got ? '\u{1F30D} 3D-PLANET PÅ' : '\u{1F53B} PIXELLÄGE PÅ', '', 3000);
+  });
+  try {
+    if (localStorage.getItem('imperium.mode3d') === '1' && globe.setMode3D(true) === true) tg3.classList.add('on');
+  } catch (e) { /* privat läge */ }
   // jorden kan snurra av sig själv — eller stå helt stilla
   const tgS = $('#tgSpin');
   tgS.classList.toggle('on', !!globe.autoRotate);

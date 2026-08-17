@@ -33,6 +33,12 @@
     image-rendering: pixelated;
     cursor: grab;
   }
+  /* 3D-planeten ligger BAKOM pixellagret: WebGL ritar klotet, 2D-canvasen
+     ritar arméer, etiketter och effekter ovanpå med kvarhållen pixelkonst */
+  canvas#globe3d {
+    position: fixed; inset: 0; width: 100vw; height: 100vh;
+    display: none; pointer-events: none;
+  }
   canvas#globe:active { cursor: grabbing; }
 
   .scanlines {
@@ -684,6 +690,7 @@
 <div id="toggles">
   <button class="tbtn on" id="tgCities">&#127961; STÄDER</button>
   <button class="tbtn" id="tgTerrain">&#127757; TERRÄNG</button>
+  <button class="tbtn" id="tg3d">&#127760; 3D</button>
   <button class="tbtn" id="tgSpin">&#128260; SNURR</button>
   <button class="tbtn on" id="tgTrade">&#128230; HANDEL</button>
   <button class="tbtn" id="tgLegend">&#128220; TILLGÅNGAR</button>
