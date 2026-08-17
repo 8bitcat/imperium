@@ -31,9 +31,9 @@ const SOLO_COLOR = '#ff4f4f';
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.2.0';
+export const VERSION = '5.3.0';
 export const VERSION_DATE = '2026-08-17';
-export const VERSION_NAME = '3D-PLANETEN';
+export const VERSION_NAME = 'ALLT I 3D';
 
 const globe = new Globe($('#globe'));
 

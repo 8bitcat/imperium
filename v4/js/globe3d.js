@@ -6,9 +6,11 @@
 // sol/terminator, holografisk atmosfärsrand, ett molnlager och ett stjärnfält.
 //
 // Världskartan ritas av globe.js som en EKVIREKTANGULÄR textur — exakt samma
-// ritkod som i pixelläget — och läggs här på klotet. Markörer (arméer, städer,
-// etiketter) ritas fortfarande i 2D ovanpå via project(), så all pixelkonst är
-// kvar precis som förut.
+// ritkod som i pixelläget — och läggs här på klotet. Allt annat i världen är
+// också riktig 3D: stadsljus som punkter på terränghöjden, norrsken som
+// böljande draperier, rutter som bågar i rummet, satelliter i bana, månen som
+// en belyst klotskiva. Bara spelgränssnittet — armébanér, etiketter, flaggor —
+// ligger kvar som skarpa 2D-markörer ovanpå.
 
 const SEG_X = 256;   // längdgrader
 const SEG_Y = 128;   // breddgrader
@@ -161,6 +163,128 @@ void main() {
   gl_FragColor = vec4(col, a * (0.06 + 0.22 * day));
 }`;
 
+// STÄDER — riktiga ljuspunkter på klotet. De ligger på terränghöjden och
+// döljs av djuptestet när de hamnar på baksidan, precis som allt annat i 3D.
+const VS_CITY = `
+attribute vec3 aPos;
+attribute float aTier;
+attribute float aCap;
+uniform mat4 uMVP;
+uniform vec3 uSun;
+uniform float uScreenR;
+uniform float uTime;
+varying float vNight; varying float vCap;
+void main() {
+  vec3 N = normalize(aPos);
+  vNight = 1.0 - smoothstep(-0.14, 0.16, dot(N, uSun));
+  vCap = aCap;
+  gl_Position = uMVP * vec4(aPos, 1.0);
+  float base = aCap > 0.5 ? 5.0 : (4.2 - aTier * 0.7);
+  float s = base * max(0.85, uScreenR / 170.0);
+  s *= 0.88 + 0.12 * sin(uTime * 2.0 + aPos.x * 37.0 + aPos.z * 17.0);  // stadsljusen flimrar
+  gl_PointSize = clamp(s, 2.2, 34.0);
+}`;
+
+const FS_CITY = `
+precision mediump float;
+varying float vNight; varying float vCap;
+void main() {
+  float r = length(gl_PointCoord - 0.5) * 2.0;
+  float core = smoothstep(0.5, 0.0, r);
+  float halo = smoothstep(1.0, 0.0, r);
+  vec3 warm = vCap > 0.5 ? vec3(1.0, 0.90, 0.60) : vec3(1.0, 0.82, 0.48);
+  vec3 col = mix(vec3(0.80, 0.94, 1.0), warm, vNight);
+  float a = (core * 1.0 + halo * 0.75 * vNight) * (0.34 + 0.86 * vNight);
+  if (a < 0.01) discard;
+  gl_FragColor = vec4(col, a);
+}`;
+
+// NORRSKEN — draperier som står UT från klotet och böljar runt polerna.
+// Samma vågformel som pixelläget använde, fast nu i tre dimensioner.
+const VS_AUR = `
+attribute float aLon;
+attribute float aV;
+attribute float aPole;
+uniform mat4 uMVP;
+uniform vec3 uSun;
+uniform float uTime;
+varying float vV; varying float vNight; varying float vLon;
+void main() {
+  float baseLat = aPole > 0.0 ? 67.0 : -65.0;
+  float lat = baseLat + 3.5 * sin(aLon * 0.09 + uTime * 0.9) + 1.5 * sin(aLon * 0.23 - uTime * 1.4);
+  float a = radians(aLon), b = radians(lat);
+  vec3 dir = vec3(cos(b) * sin(a), sin(b), cos(b) * cos(a));
+  vNight = 1.0 - smoothstep(-0.24, 0.04, dot(dir, uSun));
+  vV = aV; vLon = aLon;
+  gl_Position = uMVP * vec4(dir * (1.004 + aV * 0.085), 1.0);
+}`;
+
+const FS_AUR = `
+precision mediump float;
+uniform highp float uTime;
+varying float vV; varying float vNight; varying float vLon;
+void main() {
+  float shimmer = 0.45 + 0.55 * sin(vLon * 0.42 + uTime * 2.1);
+  float ray = 0.55 + 0.45 * sin(vLon * 1.7 - uTime * 0.8);
+  vec3 col = mix(vec3(0.30, 1.0, 0.60), vec3(0.72, 0.55, 1.0), smoothstep(0.30, 1.0, vV) * 0.9);
+  float a = (1.0 - vV) * (0.30 + 0.70 * shimmer) * ray * vNight * 0.55;
+  if (a < 0.004) discard;
+  gl_FragColor = vec4(col, a);
+}`;
+
+// EFFEKTLAGRET — allt rörligt i världen (handelspartiklar, satelliter och deras
+// banor, raketer, fyrverkerier, blixtar, fartygsljus, krigsrök, stjärnfall och
+// månen) ritas som glödande 3D-punkter och linjer. Inget av det är pixlar
+// längre: de ligger i rummet, döljs av klotet när de hamnar bakom det och
+// följer med när man vrider.
+const VS_FX_PT = `
+attribute vec3 aPos;
+attribute float aSize;
+attribute vec4 aCol;
+attribute float aKind;
+uniform mat4 uMVP;
+varying vec4 vCol; varying float vKind;
+void main() {
+  vCol = aCol; vKind = aKind;
+  gl_Position = uMVP * vec4(aPos, 1.0);
+  gl_PointSize = clamp(aSize, 1.0, 96.0);
+}`;
+
+const FS_FX_PT = `
+precision mediump float;
+uniform vec3 uSun;
+varying vec4 vCol; varying float vKind;
+void main() {
+  vec2 d = gl_PointCoord - 0.5;
+  float r = length(d) * 2.0;
+  if (r > 1.0) discard;
+  float a;
+  if (vKind > 1.5) {
+    // månen: en liten BELYST klotskiva med riktig fas, inte en suddig prick
+    float z = sqrt(max(0.0, 1.0 - r * r));
+    vec3 n = normalize(vec3(d.x * 2.0, -d.y * 2.0, z));
+    float lit = clamp(dot(n, normalize(vec3(uSun.x, uSun.y, 0.55))) * 1.3 + 0.10, 0.0, 1.0);
+    a = smoothstep(1.0, 0.86, r) * (0.10 + 0.90 * lit);
+  } else if (vKind > 0.5) {
+    a = smoothstep(1.0, 0.0, r);          // mjuk puff: rök och glöd
+  } else {
+    a = smoothstep(0.55, 0.0, r) * 0.95 + smoothstep(1.0, 0.0, r) * 0.35;
+  }
+  gl_FragColor = vec4(vCol.rgb, vCol.a * a);
+}`;
+
+const VS_FX_LN = `
+attribute vec3 aPos;
+attribute vec4 aCol;
+uniform mat4 uMVP;
+varying vec4 vCol;
+void main() { vCol = aCol; gl_Position = uMVP * vec4(aPos, 1.0); }`;
+
+const FS_FX_LN = `
+precision mediump float;
+varying vec4 vCol;
+void main() { gl_FragColor = vCol; }`;
+
 const VS_STARS = `
 attribute vec2 aXY;
 varying vec2 vNdc;
@@ -215,6 +339,10 @@ export class Globe3D {
     this.progAtmo = this._program(VS_SIMPLE, FS_ATMO);
     this.progCloud = this._program(VS_SIMPLE, FS_CLOUD);
     this.progStars = this._program(VS_STARS, FS_STARS);
+    this.progCity = this._program(VS_CITY, FS_CITY);
+    this.progAur = this._program(VS_AUR, FS_AUR);
+    this.progFxPt = this._program(VS_FX_PT, FS_FX_PT);
+    this.progFxLn = this._program(VS_FX_LN, FS_FX_LN);
 
     this._buildSphere(null);
     this._quad = this._buffer(new Float32Array([-1, -1, 3, -1, -1, 3]));
@@ -222,6 +350,14 @@ export class Globe3D {
     this.dayTex = this._texture();
     this.selTex = this._texture();
     this.cloudTex = this._texture(this._makeCloudCanvas());
+    this._buildAurora();
+    this.nCity = 0;
+    this.nFxPt = 0;
+    this.nFxLn = 0;
+    this.nStaticLn = 0;
+    this.staticCount = -1;
+    this.showCities = true;
+    this.showAurora = true;
 
     // 4K-textur där hårdvaran klarar det — annars blir inzoomade vyer suddiga
     const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 2048;
@@ -423,7 +559,102 @@ export class Globe3D {
     return c;
   }
 
+  // Norrskensdraperierna: en ring runt varje pol, uppdelad i längdgrader och
+  // några rader på höjden. Vågformen räknas i vertexshadern så bandet böljar.
+  _buildAurora() {
+    const M = 200, ROWS = 4;
+    const lon = [], vv = [], pole = [], idx = [];
+    let base = 0;
+    for (const pl of [1, -1]) {
+      for (let j = 0; j <= ROWS; j++) {
+        for (let i = 0; i <= M; i++) {
+          lon.push(-180 + (i / M) * 360);
+          vv.push(j / ROWS);
+          pole.push(pl);
+        }
+      }
+      for (let j = 0; j < ROWS; j++) {
+        for (let i = 0; i < M; i++) {
+          const a = base + j * (M + 1) + i, b = a + 1, c = a + M + 1, d = c + 1;
+          idx.push(a, c, b, b, c, d);
+        }
+      }
+      base += (ROWS + 1) * (M + 1);
+    }
+    this.auLon = this._buffer(new Float32Array(lon));
+    this.auV = this._buffer(new Float32Array(vv));
+    this.auPole = this._buffer(new Float32Array(pole));
+    this.auIdx = this._buffer(new Uint16Array(idx), this.gl.ELEMENT_ARRAY_BUFFER);
+    this.nAur = idx.length;
+  }
+
   // ---------- publikt API ----------
+
+  // Städerna som ljuspunkter. list = [{ll, tier, cap, h}] där h är terränghöjden
+  // (0–1) så staden hamnar PÅ berget i stället för inuti det.
+  setCities(list) {
+    if (!this.ok) return;
+    const n = list.length;
+    const pos = new Float32Array(n * 3);
+    const tier = new Float32Array(n);
+    const cap = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const c = list[i];
+      const v = llToVec(c.ll[0], c.ll[1]);
+      const r = 1 + (c.h || 0) * RELIEF + 0.0015;
+      pos[i * 3] = v[0] * r; pos[i * 3 + 1] = v[1] * r; pos[i * 3 + 2] = v[2] * r;
+      tier[i] = c.tier || 0;
+      cap[i] = c.cap ? 1 : 0;
+    }
+    const gl = this.gl;
+    if (this.cPos) { gl.deleteBuffer(this.cPos); gl.deleteBuffer(this.cTier); gl.deleteBuffer(this.cCap); }
+    this.cPos = this._buffer(pos);
+    this.cTier = this._buffer(tier);
+    this.cCap = this._buffer(cap);
+    this.nCity = n;
+  }
+
+  setLayers(opts) {
+    if (opts.cities != null) this.showCities = opts.cities;
+    if (opts.aurora != null) this.showAurora = opts.aurora;
+  }
+
+  // Effekterna byggs om varje bildruta i globe.js och laddas upp här.
+  // pts: [x,y,z, size, r,g,b,a, kind] per punkt (stride 9)
+  // lns: [x,y,z, r,g,b,a] per linjeände (stride 7, två per segment)
+  setFx(pts, lns) {
+    if (!this.ok) return;
+    const gl = this.gl;
+    this.nFxPt = pts.length / 9;
+    this.nFxLn = lns.length / 7;
+    if (this.nFxPt) {
+      this.fxPtBuf ||= gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.fxPtBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, pts, gl.DYNAMIC_DRAW);
+    }
+    if (this.nFxLn) {
+      this.fxLnBuf ||= gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.fxLnBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, lns, gl.DYNAMIC_DRAW);
+    }
+  }
+
+  // Rutterna (väg/järnväg/sjö/flyg) ändras sällan — de ligger i en egen,
+  // statisk buffert i stället för att laddas upp varje bildruta.
+  setFxStatic(lns) {
+    if (!this.ok) return;
+    const gl = this.gl;
+    this.nStaticLn = lns ? lns.length / 7 : 0;
+    if (!this.nStaticLn) return;
+    this.fxStaticBuf ||= gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fxStaticBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, lns, gl.STATIC_DRAW);
+    this.staticCount = -1;
+  }
+
+  // -1 = rita alla; annars bara de N första ändarna (de internationella)
+  setFxStaticCount(n) { this.staticCount = n; }
+
   setHeightField(canvas) { if (this.ok) this._buildSphere(canvas); }
   setDayTexture(canvas) { if (this.ok) this._upload(this.dayTex, canvas); }
   setSelTexture(canvas) { if (this.ok) this._upload(this.selTex, canvas); }
@@ -584,7 +815,59 @@ export class Globe3D {
     gl.uniform1i(this.progGlobe.u.uSel, 1);
     gl.drawElements(gl.TRIANGLES, this.nIdx, gl.UNSIGNED_SHORT, 0);
 
-    // 3) molnlagret
+    // 3) stadsljusen — additivt så de glöder mot nattsidan
+    if (this.showCities && this.nCity) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      gl.depthMask(false);
+      gl.useProgram(this.progCity);
+      const pc = this.progCity;
+      const bind = (buf, name, size) => {
+        const loc = pc.a[name];
+        if (loc == null || loc < 0) return;
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        gl.enableVertexAttribArray(loc);
+        gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+      };
+      bind(this.cPos, 'aPos', 3);
+      bind(this.cTier, 'aTier', 1);
+      bind(this.cCap, 'aCap', 1);
+      gl.uniformMatrix4fv(pc.u.uMVP, false, mvp);
+      gl.uniform3fv(pc.u.uSun, this.sun);
+      gl.uniform1f(pc.u.uScreenR, this.screenRadius());
+      gl.uniform1f(pc.u.uTime, t);
+      gl.drawArrays(gl.POINTS, 0, this.nCity);
+      gl.depthMask(true);
+    }
+
+    // 4) norrskenet — draperier som står ut från klotet runt polerna
+    if (this.showAurora) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      gl.depthMask(false);
+      gl.disable(gl.CULL_FACE);          // draperierna ses från båda hållen
+      gl.useProgram(this.progAur);
+      const pa = this.progAur;
+      const bindA = (buf, name) => {
+        const loc = pa.a[name];
+        if (loc == null || loc < 0) return;
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        gl.enableVertexAttribArray(loc);
+        gl.vertexAttribPointer(loc, 1, gl.FLOAT, false, 0, 0);
+      };
+      bindA(this.auLon, 'aLon');
+      bindA(this.auV, 'aV');
+      bindA(this.auPole, 'aPole');
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.auIdx);
+      gl.uniformMatrix4fv(pa.u.uMVP, false, mvp);
+      gl.uniform3fv(pa.u.uSun, this.sun);
+      gl.uniform1f(pa.u.uTime, t);
+      gl.drawElements(gl.TRIANGLES, this.nAur, gl.UNSIGNED_SHORT, 0);
+      gl.enable(gl.CULL_FACE);
+      gl.depthMask(true);
+    }
+
+    // 5) molnlagret
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
@@ -599,7 +882,7 @@ export class Globe3D {
     gl.uniform1i(this.progCloud.u.uTex, 0);
     gl.drawElements(gl.TRIANGLES, this.nIdx, gl.UNSIGNED_SHORT, 0);
 
-    // 4) atmosfären: skalets baksida, additivt → glödande rand
+    // 6) atmosfären: skalets baksida, additivt → glödande rand
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
     gl.cullFace(gl.FRONT);
     gl.useProgram(this.progAtmo);
@@ -610,7 +893,49 @@ export class Globe3D {
     gl.uniform3fv(this.progAtmo.u.uEye, this.eye);
     gl.drawElements(gl.TRIANGLES, this.nIdx, gl.UNSIGNED_SHORT, 0);
 
+    // 7) effekterna: handel, satelliter, raketer, månen, rök — allt i rummet
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
     gl.cullFace(gl.BACK);
+    if (this.nStaticLn) {
+      gl.useProgram(this.progFxLn);
+      const p = this.progFxLn;
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.fxStaticBuf);
+      gl.enableVertexAttribArray(p.a.aPos);
+      gl.vertexAttribPointer(p.a.aPos, 3, gl.FLOAT, false, 28, 0);
+      gl.enableVertexAttribArray(p.a.aCol);
+      gl.vertexAttribPointer(p.a.aCol, 4, gl.FLOAT, false, 28, 12);
+      gl.uniformMatrix4fv(p.u.uMVP, false, mvp);
+      const cnt = this.staticCount < 0 ? this.nStaticLn : Math.min(this.nStaticLn, this.staticCount);
+      if (cnt > 0) gl.drawArrays(gl.LINES, 0, cnt);
+    }
+    if (this.nFxLn) {
+      gl.useProgram(this.progFxLn);
+      const p = this.progFxLn;
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.fxLnBuf);
+      gl.enableVertexAttribArray(p.a.aPos);
+      gl.vertexAttribPointer(p.a.aPos, 3, gl.FLOAT, false, 28, 0);
+      gl.enableVertexAttribArray(p.a.aCol);
+      gl.vertexAttribPointer(p.a.aCol, 4, gl.FLOAT, false, 28, 12);
+      gl.uniformMatrix4fv(p.u.uMVP, false, mvp);
+      gl.drawArrays(gl.LINES, 0, this.nFxLn);
+    }
+    if (this.nFxPt) {
+      gl.useProgram(this.progFxPt);
+      const p = this.progFxPt;
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.fxPtBuf);
+      gl.enableVertexAttribArray(p.a.aPos);
+      gl.vertexAttribPointer(p.a.aPos, 3, gl.FLOAT, false, 36, 0);
+      gl.enableVertexAttribArray(p.a.aSize);
+      gl.vertexAttribPointer(p.a.aSize, 1, gl.FLOAT, false, 36, 12);
+      gl.enableVertexAttribArray(p.a.aCol);
+      gl.vertexAttribPointer(p.a.aCol, 4, gl.FLOAT, false, 36, 16);
+      gl.enableVertexAttribArray(p.a.aKind);
+      gl.vertexAttribPointer(p.a.aKind, 1, gl.FLOAT, false, 36, 32);
+      gl.uniformMatrix4fv(p.u.uMVP, false, mvp);
+      gl.uniform3fv(p.u.uSun, this.sun);
+      gl.drawArrays(gl.POINTS, 0, this.nFxPt);
+    }
+
     gl.depthMask(true);
     gl.disable(gl.BLEND);
   }

@@ -1,4 +1,8 @@
-import { Globe3D } from './globe3d.js';
+import { Globe3D, llToVec } from './globe3d.js';
+
+// små vektorhjälpare för 3D-effekterna
+const norm3 = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 // IMPERIUM v3 — pixelerad jordglob med städer, skarpa etiketter, levande handel
 // och arméer som markörer med truppsammansättning + antal.
 import { drawUnit } from './units.js';
@@ -139,6 +143,7 @@ export class Globe {
     }
     this.cities.sort((a, b) => b.p - a.p);
     this.sceneDirty = true;
+    this._pushCities3D();   // småstäderna genereras efter start — håll 3D i takt
   }
 
   // routes: {a, b, kind: 'road'|'rail'|'land'|'sea'|'air', color, dur, phase, intl}
@@ -162,6 +167,7 @@ export class Globe {
       this._routeLines[kind] = { type: 'MultiLineString', coordinates: coords };
     }
     this.sceneDirty = true;
+    this._buildRoutes3D();
   }
 
   // vilket land ligger en lon/lat i? (används också för sjöruttklassning)
@@ -502,27 +508,30 @@ export class Globe {
       if (this._sun) this.g3.setSun(this._sun);
       this._updateSelTex();
       this.g3.setSelAlpha(this.selectedId ? 0.55 + 0.35 * Math.sin(t / 180) : 0);
+      this.g3.setLayers({ cities: this.showCities, aurora: this.dayFloat != null });
+      this._fx3D(t);
       this.g3.render(t);
-      this._computeOverlay(b, this.buf.width, this.buf.height);
+      this._computeOverlay(null, this.buf.width, this.buf.height);
       this._computeLabels();
     } else {
       b.drawImage(this.scene, 0, 0);
+      // hela världslagret ritas som pixlar bara i pixelläget — i 3D ligger
+      // samma effekter i rummet i stället (se _fx3D)
+      this._drawWarSmoke(b, t);
+      this._drawClouds(b, t);
+      this._drawNight(b);
+      this._drawAurora(b, t);
+      this._drawShootingStars(b, t);
+      this._drawMoon(b, t);
+      this._drawLightning(b, t);
+      this._drawShipLights(b, t);
+      this._drawRockets(b, t);
+      this._drawFireworks(b, t);
+      this._drawSatCoverage(b, t);
+      if (this.showTrade && this.routes.length) this._drawTrade(b, t);
+      if (this.showCities) this._drawCityLife(b, t);
+      this._drawSatellites(b, t);
     }
-
-    this._drawWarSmoke(b, t);
-    // moln och nattskugga är 3D-lagrets jobb när det är påslaget
-    if (!this.mode3d) { this._drawClouds(b, t); this._drawNight(b); }
-    this._drawAurora(b, t);
-    this._drawShootingStars(b, t);
-    this._drawMoon(b, t);
-    this._drawLightning(b, t);
-    this._drawShipLights(b, t);
-    this._drawRockets(b, t);
-    this._drawFireworks(b, t);
-    this._drawSatCoverage(b, t);
-    if (this.showTrade && this.routes.length) this._drawTrade(b, t);
-    if (this.showCities) this._drawCityLife(b, t);
-    this._drawSatellites(b, t);
 
     if (this.selectedId && !this.mode3d) {
       const c = this.byId.get(this.selectedId);
@@ -1383,7 +1392,11 @@ export class Globe {
     this.selCtx = this.selCanvas.getContext('2d');
     this.selPath = d3.geoPath(
       d3.geoEquirectangular().scale(SW / (2 * Math.PI)).translate([SW / 2, SH / 2]), this.selCtx);
-    g3.setHeightField(this._makeHeightField());
+    const hf = this._makeHeightField();
+    this._hfData = hf.getContext('2d').getImageData(0, 0, hf.width, hf.height);
+    g3.setHeightField(hf);
+    this._buildRoutes3D();
+    this._pushCities3D();
     return true;
   }
 
@@ -1427,6 +1440,23 @@ export class Globe {
     return c;
   }
 
+  // terränghöjden i en punkt (0–1) ur samma fält som klotgeometrin använder
+  _sampleHeight(lon, lat) {
+    const d = this._hfData;
+    if (!d) return 0;
+    const x = Math.min(d.width - 1, Math.max(0, Math.round(((lon + 180) / 360) * (d.width - 1))));
+    const y = Math.min(d.height - 1, Math.max(0, Math.round(((90 - lat) / 180) * (d.height - 1))));
+    return d.data[(y * d.width + x) * 4] / 255;
+  }
+
+  // Städerna blir riktiga ljuspunkter i 3D i stället för pixelprickar
+  _pushCities3D() {
+    if (!this.g3?.ok) return;
+    this.g3.setCities(this.cities.map((c) => ({
+      ll: c.ll, tier: c.tier || 0, cap: !!c.c, h: this._sampleHeight(c.ll[0], c.ll[1]),
+    })));
+  }
+
   // solens läge — i pixelläget ritar _drawNight skuggan, i 3D gör shadern det,
   // men BÅDA behöver _sun för att veta var det är natt (stadsljus, fartyg)
   _computeSun() {
@@ -1448,6 +1478,267 @@ export class Globe {
       this.selCtx.fill();
     }
     this.g3.setSelTexture(this.selCanvas);
+  }
+
+  // ---------- 3D-effekterna ----------
+  // I pixelläget ritas handel, satelliter, raketer, månen och allt annat
+  // rörligt som 1×1-pixlar i bufferten. I 3D ligger de i stället på riktigt i
+  // rummet: glödande punkter och linjer som klotet döljer när de hamnar bakom
+  // det, och som följer med när man vrider. Samma banor och samma tider — bara
+  // uträknade i tre dimensioner i stället för två.
+  _rgb(hex) {
+    const c = (this._rgbCache ||= {});
+    if (c[hex]) return c[hex];
+    const h = String(hex || '#ffffff').replace('#', '');
+    const n = parseInt(h.length === 3 ? h.split('').map((x) => x + x).join('') : h, 16) || 0xffffff;
+    return (c[hex] = [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]);
+  }
+
+  _v(ll, alt = 0.0025) {
+    const v = llToVec(ll[0], ll[1]);
+    const r = 1 + alt;
+    return [v[0] * r, v[1] * r, v[2] * r];
+  }
+
+  // Rutterna som riktiga bågar i rummet. Byggs om bara när rutterna ändras —
+  // internationella först, inrikes (väg/järnväg) sist så de kan gate:as på zoom.
+  _buildRoutes3D() {
+    if (!this.g3?.ok) { this._fxRoutes = null; return; }
+    const STYLE = {
+      road: { col: '#c9b389', a: 0.14, alt: 0.003 },
+      rail: { col: '#c9d2dc', a: 0.22, alt: 0.003 },
+      land: { col: '#c9b389', a: 0.10, alt: 0.003, dash: 2 },
+      sea: { col: '#5ab4e6', a: 0.16, alt: 0.004, dash: 2 },
+      air: { col: '#e8f6ff', a: 0.07, alt: 0.022, dash: 2 },
+    };
+    const intl = [], dom = [];
+    for (const r of this.routes || []) {
+      const st = STYLE[r.kind] || STYLE.road;
+      const col = this._rgb(st.col);
+      const steps = Math.max(2, Math.min(40, Math.ceil(d3.geoDistance(r.a, r.b) / 0.05)));
+      const into = (r.kind === 'road' || r.kind === 'rail') ? dom : intl;
+      let prev = null;
+      for (let i = 0; i <= steps; i++) {
+        const f = i / steps;
+        // flygrutterna böjer sig uppåt på mitten — en riktig båge, inte en linje
+        const lift = r.kind === 'air' ? st.alt * (0.35 + Math.sin(f * Math.PI) * 0.65) : st.alt;
+        const p = this._v(r.interp(f), lift);
+        if (prev && (!st.dash || i % st.dash)) {
+          into.push(prev[0], prev[1], prev[2], col[0], col[1], col[2], st.a,
+            p[0], p[1], p[2], col[0], col[1], col[2], st.a);
+        }
+        prev = p;
+      }
+    }
+    const arr = new Float32Array(intl.length + dom.length);
+    arr.set(intl, 0);
+    arr.set(dom, intl.length);
+    this._fxRoutes = arr;
+    this._fxRoutesIntl = intl.length / 7;      // linjeändar före inrikesdelen
+    this.g3.setFxStatic(arr);
+  }
+
+  // Bygger alla rörliga effekter för en bildruta.
+  _fx3D(t) {
+    const P = [], L = [];
+    const zk = Math.max(0.75, this._sphereR() / 250);   // allt växer när man zoomar in
+    const pt = (v, size, col, a, kind = 0) => {
+      P.push(v[0], v[1], v[2], size * zk, col[0], col[1], col[2], a, kind);
+    };
+    const ln = (va, vb, col, a) => {
+      L.push(va[0], va[1], va[2], col[0], col[1], col[2], a,
+        vb[0], vb[1], vb[2], col[0], col[1], col[2], a);
+    };
+    const WHITE = [1, 1, 1], CYAN = [0.22, 0.84, 1];
+
+    // HANDEL: partiklar som glider längs rutterna
+    const showDomestic = this.zoom >= 1.8;
+    for (const r of this.routes || []) {
+      if ((r.kind === 'road' || r.kind === 'rail') && !showDomestic) continue;
+      const frac = ((t + r.phase) % r.dur) / r.dur;
+      const alt = r.kind === 'air' ? 0.022 : 0.004;
+      const col = r.kind === 'air' ? this._rgb('#f2fbff') : this._rgb(r.color);
+      const positions = r.intl ? [[frac, 1], [1 - frac, 0.55]] : [[frac, 1]];
+      for (const [f, alpha] of positions) {
+        const lift = r.kind === 'air' ? alt * (0.35 + Math.sin(f * Math.PI) * 0.65) : alt;
+        pt(this._v(r.interp(f), lift), r.kind === 'air' ? 3.4 : 3.0, col, alpha * 0.9);
+        if (r.kind === 'air') {
+          const dir = r.intl && alpha < 1 ? -1 : 1;
+          for (let j = 1; j <= 4; j++) {   // kondensstrimma bakom planet
+            const fc = Math.max(0, Math.min(1, f - 0.016 * j * dir));
+            pt(this._v(r.interp(fc), alt * (0.35 + Math.sin(fc * Math.PI) * 0.65)),
+              2.6, this._rgb('#dff4ff'), alpha * 0.45 * (1 - j / 5), 1);
+          }
+        }
+      }
+    }
+
+    // FARTYGSLJUS på nattsidans sjörutter
+    if (this.dayFloat != null) {
+      for (const r of this.routes || []) {
+        if (r.kind !== 'sea') continue;
+        const frac = ((t / 70000) + (r.phase % 1000) / 1000) % 1;
+        const ll = r.interp(frac);
+        if (!this._isNight(ll)) continue;
+        pt(this._v(ll, 0.004), 2.8, this._rgb('#ffd9a0'), 0.85);
+        pt(this._v(r.interp(Math.max(0, frac - 0.02)), 0.004), 2.2, this._rgb('#ffd9a0'), 0.3);
+      }
+    }
+
+    // SATELLITER: fasta banor, forskningens spaningssatelliter, rymdnationerna
+    const SAT_ALT = 0.055;
+    for (const s of SATELLITES) {
+      const lon = ((t * s.spdLon + s.phase) % 360 + 540) % 360 - 180;
+      const lat = s.inc * Math.sin(t * s.spdLat + s.phase);
+      pt(this._v([lon, lat], SAT_ALT), 3.0, Math.floor(t / 500) % 3 !== 0 ? WHITE : CYAN, 0.95);
+    }
+    const tier = this.satCov?.tier || 0;
+    for (let i = 0; i < tier * 2 && tier < 5; i++) {
+      const inc = 24 + ((i * 37) % 50);
+      const dir = i % 2 ? 1 : -1;
+      const lon = ((t * (0.006 + (i % 5) * 0.002) * dir + i * 47) % 360 + 540) % 360 - 180;
+      const lat = inc * Math.sin(t * 0.0013 + i * 1.7);
+      pt(this._v([lon, lat], SAT_ALT), 3.0,
+        Math.floor(t / 400 + i) % 3 ? this._rgb('#cfe8ff') : CYAN, 0.95);
+    }
+    if (tier >= 5) {   // T5: det globala nätet med länkar hela vägen runt
+      const N = 12, inc = 53 * Math.PI / 180, node = t * 0.0045;
+      const chain = [];
+      for (let k = 0; k < N; k++) {
+        const u = t * 0.0011 + (k / N) * Math.PI * 2;
+        const lat = Math.asin(Math.sin(inc) * Math.sin(u)) * 180 / Math.PI;
+        const lon = ((node + Math.atan2(Math.cos(inc) * Math.sin(u), Math.cos(u)) * 180 / Math.PI) % 360 + 540) % 360 - 180;
+        chain.push(this._v([lon, lat], SAT_ALT + 0.01));
+      }
+      for (let k = 0; k < N; k++) {
+        ln(chain[k], chain[(k + 1) % N], CYAN, 0.22);
+        pt(chain[k], 3.0, Math.floor(t / 300 + k) % 4 ? this._rgb('#e8f7ff') : CYAN, 0.95);
+      }
+    }
+    for (let i = 0; i < (this.spaceNations?.length || 0); i++) {
+      const sn = this.spaceNations[i];
+      const inc = Math.abs(sn.ll?.[1] || 30) + 8;
+      const lon = ((t * (0.007 + (i % 4) * 0.002) + i * 83) % 360 + 540) % 360 - 180;
+      const lat = Math.max(-80, Math.min(80, inc * Math.sin(t * 0.0009 + i)));
+      pt(this._v([lon, lat], SAT_ALT), 3.0,
+        Math.floor(t / 350 + i) % 4 ? this._rgb(sn.color) : WHITE, 0.95);
+    }
+
+    // SATELLITTÄCKNING: streckad lysande ring + patrullerande satelliter
+    const cov = this.satCov;
+    if (cov?.tier && cov.ang !== Infinity && cov.center) {
+      const ring = d3.geoCircle().center(cov.center).radius(cov.ang * 180 / Math.PI)().coordinates[0];
+      const dash = Math.floor(t / 90);
+      for (let i = 0; i < ring.length - 1; i++) {
+        if ((i + dash) % 3 === 0) continue;
+        ln(this._v(ring[i], 0.006), this._v(ring[i + 1], 0.006), CYAN, 0.5);
+      }
+      const n = Math.min(8, 2 + cov.tier * 2);
+      for (let i = 0; i < n; i++) {
+        const k = ((t / 26000) + i / n) % 1;
+        const q = ring[Math.floor(k * ring.length) % ring.length];
+        if (q) pt(this._v(q, 0.008), 2.8, Math.floor(t / 300 + i) % 4 ? this._rgb('#cfe8ff') : CYAN, 0.9);
+      }
+    }
+
+    // KRIGSRÖK: stigande puffar och eldflimmer över anfallna länder
+    for (const z of this.warZones || []) {
+      for (let i = 0; i < 3; i++) {
+        const ph = ((t / 1400) + i / 3) % 1;
+        pt(this._v([z.ll[0] + i * 0.9 + ph * 2.2, z.ll[1] + ph * 1.4], 0.004 + ph * 0.045),
+          5 + ph * 9, this._rgb('#aab0b8'), 0.55 * (1 - ph), 1);
+      }
+      if (Math.floor(t / 180) % 3 !== 0) {
+        pt(this._v(z.ll, 0.004), 5.5, this._rgb(Math.floor(t / 180) % 2 ? '#ff9b3d' : '#ffd23d'), 0.95);
+        pt(this._v(z.ll, 0.004), 11, this._rgb('#ff5a2d'), 0.4, 1);
+      }
+    }
+
+    // RAKETER: stiger radiellt ut från rampen med rökpelaren kvar nere
+    {
+      const SITES = [[-80.6, 28.5], [63.3, 45.9], [100.3, 41.1], [80.2, 13.7],
+        [131.0, 30.4], [-52.8, 5.2], [21.1, 67.9]];
+      const cyc = 26000, dur = 4200;
+      const idx = Math.floor(t / cyc);
+      const k = (t % cyc) / dur;
+      if (k <= 1) {
+        if (this._rk?.idx !== idx) {
+          const sites = this.playerLaunch ? [...SITES, this.playerLaunch] : SITES;
+          this._rk = { idx, site: sites[hashId('rk' + idx) % sites.length] };
+        }
+        const site = this._rk.site;
+        const top = (k * k * (3 - 2 * k)) * 0.13;
+        for (let i = 1; i <= 3; i++) {
+          const hh = Math.max(0, top - i * 0.018);
+          pt(this._v(site, 0.003 + hh), 4 + i * 2, this._rgb('#c9cdd4'), 0.4 * (1 - k) * (1 - i / 4), 1);
+        }
+        const fade = k > 0.85 ? (1 - k) / 0.15 : 1;
+        pt(this._v(site, 0.003 + top), 3.4, WHITE, fade);
+        pt(this._v(site, 0.003 + Math.max(0, top - 0.006)), 5, this._rgb('#ff9b3d'), fade * 0.8, 1);
+      }
+    }
+
+    // FYRVERKERIER vid segrar och riksutrop — skalet sprids i ytplanet
+    for (const f of this.fireworks || []) {
+      if (t > f.until) continue;
+      const up = llToVec(f.ll[0], f.ll[1]);
+      const east = norm3([-up[2], 0, up[0]]);
+      const north = cross3(up, east);
+      const base = 1.02;
+      for (let s = 0; s < 2; s++) {
+        const cyc = 800;
+        const k = ((t - f.born + s * 400) % cyc) / cyc;
+        const bh = hashId('fw' + Math.floor((t - f.born + s * 400) / cyc) + '_' + s);
+        const col = this._rgb(['#ffd23d', '#ff5a7a', '#59ffa8', '#6db4ff', '#ffffff'][bh % 5]);
+        const rad = (1 + k * 7) * 0.0016;
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * Math.PI * 2 + (bh % 10) / 10;
+          const dx = Math.cos(a) * rad, dy = Math.sin(a) * rad;
+          pt([up[0] * base + east[0] * dx + north[0] * dy,
+            up[1] * base + east[1] * dx + north[1] * dy,
+            up[2] * base + east[2] * dx + north[2] * dy], 3.2, col, (1 - k) * 0.95);
+        }
+        if (k < 0.25) pt([up[0] * base, up[1] * base, up[2] * base], 8, WHITE, 1 - k * 4, 1);
+      }
+    }
+
+    // ÅSKVÄDER i tropikbandet
+    {
+      const cyc = 3400;
+      const local = t % cyc;
+      if (local <= 320 && (local < 90 || (local > 150 && local < 260))) {
+        const h = hashId('lt' + Math.floor(t / cyc));
+        const ll = [(h % 360) - 180, ((h >> 5) % 36) - 18];
+        pt(this._v(ll, 0.012), 17, this._rgb('#9db8ff'), 0.35, 1);
+        pt(this._v(ll, 0.012), 5, WHITE, 0.95);
+      }
+    }
+
+    // STJÄRNFALL långt utanför klotet — korsar aldrig planeten
+    {
+      const cyc = 7200, life = 750;
+      const k = (t % cyc) / life;
+      if (k <= 1) {
+        const h = hashId('ss' + Math.floor(t / cyc));
+        const lon = (h % 360) - 180, lat = ((h >> 6) % 140) - 70;
+        for (let i = 0; i < 5; i++) {
+          const f = k * 40 - i * 2.5;
+          pt(this._v([lon + f, lat + f * 0.45], 0.55 + i * 0.004),
+            3.2 - i * 0.4, i === 0 ? WHITE : this._rgb('#bfe8ff'), (1 - k) * (1 - i / 5));
+        }
+      }
+    }
+
+    // MÅNEN: en riktig belyst klotskiva i egen bana runt jorden
+    {
+      const ang = t / 42000;
+      const mLon = ((ang * 180 / Math.PI) % 360 + 540) % 360 - 180;
+      pt(this._v([mLon, 12 * Math.sin(ang * 1.7)], 1.35), 26, this._rgb('#e2e2d6'), 1, 2);
+    }
+
+    this.g3.setFx(new Float32Array(P), new Float32Array(L));
+    // inrikesrutterna syns först när man zoomat in, precis som i pixelläget
+    this.g3.setFxStaticCount(showDomestic ? -1 : (this._fxRoutesIntl || 0));
   }
 
   // geo-linje som polyline via _project — ersätter d3-path i 3D
@@ -1557,7 +1848,7 @@ export class Globe {
     if (this.showTerrain && !flat) this._drawRelief(s);
 
     // transportnätet: vägar, järnvägar, sjörutter, flygrutter
-    if (this.showTrade && this._routeLines) {
+    if (this.showTrade && this._routeLines && !flat) {
       const L = this._routeLines;
       const domestic = this.zoom >= 1.8;
       const stroke = (geo, color, width, dash) => {
@@ -1601,6 +1892,7 @@ export class Globe {
         if (!p || p[0] < -4 || p[1] < -4 || p[0] > W + 4 || p[1] > H + 4) continue;
         const px = Math.round(p[0]), py = Math.round(p[1]);
         this._visCities.push({ x: px, y: py, city });
+        if (!s) continue;   // 3D: stadsljusen ritas som riktiga punkter i WebGL
         if (city.c) {
           s.fillStyle = '#2a1a05';
           s.fillRect(px - 1, py - 1, 3, 3);
