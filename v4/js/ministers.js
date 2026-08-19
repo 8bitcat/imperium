@@ -56,6 +56,32 @@ export function clashOf(nation, minister) {
   return a.track === b.track ? Math.abs(a.step - b.step) : 3;
 }
 
+// ---------- ERFARENHET ----------
+// En minister som får sitta kvar växer in i ämbetet. Nivå 1 ger grundeffekten,
+// nivå 10 mångdubblar den — en hälsominister som började på +5 HDI slutar långt
+// över +40. Det gör det dyrt att byta ut folk i onödan.
+export const MAX_LEVEL = 10;
+export const XP_PER_LEVEL = 45;      // dagar i ämbetet per nivå
+
+export function levelOf(m) {
+  return Math.max(1, Math.min(MAX_LEVEL, 1 + Math.floor((m?.xp || 0) / XP_PER_LEVEL)));
+}
+
+// nivå 1 = 1,0 ×  →  nivå 10 = 8,0 ×
+export function levelMult(level) {
+  return 1 + (level - 1) * (7 / (MAX_LEVEL - 1));
+}
+
+export function xpToNext(m) {
+  const lv = levelOf(m);
+  return lv >= MAX_LEVEL ? null : lv * XP_PER_LEVEL - (m?.xp || 0);
+}
+
+export const LEVEL_TITLES = [
+  'NYUTNÄMND', 'INARBETAD', 'ERFAREN', 'RUTINERAD', 'SKICKLIG',
+  'DRIVEN', 'RESPEKTERAD', 'INFLYTELSERIK', 'LEGENDARISK', 'STATSBÄRARE',
+];
+
 // Samlade effekter av kabinettet
 export function cabinetMods(nation) {
   const out = {};
@@ -65,7 +91,8 @@ export function cabinetMods(nation) {
     if (!def || !m) continue;
     const clash = clashOf(nation, m);
     const eff = clash === 0 ? 1 : clash === 1 ? 0.75 : clash === 2 ? 0.4 : 0;
-    for (const [k, v] of Object.entries(def.mods)) add(k, Math.round(v * eff));
+    const mult = levelMult(levelOf(m));
+    for (const [k, v] of Object.entries(def.mods)) add(k, Math.round(v * eff * mult));
     if (clash >= 2) add('unrest', clash * 2);      // en minister på tvärs skapar oro
   }
   return out;

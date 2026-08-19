@@ -1,8 +1,9 @@
-// IMPERIUM v4 — forskningsträd (M5): 14 grenar × 4 nivåer. Allt är data.
+// IMPERIUM v4 — forskningsträd: 18 grenar × 6 nivåer (satelliter 7). Allt är data.
 // Kostnad i forskningspoäng; varje nivå kräver föregående. mods = permanenta
 // effekter på nationsvärden. unlock = specialförmågor (t.ex. kärnvapen).
 
-export const TIER_COST = [50, 120, 250, 500, 900];
+// Sju nivåer: de två sista är sena spelets forskning och kostar därefter.
+export const TIER_COST = [50, 120, 250, 500, 900, 1500, 2400];
 
 export const RESEARCH = {
   political: {
@@ -12,6 +13,8 @@ export const RESEARCH = {
       { name: 'Parliamentary Restructuring', mods: { polpower: 8, stability: 5 } },
       { name: 'Executive Authority Protocols', mods: { polpower: 10, statepower: 8 } },
       { name: 'Total State Doctrine', mods: { polpower: 15, statepower: 15, freedom: -10 } },
+      { name: 'Permanent Council Mandate', mods: { polpower: 22, statepower: 20, stability: 6 } },
+      { name: 'Constitutional Supremacy', mods: { polpower: 32, statepower: 26, stability: 12 } },
     ],
   },
   economy: {
@@ -21,6 +24,8 @@ export const RESEARCH = {
       { name: 'Central Bank Regulation', mods: { income: 10, gdp: 5 } },
       { name: 'Free Trade & Subsidies', mods: { income: 12, gdp: 10, factory: 5 } },
       { name: 'Global Reserve Currency', mods: { income: 20, gdp: 15 } },
+      { name: 'Sovereign Wealth Fund', mods: { income: 28, gdp: 22, factory: 8 } },
+      { name: 'Post-Scarcity Logistics', mods: { income: 40, gdp: 32, factory: 15 } },
     ],
   },
   corruption: {
@@ -30,6 +35,8 @@ export const RESEARCH = {
       { name: 'Independent Anti-Graft Agency', mods: { corruption: -10, approval: 4 } },
       { name: 'Deep State Audit Taskforce', mods: { corruption: -15, income: 5 } },
       { name: 'Institutional Transparency Matrix', mods: { corruption: -30, approval: 8 } },
+      { name: 'Automated Public Ledger', mods: { corruption: -40, approval: 12, income: 8 } },
+      { name: 'Incorruptible Civil Service', mods: { corruption: -55, approval: 18, stability: 10 } },
     ],
   },
   unrest: {
@@ -39,6 +46,8 @@ export const RESEARCH = {
       { name: 'Public Broadcast Censorship', mods: { unrest: -8, freedom: -5 } },
       { name: 'Martial Law Protocols', mods: { unrest: -12, freedom: -8, statepower: 5 } },
       { name: 'Algorithmic Social Credit', mods: { unrest: -20, freedom: -15, statepower: 10 } },
+      { name: 'Predictive Policing Grid', mods: { unrest: -20, safety: 8, freedom: -10 } },
+      { name: 'Total Civic Harmony', mods: { unrest: -32, stability: 15, approval: 10 } },
     ],
   },
   safety: {
@@ -48,6 +57,8 @@ export const RESEARCH = {
       { name: 'Automated Surveillance Grid', mods: { safety: 10, freedom: -4 } },
       { name: 'Counter-Terrorism Bureau', mods: { safety: 14, stability: 5 } },
       { name: 'Predictive Crime AI', mods: { safety: 25, freedom: -8 } },
+      { name: 'Integrated Response Network', mods: { safety: 20, unrest: -8 } },
+      { name: 'Zero-Incident Doctrine', mods: { safety: 32, unrest: -14, approval: 8 } },
     ],
   },
   immigration: {
@@ -57,6 +68,8 @@ export const RESEARCH = {
       { name: 'Talent Attraction Visas', mods: { integration: 6, gdp: 5, research: 4 } },
       { name: 'Smart Border Networks', mods: { integration: 8, safety: 5 } },
       { name: 'Naturalization / Enclosure', mods: { integration: 12, manpower: 8 } },
+      { name: 'Global Talent Pipeline', mods: { immigration: 18, gdp: 10, research: 6 } },
+      { name: 'Open Borders Compact', mods: { immigration: 28, gdp: 18, research: 10, unrest: 5 } },
     ],
   },
   healthcare: {
@@ -66,6 +79,8 @@ export const RESEARCH = {
       { name: 'National Health Insurance', mods: { qol: 8, hdi: 6, approval: 5 } },
       { name: 'Bio-Medical Research Grants', mods: { qol: 10, hdi: 8, manpower: 5 } },
       { name: 'Gene Therapy & Longevity', mods: { qol: 15, hdi: 12, manpower: 10 } },
+      { name: 'Genomic Medicine Program', mods: { healthcare: 22, hdi: 12, lifespan: 8 } },
+      { name: 'Universal Longevity Care', mods: { healthcare: 35, hdi: 20, lifespan: 15 } },
     ],
   },
   education: {
@@ -75,6 +90,8 @@ export const RESEARCH = {
       { name: 'STEM & University Grants', mods: { research: 10, gdp: 4 } },
       { name: 'National Think Tanks', mods: { research: 14, polpower: 4 } },
       { name: 'AI-Integrated Learning', mods: { research: 25, hdi: 8 } },
+      { name: 'National Research Academies', mods: { education: 22, research: 15, hdi: 8 } },
+      { name: 'Universal Higher Learning', mods: { education: 35, research: 25, hdi: 15 } },
     ],
   },
   logistics: {
@@ -84,6 +101,8 @@ export const RESEARCH = {
       { name: 'Järnvägslogistik', mods: { readiness: 5, manpower: 3 } },
       { name: 'Lufttransport & konvojer', mods: { readiness: 8, manpower: 5 } },
       { name: 'Automatiserad försörjningskedja', mods: { readiness: 12, manpower: 8 } },
+      { name: 'Continental Rail Backbone', mods: { logistics: 22, income: 10, factory: 8 } },
+      { name: 'Strategic Airlift Command', mods: { logistics: 35, milpower: 12, income: 15 } },
     ],
   },
   climate: {
@@ -93,6 +112,8 @@ export const RESEARCH = {
       { name: 'Emission Cap-and-Trade', mods: { income: 6, qol: 5 } },
       { name: 'Geo-Engineering & Carbon Capture', mods: { qol: 8, hdi: 5, stability: 4 } },
       { name: 'Fusion Energy Infrastructure', mods: { income: 15, factory: 15, qol: 10 } },
+      { name: 'Carbon Capture Grid', mods: { climate: 22, hdi: 6 } },
+      { name: 'Fusion Power Rollout', mods: { climate: 35, income: 18, factory: 12 } },
     ],
   },
   infantry: {
@@ -102,6 +123,8 @@ export const RESEARCH = {
       { name: 'Mechanized Battalions', mods: { milpower: 8, readiness: 5 }, combat: { INF: 2 } },
       { name: 'Special Operations Force', mods: { milpower: 10, readiness: 8 }, combat: { INF: 3 } },
       { name: 'Exoskeletons & Combat Drones', mods: { milpower: 15, readiness: 10 }, combat: { INF: 5 } },
+      { name: 'Powered Exosuits', mods: { milpower: 20, combat: 8 } },
+      { name: 'Autonomous Infantry Squads', mods: { milpower: 30, combat: 14 } },
     ],
   },
   navy: {
@@ -111,6 +134,8 @@ export const RESEARCH = {
       { name: 'Destroyers & Submarines', mods: { milpower: 8 } },
       { name: 'Supercarrier Strike Groups', mods: { milpower: 14, readiness: 6 } },
       { name: 'Stealth Drone Fleets', mods: { milpower: 20, readiness: 10 } },
+      { name: 'Nuclear Carrier Groups', mods: { milpower: 20, combat: 6 } },
+      { name: 'Blue-Water Supremacy', mods: { milpower: 30, combat: 12, logistics: 8 } },
     ],
   },
   tanks: {
@@ -120,6 +145,8 @@ export const RESEARCH = {
       { name: 'Active Protection Systems', mods: { milpower: 8 }, combat: { TANK: 2 } },
       { name: 'Unmanned Ground Vehicles', mods: { milpower: 12, manpower: 5 }, combat: { TANK: 3 } },
       { name: 'Electromagnetic Rail-Tanks', mods: { milpower: 18 }, combat: { TANK: 5 } },
+      { name: 'Active Protection Armour', mods: { milpower: 20, combat: 8 } },
+      { name: 'Autonomous Armour Divisions', mods: { milpower: 32, combat: 15 } },
     ],
   },
   aircraft: {
@@ -129,6 +156,8 @@ export const RESEARCH = {
       { name: 'Stealth Fighters & Bombers', mods: { milpower: 9 }, combat: { FLYG: 2 } },
       { name: 'Combat Drone Swarms', mods: { milpower: 13, manpower: 4 }, combat: { FLYG: 3 } },
       { name: 'Hypersonic Strike Aircraft', mods: { milpower: 18 }, combat: { FLYG: 5 } },
+      { name: 'Stealth Air Superiority', mods: { milpower: 22, combat: 9 } },
+      { name: 'Hypersonic Strike Wing', mods: { milpower: 34, combat: 16 } },
     ],
   },
   nuclear: {
@@ -138,6 +167,8 @@ export const RESEARCH = {
       { name: 'Nuclear Enrichment Program', mods: { milpower: 12 }, unlock: 'nuke' },
       { name: 'ICBM Silos & Sub Launchers', mods: { milpower: 18 } },
       { name: 'Hypersonic Glide & Shield', mods: { milpower: 25, statepower: 8 } },
+      { name: 'Thermonuclear Arsenal', mods: { milpower: 26, statepower: 10 }, unlock: 'nuke' },
+      { name: 'Second-Strike Triad', mods: { milpower: 40, statepower: 18, stability: 6 }, unlock: 'nuke' },
     ],
   },
   satellites: {
@@ -148,6 +179,8 @@ export const RESEARCH = {
       { name: 'Regional täckning', desc: '40% AV JORDEN BEVAKAS FRÅN HEMLANDET', mods: { research: 8, milpower: 5 } },
       { name: 'Interkontinental täckning', desc: '70% AV JORDEN BEVAKAS', mods: { research: 10, milpower: 7 } },
       { name: 'Globalt satellitnätverk', desc: 'TOTAL TÄCKNING — HELA JORDEN BEVAKAS', mods: { research: 14, milpower: 10 } },
+      { name: 'Orbitalt varningssystem', desc: 'FRÄMMANDE ANFALL SYNS INNAN DE STARTAR', mods: { research: 18, milpower: 14, safety: 6 } },
+      { name: 'Djuprymdsnätverk', desc: 'TOTAL TÄCKNING + FORSKNINGSSPRÅNG', mods: { research: 26, milpower: 18 } },
     ],
   },
   integration: {
@@ -157,6 +190,8 @@ export const RESEARCH = {
       { name: 'Medborgarskapsprogram', desc: 'SNABBARE INTEGRATION + LÄGRE KOSTNAD', mods: { integration: 8, stability: 4 } },
       { name: 'Kulturell assimilering', desc: 'ÄNNU SNABBARE INTEGRATION', mods: { integration: 12, unrest: -6 } },
       { name: 'Enad nation', desc: 'MAXIMAL INTEGRATIONSTAKT', mods: { integration: 18, unrest: -10, stability: 8 } },
+      { name: 'Gemensamt medborgarskap', desc: 'EROVRADE LÄNDER INTEGRERAS DUBBELT SÅ SNABBT', mods: { integration: 26, unrest: -14, stability: 12 } },
+      { name: 'Ett folk, ett rike', desc: 'NÄSTAN INGEN MOTSTÅNDSTID KVAR', mods: { integration: 38, unrest: -20, stability: 18 } },
     ],
   },
   espionage: {
@@ -166,6 +201,8 @@ export const RESEARCH = {
       { name: 'Agentnätverk', desc: 'AVSLÖJAR VEMS ARMÉN ÄR (NATIONALITET + FLAGGA)', mods: { safety: 5, polpower: 3 } },
       { name: 'Underrättelsebyrå', desc: 'AVSLÖJAR HUR MÅNGA ENHETER ARMÉN HAR', mods: { safety: 8, milpower: 4 } },
       { name: 'Total informationsöverlägsenhet', desc: 'AVSLÖJAR EXAKT VILKA ENHETER ARMÉN HAR', mods: { safety: 10, milpower: 8 } },
+      { name: 'Djupinfiltration', desc: 'SER FIENDENS FORSKNING OCH PLANER', mods: { safety: 12, research: 8 } },
+      { name: 'Total underrättelsedominans', desc: 'INGET I VÄRLDEN ÄR DOLT FÖR DIG', mods: { safety: 20, research: 14, milpower: 8 } },
     ],
   },
 };
@@ -207,7 +244,7 @@ export function logisticsRange(nation) {
 // T3 = 40% av jordytan; T4 = 70%; T5 = total täckning.
 export function satCoverage(nation) {
   const t = nation?.research?.satellites || 0;
-  return [0.25, 0.5, 0.9, 1.3694, 1.9823, Infinity][Math.min(t, 5)];
+  return [0.25, 0.5, 0.9, 1.3694, 1.9823, Infinity, Infinity, Infinity][Math.min(t, 7)];
 }
 
 // spionagenivå: 1 = destination, 2 = nationalitet, 3 = antal, 4 = sammansättning

@@ -118,6 +118,14 @@
   #qrpanel .url { color: var(--holo-dim); font-size: 7px; margin-top: 5px; word-break: break-all; max-width: 180px; }
 
   /* ---- togglar ---- */
+  .ctitle { color: var(--amber); font-size: 11px; letter-spacing: 1px; }
+  #penbar {
+    position: fixed; bottom: 74px; left: 50%; transform: translateX(-50%);
+    z-index: 92; display: none; gap: 8px; align-items: center; pointer-events: auto;
+    background: rgba(4,14,22,0.94); border: 1px solid var(--amber);
+    padding: 9px 12px; font-size: 7px; color: var(--amber); line-height: 1.8;
+  }
+  #penbar .btn { margin: 0; width: auto; padding: 7px 10px; }
   #toggles {
     position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%);
     z-index: 55; display: none; gap: 6px;
@@ -685,6 +693,21 @@
   <div class="code" id="qrcodeTxt"></div>
   <div class="url" id="qrurl"></div>
   <button id="qrcopy" class="btn">&#128203; KOPIERA LÄNKEN</button>
+</div>
+
+<div id="blocask" class="overlay">
+  <div class="card">
+    <div class="ctitle">&#129309; ANS&Ouml;KAN OM MEDLEMSKAP</div>
+    <div id="blocText" style="font-size:8px;line-height:2;margin:10px 0"></div>
+    <button class="btn amber" id="blocYes">&#10003; SL&Auml;PP IN DEM</button>
+    <button class="btn" id="blocNo">&#10005; AVSL&Aring;</button>
+  </div>
+</div>
+
+<div id="penbar">
+  <span id="penhint">RITA EN SLINGA</span>
+  <button class="btn amber" id="penok">&#10003; ANV&Auml;ND GR&Auml;NSEN</button>
+  <button class="btn" id="pencancel">&#10005; AVBRYT</button>
 </div>
 
 <div id="toggles">

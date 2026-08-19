@@ -188,6 +188,59 @@ export class Globe {
 
   setClaims(claims) { this.claims = claims || {}; this._rebuildBorderMesh(); this.sceneDirty = true; }
 
+  // cid → { poly: GeoJSON-polygon | null, discs: [{ll, deg}], color }
+  // Ett land i den här listan är BARA delvis ditt: kartan färgar den ritade
+  // ytan (eller cirklarna runt de städer du tog), inte hela landet.
+  setPartials(map) {
+    this.partials = map || {};
+    this._meshSig = null;          // delvis ägda länder får inte smälta ihop i riket
+    this._rebuildBorderMesh();
+    this.sceneDirty = true;
+  }
+
+  // ---------- GRÄNSPENNAN ----------
+  // Med pennan aktiv roterar inte klotet: draget ritar i stället en slinga på
+  // ytan. Punkterna sparas som lon/lat, så gränsen sitter kvar på jorden när
+  // man sedan vrider — den är ritad PÅ planeten, inte på skärmen.
+  startPen(onDone, onUpdate) {
+    this.pen = { path: [], drawing: false, onDone, onUpdate };
+    this.canvas.style.cursor = 'crosshair';
+  }
+
+  stopPen() {
+    this.pen = null;
+    this.penPath = null;
+    this.canvas.style.cursor = 'grab';
+  }
+
+  setPenPath(coords) { this.penPath = coords || null; }
+
+  _penAdd(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const bx = (e.clientX - rect.left) / this.pixelSize;
+    const by = (e.clientY - rect.top) / this.pixelSize;
+    const ll = this.mode3d ? this.g3.unproject(bx, by) : this.proj.invert([bx, by]);
+    if (!ll || !isFinite(ll[0]) || !isFinite(ll[1])) return;
+    const last = this.pen.path[this.pen.path.length - 1];
+    // gles punktsamling: en punkt per ~0,4° räcker och håller polygonen lätt
+    if (last && d3.geoDistance(last, ll) < 0.007) return;
+    this.pen.path.push(ll);
+    this.penPath = this.pen.path;
+    this.pen.onUpdate?.(this.pen.path);
+  }
+
+  // ritas i kompositpasset så slingan syns direkt under draget
+  _drawPen(b) {
+    const p = this.penPath;
+    if (!p || p.length < 2) return;
+    b.save();
+    b.strokeStyle = 'rgba(255,176,46,0.95)';
+    b.lineWidth = this.mode3d ? 2 : 1;
+    b.setLineDash([4, 3]);
+    this._strokeGeoLine(b, this.pen?.drawing ? p : [...p, p[0]]);
+    b.restore();
+  }
+
   // cid → namn som ska visas i stället för landets eget (erövrade provinser)
   setLabelOverride(map) {
     const sig = JSON.stringify(map || {});
@@ -236,7 +289,8 @@ export class Globe {
       this._ownerMeshes = [];
       return;
     }
-    const sig = Object.entries(this.claims).map(([k, v]) => k + ':' + v.color).sort().join(',');
+    const sig = Object.entries(this.claims).map(([k, v]) => k + ':' + v.color).sort().join(',')
+      + '|' + Object.keys(this.partials || {}).sort().join(',');
     if (sig === this._meshSig) return;
     this._meshSig = sig;
     this._borderMesh = null;
@@ -245,6 +299,7 @@ export class Globe {
     const owner = (g) => {
       // samma id-härledning som data.js — vissa länder (Kosovo m.fl.) saknar id och identifieras via namn
       const id = String(g.id ?? g.properties?.name ?? '');
+      if (this.partials?.[id]) return 'part:' + id;   // delvis ägt = eget område
       return this.claims[id]?.color || 'free:' + id;
     };
     this._borderMesh = topojson.mesh(this.topology, obj, (a, b) => a === b || owner(a) !== owner(b));
@@ -423,6 +478,13 @@ export class Globe {
     cv.addEventListener('pointerdown', (e) => {
       cv.setPointerCapture(e.pointerId);
       this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.pen && this._pointers.size === 1) {
+        this.pen.path = [];
+        this.pen.drawing = true;
+        this._penAdd(e);
+        this._down = null;
+        return;
+      }
       if (this._pointers.size === 1) {
         this._down = { x: e.clientX, y: e.clientY, t: performance.now(), moved: 0 };
       } else if (this._pointers.size === 2) {
@@ -436,6 +498,7 @@ export class Globe {
       if (!p) return;
       const dx = e.clientX - p.x, dy = e.clientY - p.y;
       p.x = e.clientX; p.y = e.clientY;
+      if (this.pen?.drawing) { this._penAdd(e); return; }
       if (this._pointers.size === 1) {
         if (this._down) this._down.moved += Math.abs(dx) + Math.abs(dy);
         this._rotateByPx(dx / this.pixelSize, dy / this.pixelSize);
@@ -449,6 +512,11 @@ export class Globe {
     const up = (e) => {
       this._pointers.delete(e.pointerId);
       if (this._pointers.size < 2) this._pinchDist = 0;
+      if (this.pen?.drawing) {
+        this.pen.drawing = false;
+        this.pen.onDone?.(this.pen.path.slice());
+        return;
+      }
       if (this._down && this._pointers.size === 0) {
         const dt = performance.now() - this._down.t;
         if (this._down.moved < 10 && dt < 600) {
@@ -532,6 +600,8 @@ export class Globe {
       if (this.showCities) this._drawCityLife(b, t);
       this._drawSatellites(b, t);
     }
+
+    this._drawPen(b);
 
     if (this.selectedId && !this.mode3d) {
       const c = this.byId.get(this.selectedId);
@@ -1779,8 +1849,31 @@ export class Globe {
     const useMesh = !!this._borderMesh;
     for (const c of this.countries) {
       const claim = this.claims[c.id];
+      const part = this.partials?.[c.id];
       const terr = this.showTerrain ? this.terrainColors?.[c.id] : null;
       s.beginPath(); this.spath(c.feature);
+      if (part) {
+        // DELVIS ÄGT: landet behåller sin egen färg, och bara den yta du
+        // faktiskt tog målas i din. Klippbanan är landet självt, så färgen
+        // aldrig svämmar över gränsen.
+        s.fillStyle = terr || LAND_SHADES[hashId(c.id) % LAND_SHADES.length];
+        s.fill();
+        s.save();
+        s.clip();
+        s.fillStyle = part.color || (claim?.color ?? '#ffb02e');
+        s.globalAlpha = 0.92;
+        if (part.poly) { s.beginPath(); this.spath(part.poly); s.fill(); }
+        for (const d of part.discs || []) {
+          const disc = d3.geoCircle().center(d.ll).radius(d.deg)();
+          s.beginPath(); this.spath(disc); s.fill();
+        }
+        s.globalAlpha = 1;
+        s.restore();
+        // konturen runt landet stannar i landets egen färg
+        s.beginPath(); this.spath(c.feature);
+        s.strokeStyle = BORDER; s.lineWidth = 0.55; s.stroke();
+        continue;
+      }
       if (claim) {
         if (terr) {
           // terrängläge: naturfärg i botten + halvgenomskinlig ägartint ovanpå
