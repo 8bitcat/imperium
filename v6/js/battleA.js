@@ -1,0 +1,810 @@
+// IMPERIUM v3 — PROTOTYP A: turbaserad taktikstrid à la Advance Wars
+// Karta med vägar (snabb förflyttning), flod med bro, skog/berg/städer
+// (försvarsbonus), klinch-skärm där antalet sprites speglar HP.
+import { UNIT_TYPES, attackDamage, drawUnit, drawHpBadge, BIOMES, drawTree, drawHouse, drawMountain, tint, lighten, warSprite, consolidate } from './units.js';
+
+const COLS = 13, ROWS = 8, TILE = 32;
+const P_COL = '#ff4f4f', E_COL = '#4fa8ff';
+
+// terrängkoder: 0 slätt, 1 skog, 2 berg, 3 väg, 4 flod, 5 bro, 6 stad
+const DEF_BONUS = { 0: 0, 1: 1, 2: 2, 3: 0, 4: 0, 5: 0, 6: 3 };
+const TERR_NAME = { 0: 'SLÄTT', 1: 'SKOG', 2: 'BERG', 3: 'VÄG', 4: 'FLOD', 5: 'BRO', 6: 'STAD' };
+
+function mulberry(seed) {
+  let a = seed | 0;
+  return () => {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function tileHash(x, y) { return Math.abs((x * 73856093) ^ (y * 19349663)) % 997; }
+
+// Kenney Tiny Battle (CC0) — 16px-tiles uppskalade till 32px-rutor.
+// Biomer får en färgtvätt ovanpå (snö/öken/djungel).
+const TILEIMG = new Image();
+TILEIMG.src = 'assets/tiles/tilemap.png';
+const BIOME_WASH = {
+  SNO: 'rgba(224,238,248,0.50)',
+  OKEN: 'rgba(216,178,104,0.45)',
+  DJUNGEL: 'rgba(16,86,40,0.35)',
+};
+
+export class BattleA {
+  // opts: {canvas, klinchCanvas, klinchEl, biome, atk, def, seed, onEnd, setStatus}
+  constructor(opts) {
+    this.o = opts;
+    this.canvas = opts.canvas;
+    this.ctx = this.canvas.getContext('2d');
+    this.kcv = opts.klinchCanvas;
+    this.kctx = this.kcv.getContext('2d');
+    this.biome = BIOMES[opts.biome];
+    this.biomeKey = opts.biome;
+    this.canvas.width = COLS * TILE;
+    this.canvas.height = ROWS * TILE;
+    this.kcv.width = 420; this.kcv.height = 170;
+
+    this._genMap(mulberry(opts.seed || 7));
+
+    // KARTAN bestämmer hur många brickor som får plats. Vi räknar de faktiskt
+    // farbara rutorna på varje sida och slår ihop förbanden tills de ryms —
+    // så det finns inget hårt tak på arméstorleken, hur stor den än blir.
+    const atkCols = [0, 1, 2, 3, 4, 5];
+    const defCols = [COLS - 1, COLS - 2, COLS - 3, COLS - 4, COLS - 5, COLS - 6];
+    const capacity = (cols) => {
+      let n = 0;
+      for (const tx of cols) {
+        for (let ty = 0; ty < ROWS; ty++) if (this.terr[ty][tx] !== 4 && this.terr[ty][tx] !== 2) n++;
+      }
+      return Math.max(1, n);
+    };
+    // sikta på fyra kolumner så det finns luft att manövrera i — placeringen
+    // får sedan använda sex kolumner om terrängen kräver det
+    const atkFit = consolidate(opts.atk || [], capacity(atkCols.slice(0, 4)));
+    const defFit = consolidate(opts.def || [], capacity(defCols.slice(0, 4)));
+
+    this.units = [];
+    atkFit.forEach((u) => this.units.push({ ...u, side: 0, tx: 0, ty: 0, moved: false }));
+    defFit.forEach((u) => this.units.push({ ...u, side: 1, tx: COLS - 1, ty: 0, moved: false }));
+    const seen = new Set();
+    const place = (u, cols) => {
+      for (const tx of cols) {
+        for (let ty = 0; ty < ROWS; ty++) {
+          const key = tx + ',' + ty;
+          if (seen.has(key) || this.terr[ty][tx] === 2 || this.terr[ty][tx] === 4) continue;
+          u.tx = tx; u.ty = ty; seen.add(key);
+          return;
+        }
+      }
+      // nödfall: första lediga icke-vattenrutan var som helst
+      for (let tx = 0; tx < COLS; tx++) {
+        for (let ty = 0; ty < ROWS; ty++) {
+          const key = tx + ',' + ty;
+          if (!seen.has(key) && this.terr[ty][tx] !== 4) { u.tx = tx; u.ty = ty; seen.add(key); return; }
+        }
+      }
+    };
+    for (const u of this.units) place(u, u.side === 0 ? atkCols : defCols);
+
+    // PvP: båda spelarna styr sin egen sida — ingen AI spelar åt någon.
+    // opts.pvp = { role: 'att' | 'def', send(action) }
+    // role 'spec' = åskådare (TV:n) som bara ser striden spelas upp
+    this.pvp = opts.pvp || null;
+    this.mySide = this.pvp?.role === 'def' ? 1 : (this.pvp?.role === 'spec' ? -1 : 0);
+    this._remoteQ = [];
+
+    this.turn = 0;
+    this.sel = null;
+    this.reach = new Map();
+    this.attackFrom = new Map();
+    this.klinch = null;
+    this.busy = false;
+    this.done = false;
+    this.floats = [];
+
+    this.canvas.addEventListener('pointerdown', (e) => {
+      const r = this.canvas.getBoundingClientRect();
+      const tx = Math.floor((e.clientX - r.left) / r.width * COLS);
+      const ty = Math.floor((e.clientY - r.top) / r.height * ROWS);
+      this.tapTile(tx, ty);
+    });
+
+    this._status('DIN TUR — TRYCK PÅ EN ENHET');
+    this._raf = requestAnimationFrame((t) => this._frame(t));
+  }
+
+  _genMap(rnd) {
+    this.terr = [];
+    for (let y = 0; y < ROWS; y++) {
+      const row = [];
+      for (let x = 0; x < COLS; x++) {
+        const v = rnd();
+        row.push(x < 2 || x > COLS - 3 ? 0 : v < 0.16 ? 1 : v < 0.24 ? 2 : 0);
+      }
+      this.terr.push(row);
+    }
+    // flod uppifrån och ner med drift
+    let rx = 5 + Math.floor(rnd() * 3);
+    for (let y = 0; y < ROWS; y++) {
+      this.terr[y][rx] = 4;
+      if (rnd() < 0.45) rx = Math.max(4, Math.min(8, rx + (rnd() < 0.5 ? -1 : 1)));
+    }
+    // väg tvärs över med drift; över floden blir det bro.
+    // Nära vatten låses vägen RAK så bron alltid får raka anslutningar.
+    const road = (x, y) => { this.terr[y][x] = this.terr[y][x] === 4 ? 5 : 3; };
+    const nearWater = (x, y) => {
+      for (let dx = -1; dx <= 3; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx >= 0 && yy >= 0 && xx < COLS && yy < ROWS && this.terr[yy][xx] === 4) return true;
+        }
+      }
+      return false;
+    };
+    let ry = 2 + Math.floor(rnd() * 4);
+    for (let x = 0; x < COLS; x++) {
+      road(x, ry);
+      if (x < COLS - 1 && rnd() < 0.3 && !nearWater(x, ry)) {
+        const ny = Math.max(1, Math.min(ROWS - 2, ry + (rnd() < 0.5 ? -1 : 1)));
+        if (ny !== ry) { road(x, ny); ry = ny; }
+      }
+    }
+    // städer på lediga slätter
+    let cities = 0;
+    for (let tries = 0; tries < 30 && cities < 3; tries++) {
+      const x = 2 + Math.floor(rnd() * (COLS - 4));
+      const y = Math.floor(rnd() * ROWS);
+      if (this.terr[y][x] === 0) { this.terr[y][x] = 6; cities++; }
+    }
+  }
+
+  destroy() { this.done = true; cancelAnimationFrame(this._raf); }
+  _status(s) { this.o.setStatus?.(s); }
+  unitAt(tx, ty) { return this.units.find((u) => u.tx === tx && u.ty === ty && u.hp > 0); }
+  terrDef(u) { return u.type === 'FLYG' ? 0 : DEF_BONUS[this.terr[u.ty][u.tx]]; }
+
+  moveCost(type, terr) {
+    if (type === 'FLYG') return 1;
+    switch (terr) {
+      case 1: return type === 'TANK' ? 2 : 1;
+      case 2: return type === 'TANK' ? Infinity : 2;
+      case 3: case 5: return type === 'TANK' ? 0.5 : 1;
+      case 4: return Infinity; // vatten stoppar allt utom flyg — ta bron!
+      default: return 1;
+    }
+  }
+
+  // Avståndskarta FRAM till en punkt över faktiskt framkomlig mark. Utan den
+  // går AI:n rakt mot fienden i fågelvägen och FASTNAR vid floden i stället för
+  // att söka sig till bron — striden kunde då aldrig ta slut.
+  _flowField(u, tx, ty) {
+    const dist = new Map([[tx + ',' + ty, 0]]);
+    const q = [[tx, ty, 0]];
+    while (q.length) {
+      const [x, y, d] = q.shift();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+        const step = this.moveCost(u.type, this.terr[ny][nx]);
+        if (!isFinite(step)) continue;
+        const nd = d + step;
+        const key = nx + ',' + ny;
+        if (dist.has(key) && dist.get(key) <= nd) continue;
+        dist.set(key, nd);
+        q.push([nx, ny, nd]);
+      }
+    }
+    return dist;
+  }
+
+  _computeReach(u) {
+    this.reach.clear();
+    this.attackFrom.clear();
+    const mv = UNIT_TYPES[u.type].mv;
+    const dist = new Map([[u.tx + ',' + u.ty, 0]]);
+    const q = [[u.tx, u.ty, 0]];
+    while (q.length) {
+      const [x, y, d] = q.shift();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+        const occ = this.unitAt(nx, ny);
+        if (occ && occ !== u) continue;
+        const nd = d + this.moveCost(u.type, this.terr[ny][nx]);
+        if (nd > mv) continue;
+        const key = nx + ',' + ny;
+        if (dist.has(key) && dist.get(key) <= nd) continue;
+        dist.set(key, nd);
+        q.push([nx, ny, nd]);
+      }
+    }
+    for (const key of dist.keys()) this.reach.set(key, true);
+    for (const e of this.units) {
+      if (e.side === u.side || e.hp <= 0) continue;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const fx = e.tx + dx, fy = e.ty + dy;
+        const key = fx + ',' + fy;
+        if (!this.reach.has(key)) continue;
+        const occ = this.unitAt(fx, fy);
+        if (occ && occ !== u) continue;
+        const prev = this.attackFrom.get(e);
+        const better = !prev || (Math.abs(fx - u.tx) + Math.abs(fy - u.ty)) < (Math.abs(prev.tx - u.tx) + Math.abs(prev.ty - u.ty));
+        if (better) this.attackFrom.set(e, { tx: fx, ty: fy });
+      }
+    }
+  }
+
+  async tapTile(tx, ty) {
+    if (this.busy || this.done || this.turn !== this.mySide) return;
+    if (tx >= 0 && ty >= 0 && tx < COLS && ty < ROWS) this.o.setTerrain?.(this.terr[ty][tx]);
+    const me = this.mySide, foe = 1 - this.mySide;
+    const target = this.unitAt(tx, ty);
+    if (this.sel) {
+      if (target && target.side === foe && this.attackFrom.has(target)) {
+        const from = this.attackFrom.get(target);
+        this.sel.tx = from.tx; this.sel.ty = from.ty;
+        this._sendAct({ t: 'atk', u: this.units.indexOf(this.sel), v: this.units.indexOf(target), x: from.tx, y: from.ty });
+        await this._attack(this.sel, target);
+        this._deselect();
+        this._checkAllMoved();
+        return;
+      }
+      if (target && target.side === me && !target.moved && target !== this.sel) {
+        this.sel = target; this._computeReach(target);
+        this._selStatus(target);
+        return;
+      }
+      if (!target && this.reach.has(tx + ',' + ty)) {
+        this._sendAct({ t: 'mv', u: this.units.indexOf(this.sel), x: tx, y: ty });
+        this.sel.tx = tx; this.sel.ty = ty;
+        this.sel.moved = true;
+        this._deselect();
+        this._checkAllMoved();
+        return;
+      }
+      this._deselect();
+      return;
+    }
+    if (target && target.side === me && !target.moved) {
+      this.sel = target;
+      this._computeReach(target);
+      this._selStatus(target);
+    }
+  }
+
+  // ---------- PvP-synk: varje drag speglas till motståndaren ----------
+  _sendAct(act) { if (this.pvp) this.pvp.send?.(act); }
+
+  // motståndarens drag kommer in via värden — kön ser till att inget tappas
+  // medan en klinch-animation spelas
+  applyRemote(act) {
+    this._remoteQ.push(act);
+    this._drainRemote();
+  }
+
+  async _drainRemote() {
+    if (this._draining || this.done) return;
+    this._draining = true;
+    while (this._remoteQ.length && !this.done) {
+      if (this.busy) { await new Promise((r) => setTimeout(r, 120)); continue; }
+      const act = this._remoteQ.shift();
+      if (act.t === 'mv') {
+        const u = this.units[act.u];
+        if (u) { u.tx = act.x; u.ty = act.y; u.moved = true; }
+      } else if (act.t === 'atk') {
+        const u = this.units[act.u], v = this.units[act.v];
+        if (u && v) { u.tx = act.x; u.ty = act.y; await this._attack(u, v); }
+      } else if (act.t === 'end') {
+        this._beginTurn(1 - this.turn);
+      } else if (act.t === 'retreat') {
+        this._foeRetreated();
+      }
+    }
+    this._draining = false;
+  }
+
+  _beginTurn(side) {
+    this.turn = side;
+    for (const u of this.units) u.moved = false;
+    this._deselect();
+    this._status(this.mySide < 0
+      ? (side === 0 ? 'ANFALLARENS TUR' : 'FÖRSVARARENS TUR')
+      : (side === this.mySide ? 'DIN TUR' : 'MOTSTÅNDARENS TUR…'));
+    this._roundGuard();
+  }
+
+  _foeRetreated() {
+    if (this.done) return;
+    this.done = true;
+    this.o.onEnd?.({
+      winner: this.mySide === 0 ? 0 : 1,
+      foeRetreat: true,
+      survivors: this.units.filter((u) => u.side === 0).map(({ type, hp }) => ({ type, hp })),
+      defSurvivors: this.units.filter((u) => u.side === 1).map(({ type, hp }) => ({ type, hp })),
+    });
+  }
+
+  _selStatus(u) {
+    const t = TERR_NAME[this.terr[u.ty][u.tx]];
+    const d = this.terrDef(u);
+    this._status(`${UNIT_TYPES[u.type].name} HP ${u.hp} • ${t}${d ? ` (FÖRSVAR +${d})` : ''} — VÄLJ RUTA/FIENDE`);
+  }
+
+  _deselect() { this.sel = null; this.reach.clear(); this.attackFrom.clear(); if (this.turn === this.mySide) this._status('DIN TUR'); }
+
+  _checkAllMoved() {
+    if (this.units.every((u) => u.side !== this.mySide || u.hp <= 0 || u.moved)) this.endTurn();
+  }
+
+  endTurn() {
+    if (this.busy || this.done || this.turn !== this.mySide) return;
+    this._deselect();
+    if (this.pvp) {
+      // PvP: motståndaren spelar sin egen tur på sin skärm
+      this._sendAct({ t: 'end' });
+      this._beginTurn(1 - this.mySide);
+      return;
+    }
+    this.turn = 1;
+    this._status('FIENDENS TUR…');
+    this._enemyTurn();
+  }
+
+  // gemensam rundräknare — ingen strid får pågå i evighet
+  _roundGuard() {
+    if (this.turn !== 0) return;
+    this.round = (this.round || 0) + 1;
+    if (this.round < 30 || this.done) return;
+    const atk = this.units.filter((u) => u.side === 0);
+    const def = this.units.filter((u) => u.side === 1);
+    const val = (l) => l.reduce((a, u) => a + ({ INF: 1, TANK: 1.9, FLYG: 2.5 }[u.type] || 1) * (u.hp / 10), 0);
+    this.done = true;
+    this._status('STRIDEN HAR DRAGIT UT PÅ TIDEN — AVGÖRS PÅ STYRKEFÖRHÅLLANDET');
+    this.o.onEnd?.({
+      winner: val(atk) >= val(def) ? 0 : 1,
+      survivors: atk.map(({ type, hp }) => ({ type, hp })),
+      defSurvivors: def.map(({ type, hp }) => ({ type, hp })),
+      timeout: true,
+    });
+  }
+
+  async _attack(att, def) {
+    this.busy = true;
+    att.moved = true;
+    // sida 0 får anfallarens bonus, sida 1 försvararens (PvP) — annars ingen
+    const b0 = this.o.atkBoost || {};
+    const b1 = this.o.defBoost || {};
+    const bonus = (u) => ((u.side === 0 ? b0 : b1)[u.type] || 0);
+    // stora förband (sammanslagna armékårer) slår proportionellt hårdare —
+    // skadan kan aldrig överstiga vad motståndaren har kvar
+    const dA = Math.min(def.hp, attackDamage(att, def, this.terrDef(def)) + bonus(att));
+    const hpAfter = def.hp - dA;
+    const adjacent = Math.abs(att.tx - def.tx) + Math.abs(att.ty - def.ty) === 1;
+    const dD = hpAfter > 0 && adjacent
+      ? Math.min(att.hp, attackDamage({ ...def, hp: hpAfter }, att, this.terrDef(att)) + bonus(def))
+      : 0;
+    await this._playKlinch(att, def, dA, dD);
+    def.hp = Math.max(0, def.hp - dA);
+    if (def.hp > 0 && dD) att.hp = Math.max(0, att.hp - dD);
+    this.floats.push({ x: def.tx, y: def.ty, txt: '-' + dA, ttl: 1100 });
+    if (dD) this.floats.push({ x: att.tx, y: att.ty, txt: '-' + dD, ttl: 1100 });
+    this.units = this.units.filter((u) => u.hp > 0);
+    this.busy = false;
+    this._checkEnd();
+  }
+
+  _checkEnd() {
+    if (this.done) return true;
+    const a = this.units.some((u) => u.side === 0);
+    const d = this.units.some((u) => u.side === 1);
+    if (a && d) return false;
+    this.done = true;
+    this.o.onEnd?.({
+      winner: a ? 0 : 1,
+      survivors: this.units.filter((u) => u.side === 0).map(({ type, hp }) => ({ type, hp })),
+      defSurvivors: this.units.filter((u) => u.side === 1).map(({ type, hp }) => ({ type, hp })),
+    });
+    return true;
+  }
+
+  retreat() {
+    if (this.done) return;
+    this._sendAct({ t: 'retreat' });
+    this.done = true;
+    this.o.onEnd?.({
+      winner: this.mySide === 0 ? 1 : 0, retreat: true,
+      survivors: this.units.filter((u) => u.side === 0).map(({ type, hp }) => ({ type, hp })),
+      defSurvivors: this.units.filter((u) => u.side === 1).map(({ type, hp }) => ({ type, hp })),
+    });
+  }
+
+  async _enemyTurn() {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    await sleep(500);
+    for (const u of [...this.units]) {
+      if (this.done) return;
+      if (u.side !== 1 || u.hp <= 0) continue;
+      this._computeReach(u);
+      let best = null, bestDmg = -1;
+      for (const [enemy, from] of this.attackFrom) {
+        const d = attackDamage(u, enemy, this.terrDef(enemy));
+        if (d > bestDmg) { bestDmg = d; best = { enemy, from }; }
+      }
+      if (best) {
+        u.tx = best.from.tx; u.ty = best.from.ty;
+        await this._attack(u, best.enemy);
+      } else {
+        const targets = this.units.filter((x) => x.side === 0);
+        if (targets.length) {
+          const t = targets.reduce((m, x) => (Math.abs(x.tx - u.tx) + Math.abs(x.ty - u.ty) < Math.abs(m.tx - u.tx) + Math.abs(m.ty - u.ty) ? x : m));
+          // gå den väg som faktiskt går att gå (över bron), inte fågelvägen
+          const field = this._flowField(u, t.tx, t.ty);
+          const here = field.get(u.tx + ',' + u.ty) ?? Infinity;
+          let bt = null, bd = here;
+          for (const key of this.reach.keys()) {
+            const [x, y] = key.split(',').map(Number);
+            if (this.unitAt(x, y) && this.unitAt(x, y) !== u) continue;
+            const d = field.get(key) ?? Infinity;
+            if (d < bd) { bd = d; bt = [x, y]; }
+          }
+          if (bt) { u.tx = bt[0]; u.ty = bt[1]; }
+        }
+      }
+      this.reach.clear(); this.attackFrom.clear();
+      await sleep(320);
+      if (this._checkEnd()) return;
+    }
+    this.turn = 0;
+    for (const u of this.units) u.moved = false;
+    // Ingen strid får pågå i evighet (t.ex. om båda sidor sitter fast bakom en
+    // flod) — efter 30 rundor avgörs resten på styrkeförhållandet.
+    this.round = (this.round || 0) + 1;
+    if (this.round >= 30 && !this.done) {
+      const atk = this.units.filter((u) => u.side === 0);
+      const def = this.units.filter((u) => u.side === 1);
+      const val = (l) => l.reduce((a, u) => a + ({ INF: 1, TANK: 1.9, FLYG: 2.5 }[u.type] || 1) * (u.hp / 10), 0);
+      const attWon = val(atk) >= val(def);
+      this.done = true;
+      this._status('STRIDEN HAR DRAGIT UT PÅ TIDEN — AVGÖRS PÅ STYRKEFÖRHÅLLANDET');
+      this.o.onEnd?.({
+        winner: attWon ? 0 : 1,
+        survivors: atk.map(({ type, hp }) => ({ type, hp })),
+        defSurvivors: def.map(({ type, hp }) => ({ type, hp })),
+        timeout: true,
+      });
+      return;
+    }
+    this._status('DIN TUR');
+  }
+
+  // ---------- klinch-skärmen ----------
+  _playKlinch(att, def, dA, dD) {
+    return new Promise((resolve) => {
+      this.o.klinchEl.style.display = 'flex';
+      this.klinch = { att, def, dA, dD, t0: null, dur: dD ? 3000 : 2100, resolve };
+    });
+  }
+
+  _drawKlinch(t) {
+    const k = this.klinch;
+    if (!k) return;
+    if (k.t0 == null) k.t0 = t;
+    const el = t - k.t0;
+    const c = this.kctx, W = this.kcv.width, H = this.kcv.height;
+    const B = this.biome;
+    c.imageSmoothingEnabled = false;
+
+    // himmel + moln + mark
+    c.fillStyle = B.sky; c.fillRect(0, 0, W, H);
+    c.fillStyle = lighten(B.sky, 0.5);
+    c.fillRect(30, 22, 34, 7); c.fillRect(44, 16, 18, 7);
+    c.fillRect(W - 90, 30, 40, 8); c.fillRect(W - 76, 24, 20, 7);
+    c.fillStyle = lighten(B.ground, 0.15); c.fillRect(0, H - 46, W, 6);
+    c.fillStyle = B.ground; c.fillRect(0, H - 40, W, 40);
+    c.fillStyle = tint(B.ground, 0.8);
+    for (let i = 0; i < 12; i++) c.fillRect((i * 37 + 12) % W, H - 34 + (i % 3) * 9, 7, 2);
+    c.fillStyle = '#0a0f16'; c.fillRect(W / 2 - 2, 0, 4, H);
+
+    const phase1 = Math.max(0, Math.min(1, (el - 500) / 900));
+    const phase2 = k.dD ? Math.max(0, Math.min(1, (el - 1900) / 900)) : 0;
+    const attackerFiring = phase1 > 0 && phase1 < 1;
+    const defenderFiring = phase2 > 0 && phase2 < 1;
+
+    // Spelaren står ALLTID till vänster (röd), fienden till höger (blå).
+    // Vem som skjuter först styrs av vem som anfaller — på fiendens tur
+    // skjuter fienden först och dina trupper tar skadan först.
+    const hpOf = (u) => Math.floor(u === k.att
+      ? u.hp - Math.round((k.dD || 0) * phase2)
+      : u.hp - Math.round(k.dA * phase1));
+    const firingNow = (u) => (u === k.att ? attackerFiring : defenderFiring);
+    const flashingNow = (u) => (u === k.att ? defenderFiring : attackerFiring);
+    // egna trupper alltid till vänster (åskådare ser anfallaren till vänster)
+    const mine = this.mySide < 0 ? 0 : this.mySide;
+    const leftU = k.att.side === mine ? k.att : k.def;
+    const rightU = leftU === k.att ? k.def : k.att;
+
+    const panel = (u, hpShown, x0, facing, color, flashing, firing) => {
+      const ws = warSprite(u.type, u.side, facing);
+      if (ws) {
+        // riktiga sprites (BerkleyToreno): 1–3 fordon beroende på HP
+        const n2 = Math.max(hpShown > 0 ? 1 : 0, Math.min(3, Math.ceil(hpShown / 4)));
+        const sc = 1.15;
+        const offs = [[16, 0], [78, -22], [44, 12]];
+        for (let i = n2 - 1; i >= 0; i--) {
+          const recoil = firing ? facing * (Math.floor(t / 90) % 2 ? 2 : 0) : 0;
+          const dw = Math.round(ws.width * sc), dh = Math.round(ws.height * sc);
+          const px = x0 + (facing === 1 ? offs[i][0] : W / 2 - offs[i][0] - dw) + recoil;
+          const py = H - 44 - dh + offs[i][1];
+          if (flashing && Math.floor(t / 60) % 2 === 0) c.globalAlpha = 0.5;
+          c.drawImage(ws, px, py, dw, dh);
+          c.globalAlpha = 1;
+        }
+      } else {
+        const n = Math.max(hpShown > 0 ? 1 : 0, Math.ceil(hpShown / 2));
+        for (let i = 0; i < n; i++) {
+          const recoil = firing && i < 3 ? facing * (Math.floor(t / 90) % 2 ? 2 : 0) : 0;
+          const px = x0 + (i % 3) * 52 + (facing === 1 ? 8 : 16) + recoil;
+          const py = H - 96 + Math.floor(i / 3) * 34 + (i % 2) * 4;
+          if (flashing && Math.floor(t / 60) % 2 === 0) c.globalAlpha = 0.5;
+          drawUnit(c, u.type, color, px, py, 4, facing);
+          c.globalAlpha = 1;
+        }
+      }
+      c.font = '16px "Press Start 2P", monospace';
+      c.textAlign = facing === 1 ? 'left' : 'right';
+      c.textBaseline = 'top';
+      c.fillStyle = '#0a0f16';
+      c.fillText(String(Math.max(0, hpShown)), x0 + (facing === 1 ? 10 : 192) + 2, 12 + 2);
+      c.fillStyle = hpShown > 6 ? '#fff' : hpShown > 3 ? '#ffd24f' : '#ff6b5e';
+      c.fillText(String(Math.max(0, hpShown)), x0 + (facing === 1 ? 10 : 192), 12);
+      const uLabel = u.side === 0 ? UNIT_TYPES[u.type].name : UNIT_TYPES[u.type].baseName;
+      c.font = '7px "Press Start 2P", monospace';
+      c.fillStyle = '#0a0f16';
+      c.fillText(uLabel, x0 + (facing === 1 ? 10 : 192) + 1, 35);
+      c.fillStyle = color;
+      c.fillText(uLabel, x0 + (facing === 1 ? 10 : 192), 34);
+    };
+
+    panel(leftU, hpOf(leftU), 0, 1, leftU.side === 0 ? P_COL : E_COL, flashingNow(leftU), firingNow(leftU));
+    panel(rightU, hpOf(rightU), W / 2, -1, rightU.side === 0 ? P_COL : E_COL, flashingNow(rightU), firingNow(rightU));
+
+    const flash = (x, y) => {
+      c.fillStyle = Math.floor(t / 50) % 2 ? '#fff' : '#ffd24f';
+      c.fillRect(x, y, 8, 5);
+      c.fillRect(x + 6, y - 4, 5, 4);
+      c.fillRect(x + 3, y + 4, 4, 3);
+    };
+    if (firingNow(leftU)) flash(W / 2 - 34, H - 78);
+    if (firingNow(rightU)) flash(W / 2 + 26, H - 78);
+
+    // skadesiffran visas över den som TAR skadan
+    const sideX = (u) => (u === leftU ? W * 0.25 : W * 0.75);
+    if (phase1 > 0.1) {
+      c.font = '12px "Press Start 2P", monospace';
+      c.fillStyle = '#ff6b5e';
+      c.textAlign = 'center';
+      c.fillText('-' + k.dA, sideX(k.def), 60 - phase1 * 16);
+    }
+    if (phase2 > 0.1) {
+      c.font = '12px "Press Start 2P", monospace';
+      c.fillStyle = '#ff6b5e';
+      c.textAlign = 'center';
+      c.fillText('-' + k.dD, sideX(k.att), 60 - phase2 * 16);
+    }
+
+    if (el >= k.dur) {
+      this.o.klinchEl.style.display = 'none';
+      const r = k.resolve;
+      this.klinch = null;
+      r();
+    }
+  }
+
+  // ---------- kartritning ----------
+  _frame(t) {
+    if (this.done) { this._draw(t); return; }
+    this._draw(t);
+    if (this.klinch) this._drawKlinch(t);
+    this._raf = requestAnimationFrame((tt) => this._frame(tt));
+  }
+
+  _roadish(x, y) {
+    if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return false;
+    return this.terr[y][x] === 3 || this.terr[y][x] === 5;
+  }
+  _waterish(x, y) {
+    if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return true;
+    return this.terr[y][x] === 4 || this.terr[y][x] === 5;
+  }
+
+  // Kenney-tiles när arket laddats; annars den gamla programmatiska ritningen
+  _drawTileKenney(c, x, y, t) {
+    const px = x * TILE, py = y * TILE;
+    const h = tileHash(x, y);
+    const T = (cx, cy) => c.drawImage(TILEIMG, cx * 16, cy * 16, 16, 16, px, py, TILE, TILE);
+    const water = t === 4 || t === 5;
+
+    if (water) {
+      T(1, 2); // öppet vatten
+    } else {
+      T(h % 11 === 0 ? 2 : h % 3 === 0 ? 1 : 0, 0); // gräs med varierad dekor
+    }
+
+    if (t === 1) { T(4, 6); }            // skog (två träd)
+    else if (t === 2) { T(5, 0); }       // berg
+    else if (t === 6) { T(8, 0); }       // stad (neutralt kvarter)
+
+    if (t === 5) {
+      // bro: Kenneys brotiles (horisontell/vertikal efter väggrannarna)
+      const E = this._roadish(x + 1, y), Wn = this._roadish(x - 1, y);
+      if (E || Wn) T(4, 7); else T(4, 9);
+    } else if (t === 3) {
+      // full autotiling: mask N=1 E=2 S=4 W=8 → rätt Kenney-tile
+      const mask = (this._roadish(x, y - 1) ? 1 : 0)
+        + (this._roadish(x + 1, y) ? 2 : 0)
+        + (this._roadish(x, y + 1) ? 4 : 0)
+        + (this._roadish(x - 1, y) ? 8 : 0);
+      const ROAD_TILES = {
+        0: [0, 6],                 // ensam vägplatta
+        2: [1, 6], 8: [3, 6], 10: [2, 6],   // väst-ände / öst-ände / rak horisontell
+        1: [0, 9], 4: [0, 7], 5: [0, 8],    // syd-ände / nord-ände / rak vertikal
+        3: [1, 9], 9: [3, 9], 6: [1, 7], 12: [3, 7],   // kurvor
+        11: [2, 9], 14: [2, 7], 7: [1, 8], 13: [3, 8], // T-korsningar
+        15: [2, 8],                // fyrvägskryss
+      };
+      const rt = ROAD_TILES[mask] || [2, 6];
+      T(rt[0], rt[1]);
+    }
+
+    if (water) { // strandkanter mot land
+      c.fillStyle = 'rgba(20,60,90,0.55)';
+      if (!this._waterish(x - 1, y)) c.fillRect(px, py, 2, TILE);
+      if (!this._waterish(x + 1, y)) c.fillRect(px + TILE - 2, py, 2, TILE);
+      if (!this._waterish(x, y - 1)) c.fillRect(px, py, TILE, 2);
+      if (!this._waterish(x, y + 1)) c.fillRect(px, py + TILE - 2, TILE, 2);
+    }
+
+    const wash = BIOME_WASH[this.biomeKey];
+    if (wash) { c.fillStyle = wash; c.fillRect(px, py, TILE, TILE); }
+  }
+
+  _drawTile(c, x, y, t) {
+    if (TILEIMG.complete && TILEIMG.naturalWidth) { this._drawTileKenney(c, x, y, t); return; }
+    const B = this.biome;
+    const px = x * TILE, py = y * TILE;
+    const h = tileHash(x, y);
+
+    if (t === 4 || t === 5) {
+      // vatten med vågor + mörkare strandkanter
+      c.fillStyle = B.water;
+      c.fillRect(px, py, TILE, TILE);
+      c.fillStyle = B.water2;
+      c.fillRect(px + 4 + h % 9, py + 6 + h % 5, 7, 2);
+      c.fillRect(px + 14 - h % 6, py + 20 + h % 4, 8, 2);
+      const bank = tint(B.water, 0.6);
+      c.fillStyle = bank;
+      if (!this._waterish(x - 1, y)) c.fillRect(px, py, 2, TILE);
+      if (!this._waterish(x + 1, y)) c.fillRect(px + TILE - 2, py, 2, TILE);
+      if (!this._waterish(x, y - 1)) c.fillRect(px, py, TILE, 2);
+      if (!this._waterish(x, y + 1)) c.fillRect(px, py + TILE - 2, TILE, 2);
+    } else {
+      c.fillStyle = (x + y) % 2 ? B.ground : B.ground2;
+      c.fillRect(px, py, TILE, TILE);
+      if (t === 0) {
+        c.fillStyle = B.tuft;
+        c.fillRect(px + 4 + h % 8, py + 5 + h % 9, 3, 1);
+        c.fillRect(px + 18 + h % 6, py + 14 + h % 7, 3, 1);
+        c.fillRect(px + 9 + h % 5, py + 22 + h % 5, 3, 1);
+      }
+    }
+
+    if (t === 3 || t === 5) {
+      const E = this._roadish(x + 1, y), Wn = this._roadish(x - 1, y);
+      const N = this._roadish(x, y - 1), S = this._roadish(x, y + 1);
+      const horiz = E || Wn || (!N && !S);
+      const vert = N || S;
+      c.fillStyle = B.roadEdge;
+      if (horiz) c.fillRect(px, py + 8, TILE, 16);
+      if (vert) c.fillRect(px + 8, py, 16, TILE);
+      c.fillStyle = B.road;
+      if (horiz) c.fillRect(px, py + 10, TILE, 12);
+      if (vert) c.fillRect(px + 10, py, 12, TILE);
+      if (t === 5) {
+        // broplankor + räcke
+        c.fillStyle = tint(B.road, 0.7);
+        if (horiz) for (let i = 0; i < 5; i++) c.fillRect(px + 2 + i * 7, py + 10, 2, 12);
+        else for (let i = 0; i < 5; i++) c.fillRect(px + 10, py + 2 + i * 7, 12, 2);
+        c.fillStyle = '#39424e';
+        if (horiz) { c.fillRect(px, py + 8, TILE, 2); c.fillRect(px, py + 22, TILE, 2); }
+        else { c.fillRect(px + 8, py, 2, TILE); c.fillRect(px + 22, py, 2, TILE); }
+      }
+    } else if (t === 1) {
+      c.fillStyle = tint(B.ground2, 0.85);
+      c.fillRect(px + 2, py + 24, 26, 5);
+      drawTree(c, B, px + 1, py + 14, 1.1);
+      drawTree(c, B, px + 16, py + 4, 1.1);
+    } else if (t === 2) {
+      drawMountain(c, B, px + 2, py + 2, 1.8);
+    } else if (t === 6) {
+      drawHouse(c, B, px + 3, py + 4, 1.6);
+      c.fillStyle = tint(B.wall, 0.6);
+      c.fillRect(px + 26, py + 22, 5, 8);
+      c.fillStyle = B.roof;
+      c.fillRect(px + 25, py + 20, 7, 3);
+    }
+  }
+
+  _draw(t) {
+    const c = this.ctx;
+    c.imageSmoothingEnabled = false;
+    for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) this._drawTile(c, x, y, this.terr[y][x]);
+
+    c.strokeStyle = 'rgba(0,0,0,0.13)';
+    c.lineWidth = 1;
+    for (let x = 0; x <= COLS; x++) { c.beginPath(); c.moveTo(x * TILE, 0); c.lineTo(x * TILE, ROWS * TILE); c.stroke(); }
+    for (let y = 0; y <= ROWS; y++) { c.beginPath(); c.moveTo(0, y * TILE); c.lineTo(COLS * TILE, y * TILE); c.stroke(); }
+
+    if (this.sel) {
+      const useTiles = TILEIMG.complete && TILEIMG.naturalWidth;
+      for (const key of this.reach.keys()) {
+        const [x, y] = key.split(',').map(Number);
+        if (useTiles) {
+          c.globalAlpha = 0.75;
+          c.drawImage(TILEIMG, 7 * 16, 4 * 16, 16, 16, x * TILE, y * TILE, TILE, TILE);
+          c.globalAlpha = 1;
+        } else {
+          c.fillStyle = 'rgba(120,220,255,0.30)';
+          c.fillRect(x * TILE, y * TILE, TILE, TILE);
+        }
+      }
+    }
+
+    const KENNEY_UNIT = { INF: 16, TANK: 8, FLYG: 10 };
+    for (const u of this.units) {
+      const px = u.tx * TILE, py = u.ty * TILE + 2;
+      if (u.side === this.mySide && u.moved && this.turn === this.mySide) c.globalAlpha = 0.5;
+      if (TILEIMG.complete && TILEIMG.naturalWidth) {
+        // Kenney-enheter: spelaren röd (rad 8), fienden blå (rad 7, speglad)
+        const col = KENNEY_UNIT[u.type], row = u.side === 0 ? (this.o.kenneyRow ?? 8) : 7;
+        if (u.side === 1) {
+          c.save();
+          c.translate(u.tx * TILE + TILE, u.ty * TILE);
+          c.scale(-1, 1);
+          c.drawImage(TILEIMG, col * 16, row * 16, 16, 16, 0, 0, TILE, TILE);
+          c.restore();
+        } else {
+          c.drawImage(TILEIMG, col * 16, row * 16, 16, 16, u.tx * TILE, u.ty * TILE, TILE, TILE);
+        }
+      } else {
+        drawUnit(c, u.type, u.side === 0 ? P_COL : E_COL, px, py, 2, u.side === 0 ? 1 : -1);
+      }
+      c.globalAlpha = 1;
+      drawHpBadge(c, u.hp, u.tx * TILE + TILE - 12, u.ty * TILE + TILE - 10, 1);
+      if (u === this.sel) {
+        if (TILEIMG.complete && TILEIMG.naturalWidth && Math.floor(t / 250) % 2 === 0) {
+          c.drawImage(TILEIMG, 7 * 16, 3 * 16, 16, 16, u.tx * TILE, u.ty * TILE, TILE, TILE);
+        } else {
+          c.strokeStyle = Math.floor(t / 250) % 2 ? '#fff' : '#ffd24f';
+          c.lineWidth = 2;
+          c.strokeRect(u.tx * TILE + 1, u.ty * TILE + 1, TILE - 2, TILE - 2);
+        }
+      }
+    }
+    if (this.sel) {
+      for (const e of this.attackFrom.keys()) {
+        c.strokeStyle = Math.floor(t / 180) % 2 ? '#ff4f4f' : '#ffb02e';
+        c.lineWidth = 2;
+        c.strokeRect(e.tx * TILE + 2, e.ty * TILE + 2, TILE - 4, TILE - 4);
+      }
+    }
+    for (const f of this.floats) {
+      f.ttl -= 16;
+      c.font = '9px "Press Start 2P", monospace';
+      c.textAlign = 'center';
+      c.fillStyle = '#ff6b5e';
+      c.fillText(f.txt, f.x * TILE + TILE / 2, f.y * TILE - 2 - (1100 - f.ttl) / 90);
+    }
+    this.floats = this.floats.filter((f) => f.ttl > 0);
+  }
+}

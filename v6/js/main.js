@@ -1,0 +1,599 @@
+// TRADE WARS (IMPERIUM V6) — infrastrukturspelet.
+//
+// Skillnaden mot V4/V5 i en mening: där byggde man en armé och tog land, här
+// bygger man ett LAND och tar sig råd med en armé. Basinkomsten är identisk för
+// alla och avsiktligt futtig; allt du vill göra kräver att du först drar el,
+// sedan terminaler, sedan förbindelser — och varje sak du reser kostar
+// underhåll varje dag.
+
+import { Globe } from './globe.js';
+import { loadWorld, loadCities, loadFacts } from './data6.js';
+import { BASE, INF_COST, TANK_COST, AIR_COST, DEFENCE, POINTS, LINK, MAX_LINK_LEVEL,
+  linkCost, linkIncome, upgradeCost, kmBetween } from './econ.js';
+import { PLANTS, lineCost, lineDays, poweredCities, totalMW, plantUnlocked } from './power.js';
+import { BUILDINGS, unlocked, tally } from './buildings6.js';
+import { RESEARCH, TIER_COST, TIER_DAYS, researchMods, combatBonus,
+  linkIncomeMult, linkSpeedMult } from './research6.js';
+import { linkKey, makeLink, addCar, tickLink, payload, carPos, blockers,
+  connectedToCapital } from './infra.js';
+import { RESOURCES, resourcesOf, transportOptions, buildListings, freightCost } from './market.js';
+import { IDEOLOGIES, ideologyMods, buildCostMult, upkeepMult, linkIncomeMult as ideoLinkMult } from './ideologies6.js';
+
+export const VERSION = '6.0.0';
+export const VERSION_NAME = 'TRADE WARS';
+export const VERSION_DATE = '2026-08-20';
+
+const $ = (q) => document.querySelector(q);
+const globe = new Globe($('#globe'));
+
+function hashId(str) {
+  let h = 2166136261;
+  for (let i = 0; i < String(str).length; i++) { h ^= String(str).charCodeAt(i); h = Math.imul(h, 16777619); }
+  return Math.abs(h);
+}
+
+const state = {
+  countries: [], cities: {}, facts: {}, world: {},
+  s: null,              // spelarens rike
+  mode: null,
+  build: null,          // pågående byggläge {kind, first}
+  selCity: null,
+  clock: { day: 1, acc: 0, paused: false },
+};
+window.TRADEWARS = state;
+state.globe = globe;
+
+const SOLO_COLOR = '#ff6b4a';
+const DAY_MS = 2000;   // ett speldygn
+
+// ---------- hjälpare ----------
+const cityKey = (cid, i) => `${cid}:${i}`;
+const splitKey = (k) => { const [cid, i] = k.split(':'); return { cid, i: +i }; };
+function cityOf(key) { const { cid, i } = splitKey(key); return state.cities[cid]?.[i] || null; }
+function cityName(key) { return (cityOf(key)?.n || '?').toUpperCase(); }
+function cityLL(key) { return cityOf(key)?.ll || [0, 0]; }
+function cname(cid) { return (globe.getCountry(cid)?.name || '?').toUpperCase(); }
+function capitalKeyOf(cid) {
+  const list = state.cities[cid] || [];
+  const i = list.findIndex((c) => c.c);
+  return cityKey(cid, i >= 0 ? i : 0);
+}
+
+// Ligger staden vid havet? Avgörs mot landpolygonen: en punkt strax utanför
+// staden som INTE ligger i något land betyder öppet vatten.
+function isCoastal(key) {
+  const c = cityOf(key);
+  if (!c) return false;
+  if (c._coast != null) return c._coast;
+  const [lon, lat] = c.ll;
+  const step = 0.55;
+  let sea = false;
+  for (const [dx, dy] of [[step, 0], [-step, 0], [0, step], [0, -step], [step, step], [-step, -step]]) {
+    if (!globe.countryAtLL([lon + dx, lat + dy])) { sea = true; break; }
+  }
+  c._coast = sea;
+  return sea;
+}
+
+function toast(msg, cls = '', ms = 4200) {
+  const el = document.createElement('div');
+  el.className = 'toast ' + cls;
+  el.textContent = msg;
+  $('#toasts').appendChild(el);
+  setTimeout(() => el.remove(), ms);
+}
+const warn = (m) => toast(m, 'red', 4200);
+
+// ---------- riket ----------
+function newRealm(home) {
+  const s = {
+    home,
+    claims: { [home]: { color: SOLO_COLOR, name: 'DU' } },
+    res: { money: 300, research: 0, pp: 20, man: 30 },
+    nation: { ideology: 'socialdemocracy', research: {} },
+    cityB: {},          // "cid:i" → [byggnadsnycklar]
+    plants: [],         // {city, kind, done, left}
+    lines: [],          // {a, b, done, left, km}
+    links: {},          // key → link
+    store: { qty: {}, cap: 0 },
+    queue: [],          // byggkö {type, ...}
+    army: { units: [] },
+    defence: false,
+    integ: {},
+  };
+  // Huvudstaden börjar med ett vindkraftverk — resten av landet är mörkt.
+  const cap = capitalKeyOf(home);
+  s.plants.push({ city: cap, kind: 'wind', done: true, left: 0 });
+  state.s = s;
+  return s;
+}
+
+// ---------- ekonomi ----------
+function powered() {
+  const s = state.s;
+  return poweredCities(s.plants, s.lines);
+}
+
+function econSnapshot() {
+  const s = state.s;
+  const t = tally(s.cityB);
+  const im = ideologyMods(s.nation.ideology);
+  const rm = researchMods(s.nation.research);
+  const up = (t.upkeep + s.plants.reduce((a, p) => a + (p.done ? PLANTS[p.kind].upkeep : 0), 0)
+    + (s.defence ? DEFENCE.upkeep : 0)) * upkeepMult(s.nation.ideology) * (1 + (rm.upkeepPct || 0) / 100);
+  const pct = (k) => 1 + (((im[k] || 0) + (rm[k + 'Pct'] || 0)) / 100);
+  const inc = {
+    money: (BASE.money + t.yield.money) * pct('money') - up,
+    research: (BASE.research + t.yield.research) * pct('research'),
+    pp: (BASE.pp + t.yield.pp) * pct('pp'),
+    man: (BASE.man + t.yield.man) * pct('man'),
+  };
+  return { inc, upkeep: up, mw: t.mw, cap: totalMW(s.plants), capacity: t.capacity };
+}
+
+// ---------- dygnet ----------
+function tickDay() {
+  const s = state.s;
+  if (!s) return;
+  state.clock.day++;
+  const e = econSnapshot();
+  for (const k of Object.keys(e.inc)) s.res[k] = Math.max(0, s.res[k] + e.inc[k]);
+
+  // förbindelserna arbetar: varje leverans betalar
+  const incMult = (kind) => linkIncomeMult(s.nation.research, kind) * ideoLinkMult(s.nation.ideology);
+  let delivered = 0;
+  for (const l of Object.values(s.links)) {
+    const arrivals = tickLink(l, 1, linkSpeedMult(s.nation.research, l.kind));
+    if (arrivals) {
+      const pay = payload(l, incMult(l.kind)) * arrivals;
+      s.res.money += pay;
+      delivered += pay;
+      // råvara som når huvudstaden hamnar i lagret
+      depositResource(l);
+    }
+  }
+  s._lastDelivered = delivered;
+
+  // byggkön
+  tickQueue();
+  // strömlöst? då står allt still och folk knorrar
+  if (e.mw > e.cap) {
+    if (state.clock.day % 12 === 0) warn(`\u{26A1} STRÖMBRIST: ${Math.round(e.mw)} MW BEHÖVS, ${e.cap} MW FINNS`);
+  }
+  if (s.res.money < 1 && e.inc.money < 0 && state.clock.day % 10 === 0) {
+    warn('\u{1F4B8} KASSAN ÄR TOM OCH UNDERHÅLLET ÄTER DIG — RIV ELLER BYGG INKOMST');
+  }
+  aiTick();
+  renderTop();
+  if ($('#citypanel').style.display === 'block') renderCityPanel();
+}
+
+function tickQueue() {
+  const s = state.s;
+  for (const job of [...s.queue]) {
+    job.left -= 1;
+    if (job.left > 0) continue;
+    s.queue = s.queue.filter((x) => x !== job);
+    if (job.type === 'building') {
+      (s.cityB[job.city] ||= []).push(job.key);
+      const b = BUILDINGS[job.key];
+      if (b.capacity) s.store.cap += b.capacity;
+      toast(`${b.icon} ${b.name} KLAR I ${cityName(job.city)}`, 'amber', 5000);
+    } else if (job.type === 'plant') {
+      const p = s.plants.find((x) => x.id === job.id);
+      if (p) { p.done = true; toast(`${PLANTS[p.kind].icon} ${PLANTS[p.kind].name} I DRIFT — ${PLANTS[p.kind].mw} MW`, 'amber', 6000); }
+    } else if (job.type === 'line') {
+      const l = s.lines.find((x) => x.id === job.id);
+      if (l) { l.done = true; toast(`\u{26A1} ELLEDNING KLAR: ${cityName(l.a)} \u{2192} ${cityName(l.b)}`, 'amber', 5000); }
+    } else if (job.type === 'research') {
+      s.nation.research[job.branch] = job.tier;
+      toast(`\u{1F52C} ${job.name.toUpperCase()} KLAR`, 'amber', 6000);
+    } else if (job.type === 'unit') {
+      s.army.units.push({ type: job.unit, hp: 10 });
+      toast(`\u{2694}\u{FE0F} ${job.unit} FÄRDIGT`, 'amber', 5000);
+    }
+    renderTop();
+  }
+}
+
+// Råvaran följer med lasten in till huvudstaden — men bara om lagret finns.
+function depositResource(l) {
+  const s = state.s;
+  if (!s.store.cap) return;
+  const cap = capitalKeyOf(s.home);
+  const from = [l.a, l.b].find((k) => k !== cap);
+  if (!from || (l.a !== cap && l.b !== cap)) return;
+  const res = cityResource(from);
+  if (!res) return;
+  const have = Object.values(s.store.qty).reduce((a, b) => a + b, 0);
+  if (have >= s.store.cap) return;
+  s.store.qty[res] = (s.store.qty[res] || 0) + 1;
+}
+
+// Vilken råvara ligger i staden? Stabilt per stad.
+function cityResource(key) {
+  const { cid, i } = splitKey(key);
+  const h = hashId(key);
+  if (h % 5 !== 0) return null;          // bara var femte stad har något
+  const list = resourcesOf(cid, hashId);
+  return list[h % list.length];
+}
+
+// ---------- byggande ----------
+function costOf(base) { return Math.round(base * buildCostMult(state.s.nation.ideology)); }
+
+function canBuild(key, cityK) {
+  const s = state.s;
+  const b = BUILDINGS[key];
+  const { cid } = splitKey(cityK);
+  if (!s.claims[cid]) return 'INTE DITT LAND';
+  if (!unlocked(key, s.nation.research)) return 'KRÄVER FORSKNING';
+  if (b.coastal && !isCoastal(cityK)) return 'KRÄVER KUSTSTAD';
+  if (b.capital && cityK !== capitalKeyOf(cid)) return 'BARA I HUVUDSTADEN';
+  if (!b.repeatable && (s.cityB[cityK] || []).includes(key)) return 'REDAN BYGGD';
+  if (!powered().has(cityK)) return 'KRÄVER EL';
+  if (s.res.money < costOf(b.cost)) return `KRÄVER ${costOf(b.cost)} \u{1F4B0}`;
+  return null;
+}
+
+function buildBuilding(key, cityK) {
+  const s = state.s;
+  const why = canBuild(key, cityK);
+  if (why) { warn(why); return; }
+  const b = BUILDINGS[key];
+  s.res.money -= costOf(b.cost);
+  s.queue.push({ type: 'building', key, city: cityK, left: b.days, total: b.days });
+  toast(`${b.icon} ${b.name} PÅBÖRJAD — KLAR OM ${b.days} DAGAR`, '', 4500);
+  renderTop(); renderCityPanel();
+}
+
+function buildPlant(kind, cityK) {
+  const s = state.s;
+  const P = PLANTS[kind];
+  const { cid } = splitKey(cityK);
+  if (!s.claims[cid]) { warn('INTE DITT LAND'); return; }
+  if (!plantUnlocked(kind, s.nation.research)) { warn('KRÄVER FORSKNING'); return; }
+  if (s.res.money < costOf(P.cost)) { warn(`KRÄVER ${costOf(P.cost)} \u{1F4B0}`); return; }
+  s.res.money -= costOf(P.cost);
+  const id = 'p' + Date.now() + Math.floor(Math.random() * 999);
+  s.plants.push({ id, city: cityK, kind, done: false, left: P.days });
+  s.queue.push({ type: 'plant', id, left: P.days, total: P.days });
+  toast(`${P.icon} ${P.name} PÅBÖRJAD I ${cityName(cityK)} — ${P.days} DAGAR`, '', 5000);
+  renderTop(); renderCityPanel();
+}
+
+// ---------- byggläge: klicka stad A, sedan stad B ----------
+function startBuildMode(kind) {
+  state.build = { kind, first: null };
+  $('#buildbar').style.display = 'flex';
+  updateBuildBar();
+}
+
+function cancelBuildMode() {
+  state.build = null;
+  $('#buildbar').style.display = 'none';
+  globe.setPenPath(null);
+}
+
+function updateBuildBar() {
+  const bm = state.build;
+  if (!bm) return;
+  const label = bm.kind === 'line' ? '\u{26A1} ELLEDNING' : `${LINK[bm.kind].icon} ${LINK[bm.kind].name}`;
+  $('#buildhint').innerHTML = bm.first
+    ? `${label}: FRÅN <b>${cityName(bm.first)}</b> — VÄLJ MÅLSTAD`
+    : `${label}: VÄLJ FÖRSTA STADEN`;
+}
+
+function onCityClicked(city) {
+  const cid = city.country;
+  const idx = (state.cities[cid] || []).indexOf(city);
+  const key = cityKey(cid, idx);
+  const bm = state.build;
+  if (!bm) { state.selCity = key; openCityPanel(key); return; }
+  if (!state.s.claims[cid]) { warn('DU KONTROLLERAR INTE DET LANDET'); return; }
+  if (!bm.first) { bm.first = key; updateBuildBar(); return; }
+  if (bm.first === key) { warn('VÄLJ EN ANNAN STAD'); return; }
+  if (bm.kind === 'line') finishLine(bm.first, key);
+  else finishLink(bm.kind, bm.first, key);
+}
+
+function finishLine(a, b) {
+  const s = state.s;
+  const km = kmBetween(cityLL(a), cityLL(b));
+  const rm = researchMods(s.nation.research);
+  const cost = Math.round(costOf(lineCost(km)) * (1 + (rm.lineCost || 0) / 100));
+  if (s.res.money < cost) { warn(`ELLEDNINGEN KOSTAR ${cost} \u{1F4B0} — DU HAR ${Math.floor(s.res.money)}`); return; }
+  if (s.lines.some((l) => (l.a === a && l.b === b) || (l.a === b && l.b === a))) { warn('LEDNINGEN FINNS REDAN'); return; }
+  s.res.money -= cost;
+  const id = 'l' + Date.now();
+  const days = lineDays(km);
+  s.lines.push({ id, a, b, km, done: false, left: days });
+  s.queue.push({ type: 'line', id, left: days, total: days });
+  toast(`\u{26A1} ELLEDNING PÅBÖRJAD ${cityName(a)} \u{2192} ${cityName(b)} — ${km} KM, ${cost} \u{1F4B0}, ${days} DAGAR`, '', 6000);
+  cancelBuildMode(); renderTop(); pushInfra();
+}
+
+function finishLink(kind, a, b) {
+  const s = state.s;
+  const km = kmBetween(cityLL(a), cityLL(b));
+  const key = linkKey(kind, a, b);
+  if (s.links[key]) { warn('FÖRBINDELSEN FINNS REDAN — UPPGRADERA DEN I STÄLLET'); return; }
+  const ctx = { powered: powered(), cityBuildings: s.cityB, nameOf: cityName, isCoastal };
+  const bl = blockers(kind, a, b, ctx);
+  if (bl.length) { warn(bl[0]); return; }
+  const cost = costOf(linkCost(kind, km));
+  if (s.res.money < cost) { warn(`KRÄVER ${cost} \u{1F4B0} — DU HAR ${Math.floor(s.res.money)}`); return; }
+  s.res.money -= cost;
+  s.links[key] = makeLink(kind, a, b, cityLL(a), cityLL(b));
+  const inc = payload(s.links[key], linkIncomeMult(s.nation.research, kind) * ideoLinkMult(s.nation.ideology));
+  toast(`${LINK[kind].icon} ${LINK[kind].name} BYGGD: ${cityName(a)} \u{2194} ${cityName(b)} — ${km} KM, ${inc} \u{1F4B0} PER LEVERANS`, 'amber', 7000);
+  cancelBuildMode(); renderTop(); pushInfra();
+}
+
+function upgradeLink(key) {
+  const s = state.s;
+  const l = s.links[key];
+  if (!l || l.level >= MAX_LINK_LEVEL) { warn('REDAN PÅ HÖGSTA NIVÅ'); return; }
+  const cost = costOf(upgradeCost(l.kind, l.km, l.level));
+  if (s.res.money < cost) { warn(`UPPGRADERINGEN KOSTAR ${cost} \u{1F4B0}`); return; }
+  s.res.money -= cost;
+  addCar(l);
+  toast(`${LINK[l.kind].icon} ${LINK[l.kind].name} UPPGRADERAD TILL NIVÅ ${l.level} — ${l.level} FORDON`, 'amber', 6000);
+  renderTop(); pushInfra(); renderCityPanel();
+}
+
+// ---------- kartan ----------
+function pushInfra() {
+  const s = state.s;
+  if (!s) return;
+  const links = Object.values(s.links).map((l) => ({
+    kind: l.kind, a: cityLL(l.a), b: cityLL(l.b), level: l.level,
+    cars: l.cars.map(carPos),
+  }));
+  const lines = s.lines.map((l) => ({ a: cityLL(l.a), b: cityLL(l.b), done: l.done }));
+  const plants = s.plants.map((p) => ({ ll: cityLL(p.city), done: p.done }));
+  globe.setInfra(links, lines, plants);
+}
+
+function applyState() {
+  const s = state.s;
+  globe.setClaims(Object.fromEntries(Object.entries(s?.claims || {}).map(([k, v]) => [k, { color: v.color }])));
+  pushInfra();
+}
+
+// ---------- UI ----------
+function renderTop() {
+  const s = state.s;
+  if (!s) return;
+  const e = econSnapshot();
+  const f = (n) => (n >= 0 ? '+' : '') + n.toFixed(1);
+  $('#topleft').innerHTML = `TRADE WARS V${VERSION} <span style="color:var(--holo-dim)">// DAG ${state.clock.day}</span>`;
+  $('#resbar').innerHTML = [
+    `\u{1F4B0} ${Math.floor(s.res.money)} <small>${f(e.inc.money)}</small>`,
+    `\u{1F52C} ${Math.floor(s.res.research)} <small>${f(e.inc.research)}</small>`,
+    `\u{2696}\u{FE0F} ${Math.floor(s.res.pp)} <small>${f(e.inc.pp)}</small>`,
+    `\u{1F9CD} ${Math.floor(s.res.man)} <small>${f(e.inc.man)}</small>`,
+    `\u{26A1} <span style="color:${e.mw > e.cap ? 'var(--red)' : 'var(--holo)'}">${Math.round(e.mw)}/${e.cap} MW</span>`,
+  ].join(' &nbsp; ');
+}
+
+function openCityPanel(key) {
+  state.selCity = key;
+  $('#citypanel').style.display = 'block';
+  renderCityPanel();
+}
+
+function renderCityPanel() {
+  const key = state.selCity;
+  if (!key) return;
+  const s = state.s;
+  const { cid } = splitKey(key);
+  const c = cityOf(key);
+  const isCap = key === capitalKeyOf(cid);
+  const pw = powered();
+  const has = s.cityB[key] || [];
+  const res = cityResource(key);
+  const e = econSnapshot();
+
+  $('#cpname').innerHTML = `${isCap ? '\u{2B50} ' : ''}${(c.n || '?').toUpperCase()}`
+    + `<div style="font-size:6px;color:var(--holo-dim);line-height:2">${cname(cid)}`
+    + ` \u{2022} ${(c.p / 1000).toFixed(0)}K INV`
+    + ` \u{2022} ${pw.has(key) ? '<span style="color:#4ae37a">\u{26A1} EL</span>' : '<span style="color:var(--red)">\u{26A1} SAKNAR EL</span>'}`
+    + (isCoastal(key) ? ' \u{2022} \u{2693} KUST' : '')
+    + (res ? ` \u{2022} ${RESOURCES[res].icon} ${RESOURCES[res].name}` : '')
+    + '</div>';
+
+  const body = $('#cpbody');
+  body.innerHTML = '';
+
+  if (!s.claims[cid]) {
+    body.innerHTML = '<div class="dim">DU KONTROLLERAR INTE DET HÄR LANDET.</div>';
+    return;
+  }
+
+  // befintliga byggnader
+  if (has.length) {
+    const g = document.createElement('div');
+    g.innerHTML = '<div class="sub">BYGGT HÄR</div>';
+    for (const k of has) {
+      const b = BUILDINGS[k];
+      g.innerHTML += `<div class="brow"><span>${b.icon} ${b.name}</span>`
+        + `<span class="dim">${b.upkeep} \u{1F4B0}/DAG \u{2022} ${b.mw} MW</span></div>`;
+    }
+    body.appendChild(g);
+  }
+
+  // kraftverk i staden
+  const mine = s.plants.filter((p) => p.city === key);
+  if (mine.length) {
+    const g = document.createElement('div');
+    g.innerHTML = '<div class="sub">KRAFT</div>';
+    for (const p of mine) {
+      const P = PLANTS[p.kind];
+      g.innerHTML += `<div class="brow"><span>${P.icon} ${P.name}</span>`
+        + `<span class="dim">${p.done ? P.mw + ' MW' : 'BYGGS — ' + p.left + ' DAGAR'}</span></div>`;
+    }
+    body.appendChild(g);
+  }
+
+  // förbindelser som rör staden
+  const linked = Object.entries(s.links).filter(([, l]) => l.a === key || l.b === key);
+  if (linked.length) {
+    const g = document.createElement('div');
+    g.innerHTML = '<div class="sub">FÖRBINDELSER</div>';
+    body.appendChild(g);
+    for (const [lk, l] of linked) {
+      const other = l.a === key ? l.b : l.a;
+      const inc = payload(l, linkIncomeMult(s.nation.research, l.kind) * ideoLinkMult(s.nation.ideology));
+      const row = document.createElement('div');
+      row.className = 'brow';
+      row.innerHTML = `<span>${LINK[l.kind].icon} ${cityName(other)} <span class="dim">NIVÅ ${l.level}</span></span>`
+        + `<span class="dim">${l.km} KM \u{2022} ${inc} \u{1F4B0}/LEV</span>`;
+      g.appendChild(row);
+      if (l.level < MAX_LINK_LEVEL) {
+        const up = document.createElement('button');
+        up.className = 'minibtn';
+        up.textContent = `UPPGRADERA TILL NIVÅ ${l.level + 1} — ${costOf(upgradeCost(l.kind, l.km, l.level))} \u{1F4B0}`;
+        up.onclick = () => upgradeLink(lk);
+        g.appendChild(up);
+      }
+    }
+  }
+
+  // bygg kraft
+  const pg = document.createElement('div');
+  pg.innerHTML = '<div class="sub">BYGG KRAFT</div>';
+  for (const [k, P] of Object.entries(PLANTS)) {
+    if (!plantUnlocked(k, s.nation.research)) continue;
+    const btn = document.createElement('button');
+    btn.className = 'bbtn';
+    btn.innerHTML = `${P.icon} ${P.name} <span class="dim">${P.mw} MW \u{2022} ${costOf(P.cost)} \u{1F4B0} \u{2022} ${P.days} D \u{2022} ${P.upkeep}/DAG</span>`
+      + `<div class="bdesc">${P.desc}</div>`;
+    btn.onclick = () => buildPlant(k, key);
+    pg.appendChild(btn);
+  }
+  body.appendChild(pg);
+
+  // bygg byggnader
+  const bg = document.createElement('div');
+  bg.innerHTML = '<div class="sub">BYGG</div>';
+  for (const [k, b] of Object.entries(BUILDINGS)) {
+    if (!unlocked(k, s.nation.research)) continue;
+    if (b.capital && !isCap) continue;
+    if (b.coastal && !isCoastal(key)) continue;
+    if (!b.repeatable && has.includes(k)) continue;
+    const why = canBuild(k, key);
+    const btn = document.createElement('button');
+    btn.className = 'bbtn' + (why ? ' off' : '');
+    const y = Object.entries(b.yield || {}).map(([kk, v]) => `${POINTS[kk].icon}+${v}`).join(' ');
+    btn.innerHTML = `${b.icon} ${b.name} <span class="dim">${costOf(b.cost)} \u{1F4B0} \u{2022} ${b.days} D \u{2022} ${b.upkeep}/DAG \u{2022} ${b.mw} MW ${y}</span>`
+      + `<div class="bdesc">${why ? '<span style="color:var(--red)">' + why + '</span> \u{2022} ' : ''}${b.desc}</div>`;
+    btn.onclick = () => buildBuilding(k, key);
+    bg.appendChild(btn);
+  }
+  body.appendChild(bg);
+}
+
+// ---------- AI: bygger upp sitt eget land ----------
+function aiTick() {
+  const w = state.world;
+  w.dev ||= {};
+  if (state.clock.day % 6 !== 0) return;
+  const pool = globe.countries.filter((c) => !state.s.claims[c.id]);
+  if (!pool.length) return;
+  // några länder i taget skruvar upp sin utveckling — det driver deras
+  // priser på marknaden och hur mycket de har att sälja
+  for (let i = 0; i < 3; i++) {
+    const c = pool[Math.floor(Math.random() * pool.length)];
+    const d = (w.dev[c.id] ||= { level: 0, power: 0, links: 0 });
+    const r = Math.random();
+    if (r < 0.4) d.power++;
+    else if (r < 0.8) d.links++;
+    else d.level++;
+  }
+  // deras lager fylls på i takt med utvecklingen
+  w.stores ||= {};
+  for (const c of pool.slice(0, 40)) {
+    const d = w.dev[c.id];
+    if (!d || d.links < 2) continue;
+    const st = (w.stores[c.id] ||= { qty: {}, dev: 0.5, ll: c.centroid });
+    st.dev = Math.min(1.6, 0.4 + d.level * 0.08);
+    const list = resourcesOf(c.id, hashId);
+    const res = list[state.clock.day % list.length];
+    st.qty[res] = Math.min(60, (st.qty[res] || 0) + 1);
+  }
+}
+
+// ---------- start ----------
+async function boot() {
+  $('#loading').textContent = 'LADDAR VÄRLDEN...';
+  await loadWorld((countries, level, topo) => {
+    state.countries = countries;
+    globe.setCountries(countries);
+    if (topo) globe.setTopology(topo);
+  });
+  state.cities = await loadCities();
+  state.facts = await loadFacts();
+  // städerna får sitt land inbakat så klick kan härleda nyckeln
+  for (const [cid, list] of Object.entries(state.cities)) {
+    for (const c of list) c.country = cid;
+  }
+  globe.setCities(state.cities);
+  globe.onSelectCity = onCityClicked;
+  globe.onSelect = (c) => { if (c) toast(`${c.name.toUpperCase()} \u{2022} KLICKA PÅ EN STAD FÖR ATT BYGGA`, '', 3000); };
+  $('#loading').style.display = 'none';
+  $('#menu').style.display = 'flex';
+}
+
+$('#btnStart')?.addEventListener('click', () => {
+  $('#menu').style.display = 'none';
+  toast('VÄLJ DITT HEMLAND PÅ KLOTET', 'amber', 8000);
+  globe.onSelect = (c) => {
+    if (!c) return;
+    if (state.s) return;
+    if (!confirm(`Bygga upp ${c.name}?`)) return;
+    startGame(c.id);
+  };
+});
+
+function startGame(home) {
+  newRealm(home);
+  state.mode = 'solo';
+  globe.onSelect = (c) => { if (c) toast(`${c.name.toUpperCase()}`, '', 2500); };
+  applyState();
+  $('#hud').style.display = 'block';
+  $('#toggles').style.display = 'flex';
+  globe.animateTo(capitalLLOf(home), 3.2, 1600);
+  renderTop();
+  toast(`\u{1F3D7}\u{FE0F} ${cname(home)} — HUVUDSTADEN HAR ETT VINDKRAFTVERK. DRA EL TILL FLER STÄDER.`, 'amber', 12000);
+  startClock();
+}
+
+function capitalLLOf(cid) { return cityLL(capitalKeyOf(cid)); }
+
+function startClock() {
+  setInterval(() => {
+    if (state.clock.paused || !state.s) return;
+    state.clock.acc += 250;
+    if (state.clock.acc >= DAY_MS) { state.clock.acc = 0; tickDay(); }
+    pushInfra();
+  }, 250);
+}
+
+// byggknappar
+for (const kind of ['road', 'rail', 'sea', 'air']) {
+  $(`#bm_${kind}`)?.addEventListener('click', () => startBuildMode(kind));
+}
+$('#bm_line')?.addEventListener('click', () => startBuildMode('line'));
+$('#bmcancel')?.addEventListener('click', cancelBuildMode);
+$('#cpclose')?.addEventListener('click', () => { $('#citypanel').style.display = 'none'; });
+
+boot();
+
+// för test och felsökning
+state.debug = {
+  tickDay: () => tickDay(), econ: () => econSnapshot(), powered: () => [...powered()],
+  cityKey, capitalKeyOf, buildBuilding, buildPlant, finishLine, finishLink,
+  upgradeLink, startBuildMode, cityResource, startGame,
+  BUILDINGS, PLANTS, LINK, RESEARCH,
+};
