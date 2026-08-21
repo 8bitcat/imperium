@@ -30,7 +30,7 @@
   }
   canvas#globe {
     position: fixed; inset: 0; width: 100vw; height: 100vh;
-    image-rendering: pixelated;
+    image-rendering: auto;
     cursor: grab;
   }
   /* 3D-planeten ligger BAKOM pixellagret: WebGL ritar klotet, 2D-canvasen
@@ -606,9 +606,12 @@
     backdrop-filter: blur(2px);
   }
   /* panelerna vid kanterna lutar in mot skärmens mitt */
-  #infopanel, #citypanel { transform: rotateY(-4.5deg) translateZ(22px); }
-  #roster, #qrpanel, #nation { transform: rotateY(4.5deg) translateZ(22px); }
-  #histpanel { transform: rotateX(3deg) translateZ(18px); }
+  /* ingen translateZ: den rastrerar texten i fel upplösning. Lutningen är
+     svag och panelerna hålls innanför kanten med margin. */
+  #infopanel, #citypanel { transform: rotateY(-2deg); transform-origin: right center; }
+  #roster, #qrpanel, #nation { transform: rotateY(2deg); transform-origin: left center; }
+  #histpanel { transform: none; }
+  #infopanel, #citypanel { right: 22px; }
 
   /* knappar får en fasad kant och trycks ner när man klickar */
   .btn, .tbtn, .bbtn, .nattab, .minibtn, .armybtn, .lawopt, .seizebtn {
@@ -621,7 +624,7 @@
     transition: transform 0.08s steps(2), box-shadow 0.08s steps(2);
   }
   .btn:hover, .tbtn:hover, .bbtn:hover, .nattab:hover, .minibtn:hover {
-    transform: translateZ(10px) translateY(-1px);
+    transform: translateY(-2px);
     box-shadow:
       inset 0 1px 0 rgba(190,240,255,0.35),
       inset 0 -2px 0 rgba(0,0,0,0.45),
@@ -630,7 +633,7 @@
       0 0 18px rgba(55,224,255,0.3);
   }
   .btn:active, .tbtn:active, .bbtn:active, .nattab:active, .minibtn:active {
-    transform: translateZ(0) translateY(2px);
+    transform: translateY(2px);
     box-shadow: inset 0 2px 4px rgba(0,0,0,0.6);
   }
   .tbtn.on, .nattab.on {
@@ -643,7 +646,7 @@
 
   /* överlägg får djup: kortet kommer emot dig */
   .overlay .card {
-    transform: translateZ(70px) rotateX(2deg);
+    transform: rotateX(1.5deg);
     box-shadow:
       0 26px 70px rgba(0,0,0,0.8),
       0 0 46px rgba(55,224,255,0.22),
@@ -652,8 +655,8 @@
   #menu .logo { text-shadow: 0 0 18px rgba(255,176,46,0.6), 0 4px 0 rgba(0,0,0,0.6); }
 
   /* topbaren lutar bakåt som en HUD-list */
-  #topbar { transform: rotateX(5deg); transform-origin: top center; }
-  #toggles, #buildbar { transform: rotateX(-6deg); transform-origin: bottom center; }
+  #topbar { transform: rotateX(3deg); transform-origin: top center; }
+  #toggles, #buildbar { transform: rotateX(-3deg); transform-origin: bottom center; }
 
   /* V6: byggraden */
   #buildbar {
@@ -885,6 +888,7 @@
     </div>
     <div id="nattabs">
       <button class="nattab on" data-tab="oversikt">&#128202; ÖVERSIKT</button>
+      <button class="nattab" data-tab="stader">&#127961; ST&Auml;DER</button>
       <button class="nattab" data-tab="forskning">&#128300; FORSKNING</button>
       <button class="nattab" data-tab="lager">&#127981; LAGER</button>
       <button class="nattab" data-tab="marknad">&#128176; MARKNAD</button>

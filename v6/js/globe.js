@@ -391,6 +391,7 @@ export class Globe {
   // Infrastrukturen ritas i kompositpasset, så den är skarp i båda lägena.
   // Nivån syns direkt: tjockare linje och fler fordon.
   _drawInfra(b, t) {
+    const u = this.mode3d ? Math.max(2, this.uiScale * 0.7) : 1;
     const LW = { road: 1, rail: 1.4, sea: 1.1, air: 0.9 };
     const COL = { road: '#c9a227', rail: '#9fb6c8', sea: '#4aa6e0', air: '#e8f6ff' };
 
@@ -398,8 +399,8 @@ export class Globe {
     for (const l of this.powerLines || []) {
       const pts = this._arc(l.a, l.b, 12);
       b.strokeStyle = l.done ? 'rgba(120,200,255,0.32)' : 'rgba(120,200,255,0.12)';
-      b.lineWidth = 0.7;
-      b.setLineDash(l.done ? [] : [2, 3]);
+      b.lineWidth = 0.7 * u;
+      b.setLineDash(l.done ? [] : [2 * u, 3 * u]);
       this._strokeGeoLine(b, pts);
       b.setLineDash([]);
       if (!l.done) continue;
@@ -427,13 +428,13 @@ export class Globe {
       const p = this._project(pl.ll);
       if (!p) continue;
       b.fillStyle = pl.done ? '#ffd24f' : 'rgba(255,210,79,0.35)';
-      b.fillRect(Math.round(p[0]) - 1, Math.round(p[1]) - 2, 2, 4);
+      b.fillRect(Math.round(p[0]) - u, Math.round(p[1]) - 2 * u, 2 * u, 4 * u);
     }
 
     // 3) förbindelserna
     for (const l of this.infraLinks || []) {
       const pts = this._arc(l.a, l.b, l.kind === 'air' ? 22 : 16);
-      const lw = LW[l.kind] * (0.8 + l.level * 0.45);
+      const lw = LW[l.kind] * (0.8 + l.level * 0.45) * u;
       b.strokeStyle = COL[l.kind];
       b.globalAlpha = 0.55;
       b.lineWidth = lw;
@@ -457,7 +458,7 @@ export class Globe {
         const ll = interp(carT);
         if (!this._front(ll, 1.3)) continue;
         const p = this._project(ll);
-        if (p) this._drawVehicle(b, l.kind, Math.round(p[0]), Math.round(p[1]));
+        if (p) this._drawVehicle(b, l.kind, Math.round(p[0]), Math.round(p[1]), u);
       }
     }
   }
@@ -468,31 +469,33 @@ export class Globe {
     if (!this.claims) return;
     for (const v of this._visCities || []) {
       if (!this.claims[v.city.country]) continue;
+      const u = this.mode3d ? Math.max(2, this.uiScale * 0.7) : 1;
       const x = Math.round(v.x), y = Math.round(v.y);
       const cap = !!v.city.c;
-      b.fillStyle = 'rgba(4,10,18,0.92)';
-      b.fillRect(x - 2, y - 2, 5, 5);
-      b.fillStyle = cap ? '#ffd24f' : '#bfeaff';
-      b.fillRect(x - 1, y - 1, 3, 3);
-      b.fillStyle = cap ? '#fff3c4' : '#ffffff';
-      b.fillRect(x, y, 1, 1);
+      const r = 2.6 * u;
+      b.beginPath(); b.arc(x, y, r, 0, Math.PI * 2);
+      b.fillStyle = 'rgba(4,10,18,0.85)'; b.fill();
+      b.lineWidth = Math.max(1, u * 0.45);
+      b.strokeStyle = cap ? '#ffd24f' : '#7fd4ff'; b.stroke();
+      b.beginPath(); b.arc(x, y, r * 0.45, 0, Math.PI * 2);
+      b.fillStyle = cap ? '#fff3c4' : '#ffffff'; b.fill();
     }
   }
 
   // Varje transportslag ska gå att känna igen på en halv sekund.
-  _drawVehicle(b, kind, x, y) {
+  _drawVehicle(b, kind, x, y, u = 1) {
     if (kind === 'road') {
-      b.fillStyle = '#ffd24f'; b.fillRect(x - 1, y - 1, 3, 2);
-      b.fillStyle = '#fff3c4'; b.fillRect(x + 1, y - 1, 1, 2);
+      b.fillStyle = '#ffd24f'; b.fillRect(x - 1 * u, y - 1 * u, 3 * u, 2 * u);
+      b.fillStyle = '#fff3c4'; b.fillRect(x + 1 * u, y - 1 * u, 1 * u, 2 * u);
     } else if (kind === 'rail') {
-      b.fillStyle = '#dce8f2'; b.fillRect(x - 2, y - 1, 5, 2);
-      b.fillStyle = '#6d7c8a'; b.fillRect(x - 2, y - 1, 1, 2);
+      b.fillStyle = '#dce8f2'; b.fillRect(x - 2 * u, y - 1 * u, 5 * u, 2 * u);
+      b.fillStyle = '#6d7c8a'; b.fillRect(x - 2 * u, y - 1 * u, 1 * u, 2 * u);
     } else if (kind === 'sea') {
-      b.fillStyle = '#cfe8ff'; b.fillRect(x - 2, y, 5, 1);
-      b.fillStyle = '#ffffff'; b.fillRect(x, y - 2, 1, 2);
+      b.fillStyle = '#cfe8ff'; b.fillRect(x - 2 * u, y, 5 * u, 1 * u);
+      b.fillStyle = '#ffffff'; b.fillRect(x, y - 2 * u, 1 * u, 2 * u);
     } else {
-      b.fillStyle = '#ffffff'; b.fillRect(x - 1, y, 3, 1);
-      b.fillStyle = '#bfe8ff'; b.fillRect(x, y - 1, 1, 3);
+      b.fillStyle = '#ffffff'; b.fillRect(x - 1 * u, y, 3 * u, 1 * u);
+      b.fillStyle = '#bfe8ff'; b.fillRect(x, y - 1 * u, 1 * u, 3 * u);
     }
   }
 
@@ -511,7 +514,9 @@ export class Globe {
     const h = this.canvas.clientHeight || window.innerHeight;
     this.canvas.width = w;
     this.canvas.height = h;
-    this.pixelSize = Math.max(2, Math.floor(Math.min(w, h) / 220));
+    const ps = Math.max(2, Math.floor(Math.min(w, h) / 220));
+    this.uiScale = ps;                       // markörernas storlek i 3D
+    this.pixelSize = this.mode3d ? 1 : ps;   // 3D ritar skarpt, pixelläget grovt
     this.buf.width = Math.max(96, Math.ceil(w / this.pixelSize));
     this.buf.height = Math.max(96, Math.ceil(h / this.pixelSize));
     this.scene2d.width = this.buf.width;
@@ -766,7 +771,7 @@ export class Globe {
     }
 
     const x = this.ctx;
-    x.imageSmoothingEnabled = false;
+    x.imageSmoothingEnabled = !!this.mode3d;
     x.clearRect(0, 0, this.canvas.width, this.canvas.height);
     x.drawImage(this.buf, 0, 0, this.buf.width, this.buf.height, 0, 0, this.canvas.width, this.canvas.height);
 

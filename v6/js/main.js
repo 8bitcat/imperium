@@ -136,6 +136,7 @@ function tickDay() {
   const s = state.s;
   if (!s) return;
   state.clock.day++;
+  globe.setDayFloat(state.clock.day);   // driver sol, norrsken och nattljus
   const e = econSnapshot();
   for (const k of Object.keys(e.inc)) s.res[k] = Math.max(0, s.res[k] + e.inc[k]);
 
@@ -524,7 +525,8 @@ function renderNation() {
   for (const b of document.querySelectorAll('.nattab')) b.classList.toggle('on', b.dataset.tab === natTab);
   const body = $('#natbody');
   body.innerHTML = '';
-  if (natTab === 'oversikt') renderOverviewTab(body);
+  if (natTab === 'stader') renderCitiesTab(body);
+  else if (natTab === 'oversikt') renderOverviewTab(body);
   else if (natTab === 'ideologi') renderIdeologyTab(body);
   else if (natTab === 'forskning') renderResearchTab(body);
   else if (natTab === 'lager') renderStoreTab(body);
@@ -799,6 +801,63 @@ function renderIdeologyTab(body) {
   }
 }
 
+
+// --- STÄDER: hela riket i en lista, med väg in i varje stads byggmeny ---
+// Det gick tidigare bara att öppna en stad genom att pricka den på klotet.
+// Här ligger alla, sorterade så de som saknar el ligger överst — det är de
+// som blockerar dig.
+function renderCitiesTab(body) {
+  const s = state.s;
+  const pw = powered();
+  const cap = capitalKeyOf(s.home);
+  body.innerHTML = '<div class="dim" style="line-height:2;margin-bottom:8px">'
+    + 'KLICKA EN STAD FÖR ATT ÖPPNA DESS BYGGMENY. STÄDER UTAN EL LIGGER ÖVERST —'
+    + ' DET ÄR DE SOM STOPPAR DIG. DRA ELLEDNING DIT FÖRST.</div>';
+
+  for (const cid of Object.keys(s.claims)) {
+    const list = state.cities[cid] || [];
+    const rows = list.map((c, i) => {
+      const k = cityKey(cid, i);
+      return {
+        k, c,
+        el: pw.has(k),
+        cap: k === cap,
+        n: (s.cityB[k] || []).length,
+        res: cityResource(k),
+        links: Object.values(s.links).filter((l) => l.a === k || l.b === k).length,
+      };
+    });
+    // utan el först, sedan huvudstaden, sedan de mest utbyggda
+    rows.sort((a, b) => (a.el ? 1 : 0) - (b.el ? 1 : 0)
+      || (b.cap ? 1 : 0) - (a.cap ? 1 : 0) || b.n - a.n);
+
+    const head = document.createElement('div');
+    head.className = 'sub';
+    head.textContent = cname(cid) + ' — ' + rows.filter((r) => r.el).length + ' AV ' + rows.length + ' MED EL';
+    body.appendChild(head);
+
+    for (const r of rows) {
+      const btn = document.createElement('button');
+      btn.className = 'bbtn';
+      const tags = [];
+      if (r.cap) tags.push('\u{2B50} HUVUDSTAD');
+      if (!r.el) tags.push('<span style="color:var(--red)">\u{26A1} SAKNAR EL</span>');
+      else tags.push('<span style="color:var(--green)">\u{26A1} EL</span>');
+      if (r.n) tags.push(r.n + ' BYGGNADER');
+      if (r.links) tags.push(r.links + ' FÖRBINDELSER');
+      if (r.res) tags.push(RESOURCES[r.res].icon + ' ' + RESOURCES[r.res].name);
+      if (isCoastal(r.k)) tags.push('\u{2693} KUST');
+      btn.innerHTML = '<b>' + (r.c.n || '?').toUpperCase() + '</b>'
+        + '<div class="bdesc">' + tags.join(' \u{2022} ') + '</div>';
+      btn.onclick = () => {
+        openCityPanel(r.k);
+        globe.animateTo(r.c.ll, Math.max(globe.zoom, 4), 900);
+      };
+      body.appendChild(btn);
+    }
+  }
+}
+
 // ---------- AI: bygger upp sitt eget land ----------
 function aiTick() {
   const w = state.world;
@@ -968,6 +1027,7 @@ function startGame(home) {
   $('#toggles').style.display = 'flex';
   if ($('#claimbtn')) $('#claimbtn').style.display = 'none';
 
+  globe.setDayFloat(state.clock.day);
   globe.animateTo(capitalLLOf(home), 3.2, 1600);
   renderTop();
   toast(`\u{1F3D7}\u{FE0F} ${cname(home)} — HUVUDSTADEN HAR ETT VINDKRAFTVERK. DRA EL TILL FLER STÄDER.`, 'amber', 12000);
