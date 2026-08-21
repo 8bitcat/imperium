@@ -411,7 +411,7 @@ function renderCityPanel() {
   const res = cityResource(key);
   const e = econSnapshot();
 
-  $('#cpname').innerHTML = `${isCap ? '\u{2B50} ' : ''}${(c.n || '?').toUpperCase()}`
+  $('#cptitle').innerHTML = `${isCap ? '\u{2B50} ' : ''}${(c.n || '?').toUpperCase()}`
     + `<div style="font-size:6px;color:var(--holo-dim);line-height:2">${cname(cid)}`
     + ` \u{2022} ${(c.p / 1000).toFixed(0)}K INV`
     + ` \u{2022} ${pw.has(key) ? '<span style="color:#4ae37a">\u{26A1} EL</span>' : '<span style="color:var(--red)">\u{26A1} SAKNAR EL</span>'}`
