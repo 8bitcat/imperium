@@ -60,6 +60,15 @@
     border: 1px solid var(--amber); padding: 9px 12px; font-size: 7px; color: var(--amber); line-height: 1.9; }
   #buildbar .btn { margin: 0; width: auto; padding: 7px 10px; }
 
+  #natpanel { position: fixed; left: 10px; top: 54px; bottom: 96px; width: 340px; max-width: 92vw;
+    z-index: 60; display: none; background: var(--panel); border: 2px solid var(--panel-border);
+    padding: 10px 12px; overflow-y: auto; font-size: 8px; }
+  #natname { color: var(--amber); font-size: 11px; }
+  #nattabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+  .nattab { font-family: inherit; font-size: 6px; padding: 6px 7px; cursor: pointer;
+    color: var(--holo-dim); background: rgba(0,12,20,0.7); border: 1px solid rgba(55,224,255,0.25); }
+  .nattab.on { color: var(--amber); border-color: rgba(255,176,46,0.6); background: rgba(20,14,4,0.6); }
+  .btn.off { opacity: 0.5; }
   #citypanel { position: fixed; right: 10px; top: 54px; bottom: 96px; width: 320px; max-width: 92vw;
     z-index: 60; display: none; background: var(--panel); border: 2px solid var(--panel-border);
     padding: 10px 12px; overflow-y: auto; font-size: 8px; }
@@ -92,7 +101,7 @@
     font-size: 6px; color: var(--holo-dim); text-align: center; pointer-events: none; }
 
   @media (max-width: 820px) {
-    #citypanel { left: 6px; right: 6px; width: auto; top: 50px; bottom: 120px; }
+    #citypanel, #natpanel { left: 6px; right: 6px; width: auto; top: 50px; bottom: 128px; }
     .tbtn { font-size: 7px; padding: 7px 8px; }
   }
 </style>
@@ -130,11 +139,26 @@
 </div>
 
 <div id="toggles">
+  <button class="tbtn" id="btnNation">&#127963; RIKET</button>
   <button class="tbtn" id="bm_line">&#9889; ELLEDNING</button>
   <button class="tbtn" id="bm_road">&#128667; V&Auml;G</button>
   <button class="tbtn" id="bm_rail">&#128646; J&Auml;RNV&Auml;G</button>
   <button class="tbtn" id="bm_sea">&#128674; SJ&Ouml;FART</button>
   <button class="tbtn" id="bm_air">&#9992; FLYG</button>
+</div>
+
+<div id="natpanel">
+  <div id="cphead">
+    <div id="natname">RIKET</div>
+    <button class="pclose" id="natclose">&#10005;</button>
+  </div>
+  <div id="nattabs">
+    <button class="nattab on" data-tab="forskning">&#128300; FORSKNING</button>
+    <button class="nattab" data-tab="lager">&#127981; LAGER</button>
+    <button class="nattab" data-tab="marknad">&#128176; MARKNAD</button>
+    <button class="nattab" data-tab="forsvar">&#128737; F&Ouml;RSVAR</button>
+  </div>
+  <div id="natbody"></div>
 </div>
 
 <div id="citypanel">

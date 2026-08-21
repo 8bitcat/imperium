@@ -156,6 +156,7 @@ function tickDay() {
 
   // byggkön
   tickQueue();
+  tickIntegration();
   // strömlöst? då står allt still och folk knorrar
   if (e.mw > e.cap) {
     if (state.clock.day % 12 === 0) warn(`\u{26A1} STRÖMBRIST: ${Math.round(e.mw)} MW BEHÖVS, ${e.cap} MW FINNS`);
@@ -188,6 +189,9 @@ function tickQueue() {
     } else if (job.type === 'research') {
       s.nation.research[job.branch] = job.tier;
       toast(`\u{1F52C} ${job.name.toUpperCase()} KLAR`, 'amber', 6000);
+    } else if (job.type === 'buy') {
+      s.store.qty[job.res] = (s.store.qty[job.res] || 0) + 1;
+      toast(`${RESOURCES[job.res].icon} ${RESOURCES[job.res].name} HAR ANLÄNT TILL LAGRET`, 'amber', 5000);
     } else if (job.type === 'unit') {
       s.army.units.push({ type: job.unit, hp: 10 });
       toast(`\u{2694}\u{FE0F} ${job.unit} FÄRDIGT`, 'amber', 5000);
@@ -318,6 +322,10 @@ function finishLink(kind, a, b) {
   const km = kmBetween(cityLL(a), cityLL(b));
   const key = linkKey(kind, a, b);
   if (s.links[key]) { warn('FÖRBINDELSEN FINNS REDAN — UPPGRADERA DEN I STÄLLET'); return; }
+  for (const k of [a, b]) {
+    const why = canLinkCountry(splitKey(k).cid);
+    if (why) { warn(why); return; }
+  }
   const ctx = { powered: powered(), cityBuildings: s.cityB, nameOf: cityName, isCoastal };
   const bl = blockers(kind, a, b, ctx);
   if (bl.length) { warn(bl[0]); return; }
@@ -351,6 +359,13 @@ function pushInfra() {
     cars: l.cars.map(carPos),
   }));
   const lines = s.lines.map((l) => ({ a: cityLL(l.a), b: cityLL(l.b), done: l.done }));
+  // AI-ländernas nät ritas också — dämpat, men synligt
+  const t = performance.now();
+  for (const al of state.world.aiLinks || []) {
+    const cyc = al.kind === 'rail' ? 14000 : 22000;
+    links.push({ kind: al.kind, a: al.a, b: al.b, level: 1, ai: true,
+      cars: [((t / cyc) + al.phase) % 1] });
+  }
   const plants = s.plants.map((p) => ({ ll: cityLL(p.city), done: p.done }));
   globe.setInfra(links, lines, plants);
 }
@@ -494,6 +509,228 @@ function renderCityPanel() {
   body.appendChild(bg);
 }
 
+// ---------- NATIONSPANELEN ----------
+let natTab = 'forskning';
+
+function openNation(tab) {
+  if (tab) natTab = tab;
+  $('#natpanel').style.display = 'block';
+  renderNation();
+}
+
+function renderNation() {
+  const s = state.s;
+  if (!s) return;
+  for (const b of document.querySelectorAll('.nattab')) b.classList.toggle('on', b.dataset.tab === natTab);
+  const body = $('#natbody');
+  body.innerHTML = '';
+  if (natTab === 'forskning') renderResearchTab(body);
+  else if (natTab === 'lager') renderStoreTab(body);
+  else if (natTab === 'marknad') renderMarketTab(body);
+  else renderDefenceTab(body);
+}
+
+// --- FORSKNING ---
+function renderResearchTab(body) {
+  const s = state.s;
+  const active = s.queue.find((q) => q.type === 'research');
+  body.innerHTML = `<div class="dim" style="line-height:2;margin-bottom:8px">`
+    + `FORSKNING KOMMER FRÅN SKOLOR OCH UNIVERSITET. BYGG DEM FÖRST — UTAN BYGGNADER`
+    + ` TICKAR DET IN ${BASE.research} \u{1F52C} PER DAG OCH INGENTING HÄNDER.</div>`
+    + (active ? `<div class="sub">PÅGÅR</div><div class="brow"><span>${active.name}</span>`
+      + `<span class="dim">${active.left} DAGAR KVAR</span></div>` : '');
+
+  const groups = { infra: 'INFRASTRUKTUR & ENERGI', civil: 'CIVILT', mil: 'MILITÄRT' };
+  for (const [g, label] of Object.entries(groups)) {
+    const head = document.createElement('div');
+    head.className = 'sub';
+    head.textContent = label;
+    body.appendChild(head);
+    for (const [bid, def] of Object.entries(RESEARCH)) {
+      if (def.group !== g) continue;
+      const done = s.nation.research[bid] || 0;
+      const row = document.createElement('div');
+      row.style.cssText = 'margin:7px 0';
+      row.innerHTML = `<div style="font-size:7px;color:var(--holo)">${def.icon} ${def.name.toUpperCase()}`
+        + ` <span class="dim">NIVÅ ${done}/${def.tiers.length}</span></div>`;
+      body.appendChild(row);
+      const next = def.tiers[done];
+      if (!next) {
+        row.innerHTML += '<div class="dim">FULLT UTFORSKAD</div>';
+        continue;
+      }
+      const cost = TIER_COST[done], days = TIER_DAYS[done];
+      const btn = document.createElement('button');
+      const can = s.res.research >= cost && !active;
+      btn.className = 'bbtn' + (can ? '' : ' off');
+      btn.innerHTML = `${next.name} <span class="dim">${cost} \u{1F52C} \u{2022} ${days} DAGAR</span>`
+        + `<div class="bdesc">${next.desc || ''}</div>`;
+      btn.onclick = () => {
+        if (active) { warn('EN FORSKNING I TAGET'); return; }
+        if (s.res.research < cost) { warn(`KRÄVER ${cost} \u{1F52C} — DU HAR ${Math.floor(s.res.research)}`); return; }
+        s.res.research -= cost;
+        s.queue.push({ type: 'research', branch: bid, tier: done + 1, name: next.name, left: days, total: days });
+        toast(`\u{1F52C} ${next.name.toUpperCase()} PÅBÖRJAD — ${days} DAGAR`, '', 5000);
+        renderTop(); renderNation();
+      };
+      row.appendChild(btn);
+    }
+  }
+}
+
+// --- LAGER ---
+function renderStoreTab(body) {
+  const s = state.s;
+  const cap = capitalKeyOf(s.home);
+  const held = Object.entries(s.store.qty).filter(([, q]) => q > 0);
+  const used = held.reduce((a, [, q]) => a + q, 0);
+  body.innerHTML = `<div class="dim" style="line-height:2;margin-bottom:8px">`
+    + `RÅVAROR SAMLAS BARA I HUVUDSTADEN (${cityName(cap)}). EN STAD MED RÅVARA MÅSTE`
+    + ` VARA KOPPLAD DIT MED EN FÖRBINDELSE — DÅ BÄR VARJE LEVERANS MED SIG RÅVARAN.</div>`
+    + `<div class="sub">LAGER ${used} / ${s.store.cap}</div>`;
+  if (!s.store.cap) {
+    body.innerHTML += '<div class="dim">DU HAR INGET RÅVARULAGER. BYGG ETT I HUVUDSTADEN.</div>';
+  } else if (!held.length) {
+    body.innerHTML += '<div class="dim">TOMT. KOPPLA IHOP EN RÅVARUSTAD MED HUVUDSTADEN.</div>';
+  } else {
+    for (const [r, q] of held) {
+      body.innerHTML += `<div class="brow"><span>${RESOURCES[r].icon} ${RESOURCES[r].name}</span>`
+        + `<span class="dim">${q} ENHETER</span></div>`;
+    }
+  }
+
+  // vilka av dina städer har råvaror, och är de kopplade?
+  const head = document.createElement('div');
+  head.className = 'sub';
+  head.textContent = 'RÅVAROR I DITT RIKE';
+  body.appendChild(head);
+  let any = false;
+  for (const cid of Object.keys(s.claims)) {
+    (state.cities[cid] || []).forEach((c, i) => {
+      const k = cityKey(cid, i);
+      const r = cityResource(k);
+      if (!r) return;
+      any = true;
+      const linked = connectedToCapital(s.links, k, cap);
+      const row = document.createElement('div');
+      row.className = 'brow';
+      row.innerHTML = `<span>${RESOURCES[r].icon} ${cityName(k)}</span>`
+        + `<span style="color:${linked ? 'var(--green)' : 'var(--red)'}">${linked ? 'KOPPLAD' : 'EJ KOPPLAD'}</span>`;
+      body.appendChild(row);
+    });
+  }
+  if (!any) body.innerHTML += '<div class="dim">INGA RÅVARUSTÄDER FUNNA ÄNNU.</div>';
+}
+
+// --- MARKNAD ---
+function renderMarketTab(body) {
+  const s = state.s;
+  const cap = capitalKeyOf(s.home);
+  const capLL = cityLL(cap);
+  // sjöfart går bara att välja om du har en hamnstad kopplad till huvudstaden
+  const seaOk = Object.values(s.links).some((l) => l.kind === 'sea')
+    || Object.keys(s.cityB).some((k) => (s.cityB[k] || []).includes('harbour') && connectedToCapital(s.links, k, cap));
+  const listings = buildListings(state.world, hashId).slice(0, 40);
+  body.innerHTML = `<div class="dim" style="line-height:2;margin-bottom:8px">`
+    + `KÖPER DU EN RÅVARA BETALAR DU SÄLJARENS PRIS <b>PLUS FRAKTEN</b> — OCH FRAKTEN ÄR`
+    + ` EXAKT DEN INTÄKT TRANSPORTEN HADE GETT DIG ÅT ANDRA HÅLLET. FLYG GÅR ALLTID.`
+    + ` SJÖFART KRÄVER EN HAMN SOM HÄNGER IHOP MED HUVUDSTADEN.</div>`
+    + `<div class="sub">UTBUD (${listings.length})</div>`;
+  if (!listings.length) {
+    body.innerHTML += '<div class="dim">INGET LAND HAR NÅGOT ATT SÄLJA ÄNNU. VÄRLDEN BYGGER FORTFARANDE UPP SIG.</div>';
+    return;
+  }
+  if (!s.store.cap) {
+    body.innerHTML += '<div style="color:var(--red);font-size:7px;line-height:2">DU BEHÖVER ETT RÅVARULAGER FÖR ATT KUNNA TA EMOT KÖP.</div>';
+  }
+  for (const L of listings) {
+    const km = kmBetween(capLL, L.ll);
+    const opts = transportOptions(km, { seaOk, landOk: false });
+    const row = document.createElement('div');
+    row.style.cssText = 'margin:8px 0;border-left:2px solid rgba(255,176,46,0.5);padding-left:7px';
+    row.innerHTML = `<div style="font-size:7px">${RESOURCES[L.res].icon} <b>${RESOURCES[L.res].name}</b>`
+      + ` <span class="dim">FRÅN ${cname(L.cid)} \u{2022} ${L.qty} ENH \u{2022} ${L.ask} \u{1F4B0}/ENH \u{2022} ${km} KM</span></div>`;
+    for (const o of opts) {
+      const total = L.ask + o.cost;
+      const btn = document.createElement('button');
+      btn.className = 'minibtn';
+      btn.innerHTML = `${LINK[o.kind].icon} ${LINK[o.kind].name}: ${total} \u{1F4B0} `
+        + `<span class="dim">(${L.ask} PRIS + ${o.cost} FRAKT) \u{2022} ${o.days} DAGAR</span>`;
+      btn.onclick = () => buyResource(L, o, total);
+      row.appendChild(btn);
+    }
+    body.appendChild(row);
+  }
+}
+
+function buyResource(listing, opt, total) {
+  const s = state.s;
+  if (!s.store.cap) { warn('DU SAKNAR RÅVARULAGER'); return; }
+  const used = Object.values(s.store.qty).reduce((a, b) => a + b, 0);
+  if (used >= s.store.cap) { warn('LAGRET ÄR FULLT — BYGG UT DET'); return; }
+  if (s.res.money < total) { warn(`KRÄVER ${total} \u{1F4B0} — DU HAR ${Math.floor(s.res.money)}`); return; }
+  s.res.money -= total;
+  const st = state.world.stores[listing.cid];
+  if (st) st.qty[listing.res] = Math.max(0, (st.qty[listing.res] || 0) - 1);
+  // leveransen tar tid — den landar i lagret när frakten är framme
+  s.queue.push({ type: 'buy', res: listing.res, left: opt.days, total: opt.days });
+  toast(`${LINK[opt.kind].icon} ${RESOURCES[listing.res].name} KÖPT FRÅN ${cname(listing.cid)} — FRAMME OM ${opt.days} DAGAR`, 'amber', 6000);
+  renderTop(); renderNation();
+}
+
+// --- TOTALFÖRSVAR ---
+function renderDefenceTab(body) {
+  const s = state.s;
+  const e = econSnapshot();
+  body.innerHTML = `<div class="dim" style="line-height:2;margin-bottom:8px">`
+    + `TOTALFÖRSVAR ERSÄTTER KASERNER. DET ÄR ETT LANDSOMFATTANDE PROGRAM MED DAGLIGT`
+    + ` UNDERHÅLL — DET GÅR INTE ATT STARTA I BÖRJAN, UTAN FÖRST NÄR EKONOMIN BÄR DET.</div>`
+    + `<div class="brow"><span>NETTOINKOMST</span><span class="${e.inc.money >= DEFENCE.minIncome ? 'dim' : ''}"`
+    + ` style="color:${e.inc.money >= DEFENCE.minIncome ? 'var(--green)' : 'var(--red)'}">`
+    + `${e.inc.money.toFixed(1)} / ${DEFENCE.minIncome} \u{1F4B0} PER DAG</span></div>`
+    + `<div class="brow"><span>KOSTNAD</span><span class="dim">${DEFENCE.upkeep} \u{1F4B0}/DAG</span></div>`
+    + `<div class="brow"><span>GER</span><span class="dim">+${DEFENCE.manPerDay} \u{1F9CD}/DAG \u{2022} +${DEFENCE.readiness}% I STRID</span></div>`;
+  const btn = document.createElement('button');
+  btn.className = 'btn amber';
+  if (s.defence) {
+    btn.textContent = '\u{1F6D1} LÄGG NER TOTALFÖRSVARET';
+    btn.onclick = () => { s.defence = false; toast('TOTALFÖRSVARET AVVECKLAT', '', 5000); renderTop(); renderNation(); };
+  } else {
+    const ok = e.inc.money >= DEFENCE.minIncome;
+    btn.className = 'btn amber' + (ok ? '' : ' off');
+    btn.textContent = ok ? '\u{1F6E1}\u{FE0F} STARTA TOTALFÖRSVARET' : 'EKONOMIN BÄR DET INTE ÄNNU';
+    btn.onclick = () => {
+      if (e.inc.money < DEFENCE.minIncome) {
+        warn(`KRÄVER ${DEFENCE.minIncome} \u{1F4B0}/DAG I NETTO — DU HAR ${e.inc.money.toFixed(1)}`);
+        return;
+      }
+      s.defence = true;
+      toast('\u{1F6E1}\u{FE0F} TOTALFÖRSVARET ÄR I GÅNG', 'amber', 7000);
+      renderTop(); renderNation();
+    };
+  }
+  body.appendChild(btn);
+
+  // enheter går att bygga när manskapet räcker
+  const ug = document.createElement('div');
+  ug.innerHTML = '<div class="sub">VÄRVA FÖRBAND</div>';
+  for (const [unit, c] of [['INFANTERI', INF_COST], ['STRIDSVAGN', TANK_COST], ['FLYGPLAN', AIR_COST]]) {
+    const b2 = document.createElement('button');
+    const ok = s.res.money >= c.money && s.res.man >= c.man;
+    b2.className = 'bbtn' + (ok ? '' : ' off');
+    b2.innerHTML = `${unit} <span class="dim">${c.money} \u{1F4B0} \u{2022} ${c.man} \u{1F9CD}</span>`;
+    b2.onclick = () => {
+      if (s.res.money < c.money || s.res.man < c.man) { warn('RÄCKER INTE'); return; }
+      s.res.money -= c.money; s.res.man -= c.man;
+      s.queue.push({ type: 'unit', unit, left: 20, total: 20 });
+      toast(`\u{2694}\u{FE0F} ${unit} PÅBÖRJAT — 20 DAGAR`, '', 5000);
+      renderTop(); renderNation();
+    };
+    ug.appendChild(b2);
+  }
+  body.appendChild(ug);
+}
+
 // ---------- AI: bygger upp sitt eget land ----------
 function aiTick() {
   const w = state.world;
@@ -503,24 +740,82 @@ function aiTick() {
   if (!pool.length) return;
   // några länder i taget skruvar upp sin utveckling — det driver deras
   // priser på marknaden och hur mycket de har att sälja
+  w.aiLinks ||= [];
   for (let i = 0; i < 3; i++) {
     const c = pool[Math.floor(Math.random() * pool.length)];
     const d = (w.dev[c.id] ||= { level: 0, power: 0, links: 0 });
     const r = Math.random();
-    if (r < 0.4) d.power++;
-    else if (r < 0.8) d.links++;
-    else d.level++;
+    if (r < 0.4) {
+      d.power++;
+    } else if (r < 0.8) {
+      d.links++;
+      aiBuildLink(c.id, d);      // AI:ns nät ska SYNAS, inte bara vara en siffra
+    } else {
+      d.level++;
+    }
   }
   // deras lager fylls på i takt med utvecklingen
+  // Lagren fylls hos de länder som FAKTISKT byggt nät — inte hos de fyrtio
+  // första i listan, vilket gjorde marknaden slumpmässigt tom.
   w.stores ||= {};
-  for (const c of pool.slice(0, 40)) {
-    const d = w.dev[c.id];
-    if (!d || d.links < 2) continue;
+  for (const [cid, d] of Object.entries(w.dev)) {
+    if (!d || d.links < 2 || state.s.claims[cid]) continue;
+    const c = globe.getCountry(cid);
+    if (!c) continue;
     const st = (w.stores[c.id] ||= { qty: {}, dev: 0.5, ll: c.centroid });
     st.dev = Math.min(1.6, 0.4 + d.level * 0.08);
     const list = resourcesOf(c.id, hashId);
     const res = list[state.clock.day % list.length];
     st.qty[res] = Math.min(60, (st.qty[res] || 0) + 1);
+  }
+}
+
+// AI-länderna drar sina egna linjer mellan sina största städer. De ritas
+// dämpade på kartan så man ser vilka riken som faktiskt byggt upp sig — och
+// vem det därför är värt att handla med.
+function aiBuildLink(cid, d) {
+  const w = state.world;
+  const list = state.cities[cid] || [];
+  if (list.length < 4) return;
+  if (w.aiLinks.filter((l) => l.cid === cid).length >= 6) return;
+  // huvudstaden är navet; nya linjer går ut till de största städerna
+  const capI = Math.max(0, list.findIndex((c) => c.c));
+  const order = list.map((c, i) => ({ c, i })).filter((x) => x.i !== capI)
+    .sort((a, b) => b.c.p - a.c.p);
+  const pick = order[w.aiLinks.filter((l) => l.cid === cid).length];
+  if (!pick) return;
+  const kind = d.links > 4 ? 'rail' : 'road';
+  w.aiLinks.push({ cid, kind, a: list[capI].ll, b: pick.c.ll, level: 1, phase: Math.random() });
+}
+
+// ---------- erövrade länder ----------
+// Ett erövrat land får inte kopplas in i handelsnätet förrän det är HELT
+// integrerat. Fram till dess är det ockuperat område, inte en del av riket.
+function integrationOf(cid) {
+  const s = state.s;
+  if (cid === s.home) return 100;
+  return Math.floor(s.integ?.[cid]?.pct ?? 0);
+}
+
+function canLinkCountry(cid) {
+  const s = state.s;
+  if (!s.claims[cid]) return 'DU KONTROLLERAR INTE LANDET';
+  if (cid !== s.home && integrationOf(cid) < 100) {
+    return `${cname(cid)} ÄR BARA ${integrationOf(cid)}% INTEGRERAT — HANDELSNÄTET KRÄVER 100%`;
+  }
+  return null;
+}
+
+function tickIntegration() {
+  const s = state.s;
+  for (const cid of Object.keys(s.claims)) {
+    if (cid === s.home) continue;
+    const it = (s.integ[cid] ||= { pct: 0 });
+    if (it.pct >= 100) continue;
+    it.pct = Math.min(100, it.pct + 0.35);
+    if (it.pct >= 100) {
+      toast(`\u{1F3F3}\u{FE0F} ${cname(cid)} ÄR HELT INTEGRERAT — NU GÅR DET ATT KOPPLA IN I HANDELSNÄTET`, 'amber', 9000);
+    }
   }
 }
 
@@ -587,13 +882,19 @@ for (const kind of ['road', 'rail', 'sea', 'air']) {
 $('#bm_line')?.addEventListener('click', () => startBuildMode('line'));
 $('#bmcancel')?.addEventListener('click', cancelBuildMode);
 $('#cpclose')?.addEventListener('click', () => { $('#citypanel').style.display = 'none'; });
+$('#btnNation')?.addEventListener('click', () => openNation());
+$('#natclose')?.addEventListener('click', () => { $('#natpanel').style.display = 'none'; });
+for (const b of document.querySelectorAll('.nattab')) {
+  b.addEventListener('click', () => { natTab = b.dataset.tab; renderNation(); });
+}
 
 boot();
 
 // för test och felsökning
 state.debug = {
   tickDay: () => tickDay(), econ: () => econSnapshot(), powered: () => [...powered()],
-  cityKey, capitalKeyOf, buildBuilding, buildPlant, finishLine, finishLink,
+  cityKey, capitalKeyOf, buildBuilding, buildPlant, finishLine, finishLink, openNation,
+  integrationOf, canLinkCountry, aiTick: () => aiTick(),
   upgradeLink, startBuildMode, cityResource, startGame,
   BUILDINGS, PLANTS, LINK, RESEARCH,
 };
