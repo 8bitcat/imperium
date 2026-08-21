@@ -181,15 +181,21 @@ function tickQueue() {
       const b = BUILDINGS[job.key];
       if (b.capacity) s.store.cap += b.capacity;
       toast(`${b.icon} ${b.name} KLAR I ${cityName(job.city)}`, 'amber', 5000);
+      logEvent(`${b.icon} ${b.name} KLAR I ${cityName(job.city)}`, 'build');
     } else if (job.type === 'plant') {
       const p = s.plants.find((x) => x.id === job.id);
       if (p) { p.done = true; toast(`${PLANTS[p.kind].icon} ${PLANTS[p.kind].name} I DRIFT — ${PLANTS[p.kind].mw} MW`, 'amber', 6000); }
     } else if (job.type === 'line') {
       const l = s.lines.find((x) => x.id === job.id);
-      if (l) { l.done = true; toast(`\u{26A1} ELLEDNING KLAR: ${cityName(l.a)} \u{2192} ${cityName(l.b)}`, 'amber', 5000); }
+      if (l) {
+        l.done = true;
+        toast(`\u{26A1} ELLEDNING KLAR: ${cityName(l.a)} \u{2192} ${cityName(l.b)}`, 'amber', 5000);
+        logEvent(`\u{26A1} ELLEDNING ${cityName(l.a)} \u{2192} ${cityName(l.b)}`, 'build');
+      }
     } else if (job.type === 'research') {
       s.nation.research[job.branch] = job.tier;
       toast(`\u{1F52C} ${job.name.toUpperCase()} KLAR`, 'amber', 6000);
+      logEvent(`\u{1F52C} ${job.name.toUpperCase()} KLAR`, 'build');
     } else if (job.type === 'buy') {
       s.store.qty[job.res] = (s.store.qty[job.res] || 0) + 1;
       toast(`${RESOURCES[job.res].icon} ${RESOURCES[job.res].name} HAR ANLÄNT TILL LAGRET`, 'amber', 5000);
@@ -334,6 +340,7 @@ function finishLink(kind, a, b) {
   s.res.money -= cost;
   s.links[key] = makeLink(kind, a, b, cityLL(a), cityLL(b));
   const inc = payload(s.links[key], linkIncomeMult(s.nation.research, kind) * ideoLinkMult(s.nation.ideology));
+  logEvent(`${LINK[kind].icon} ${LINK[kind].name}: ${cityName(a)} \u{2194} ${cityName(b)} (${km} KM)`, 'trade');
   toast(`${LINK[kind].icon} ${LINK[kind].name} BYGGD: ${cityName(a)} \u{2194} ${cityName(b)} — ${km} KM, ${inc} \u{1F4B0} PER LEVERANS`, 'amber', 7000);
   cancelBuildMode(); renderTop(); pushInfra();
 }
@@ -946,6 +953,76 @@ function tickIntegration() {
   }
 }
 
+
+// ---------- KONTROLLER FRÅN V5-SKALET ----------
+// Revisionen visade att en rad knappar fanns i skalet utan kod bakom sig.
+// Här kopplas de som hör hemma i TRADE WARS.
+
+// PAUS — dygnsklockan stannar helt
+$('#pausebtn')?.addEventListener('click', () => {
+  state.clock.paused = !state.clock.paused;
+  $('#pausebtn').textContent = state.clock.paused ? '\u{25B6} SPELA' : '\u{23F8} PAUS';
+  toast(state.clock.paused ? '\u{23F8} PAUSAT' : '\u{25B6} IGÅNG', '', 2500);
+});
+
+// HISTORIK — allt som hänt i riket, med filter
+const history = [];
+function logEvent(text, tag = 'all') {
+  history.unshift({ day: state.clock.day, text, tag });
+  if (history.length > 240) history.pop();
+}
+let histFilter = 'all';
+function renderHistory() {
+  const list = $('#histlist');
+  if (!list) return;
+  const rows = history.filter((h) => histFilter === 'all' || h.tag === histFilter);
+  list.innerHTML = rows.length
+    ? rows.map((h) => '<div class="hrow"><span class="hday">DAG ' + h.day + '</span> ' + h.text + '</div>').join('')
+    : '<div class="dim">INGET HAR HÄNT ÄNNU.</div>';
+}
+$('#histbtn')?.addEventListener('click', () => {
+  $('#histpanel').classList.toggle('show');
+  renderHistory();
+});
+$('#histclose')?.addEventListener('click', () => $('#histpanel').classList.remove('show'));
+for (const b of document.querySelectorAll('.htab')) {
+  b.addEventListener('click', () => {
+    histFilter = b.dataset.h === 'mine' ? 'build' : b.dataset.h === 'war' ? 'trade' : 'all';
+    for (const x of document.querySelectorAll('.htab')) x.classList.toggle('on', x === b);
+    renderHistory();
+  });
+}
+
+// KARTLAGREN — samma togglar som i V5, minus de som saknar mening i V6
+const TOGGLES = [
+  ['#tgCities', () => { globe.setShowCities(!globe.showCities); return globe.showCities; }],
+  ['#tgTerrain', () => {
+    const on = !globe.showTerrain;
+    if (on && !state._terr) {
+      const map = {};
+      for (const c of globe.countries) {
+        const lat = Math.abs(c.centroid[1]);
+        map[c.id] = lat > 60 ? '#c9d6e0' : lat > 45 ? '#4e7a52' : lat > 28 ? '#b8a86a' : lat > 12 ? '#7a8f4a' : '#3f7a4a';
+      }
+      globe.setTerrainColors(map);
+      state._terr = true;
+    }
+    globe.setShowTerrain(on);
+    return on;
+  }],
+  ['#tgSpin', () => { globe.autoRotate = !globe.autoRotate; return globe.autoRotate; }],
+];
+for (const [sel, fn] of TOGGLES) {
+  const el = $(sel);
+  if (!el) continue;
+  el.addEventListener('click', () => el.classList.toggle('on', !!fn()));
+}
+// dessa hör till V5:s krigsspel och finns inte i TRADE WARS
+for (const sel of ['#tg3d', '#tgTrade', '#tgLegend', '#btnTV', '#btnJoin', '#btnContinue', '#btnResume']) {
+  const el = $(sel);
+  if (el) el.style.display = 'none';
+}
+
 // ---------- start ----------
 async function boot() {
   $('#loading').textContent = 'LADDAR VÄRLDEN...';
@@ -1055,7 +1132,7 @@ $('#bmcancel')?.addEventListener('click', cancelBuildMode);
 $('#cpclose')?.addEventListener('click', () => { $('#citypanel').style.display = 'none'; });
 $('#nationbtn')?.addEventListener('click', () => openNation());
 $('#btnRiket')?.addEventListener('click', () => openNation());
-$('#iclose')?.addEventListener('click', () => { if ($('#infopanel')) $('#infopanel').style.display = 'none'; });
+$('#infoclose')?.addEventListener('click', () => { if ($('#infopanel')) $('#infopanel').style.display = 'none'; });
 $('#natclose')?.addEventListener('click', () => { $('#nation').classList.remove('show'); });
 for (const b of document.querySelectorAll('.nattab')) {
   b.addEventListener('click', () => { natTab = b.dataset.tab; renderNation(); });
