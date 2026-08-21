@@ -381,6 +381,7 @@ function renderTop() {
   if (!s) return;
   const e = econSnapshot();
   const f = (n) => (n >= 0 ? '+' : '') + n.toFixed(1);
+  if (!$('#resbar')) return;
   $('#topleft').innerHTML = `TRADE WARS V${VERSION} <span style="color:var(--holo-dim)">// DAG ${state.clock.day}</span>`;
   $('#resbar').innerHTML = [
     `\u{1F4B0} ${Math.floor(s.res.money)} <small>${f(e.inc.money)}</small>`,
@@ -513,7 +514,7 @@ let natTab = 'forskning';
 
 function openNation(tab) {
   if (tab) natTab = tab;
-  $('#natpanel').style.display = 'block';
+  $('#nation').classList.add('show');
   renderNation();
 }
 
@@ -523,7 +524,9 @@ function renderNation() {
   for (const b of document.querySelectorAll('.nattab')) b.classList.toggle('on', b.dataset.tab === natTab);
   const body = $('#natbody');
   body.innerHTML = '';
-  if (natTab === 'forskning') renderResearchTab(body);
+  if (natTab === 'oversikt') renderOverviewTab(body);
+  else if (natTab === 'ideologi') renderIdeologyTab(body);
+  else if (natTab === 'forskning') renderResearchTab(body);
   else if (natTab === 'lager') renderStoreTab(body);
   else if (natTab === 'marknad') renderMarketTab(body);
   else renderDefenceTab(body);
@@ -730,6 +733,72 @@ function renderDefenceTab(body) {
   body.appendChild(ug);
 }
 
+
+// --- ÖVERSIKT: rikets läge på en skärm ---
+function renderOverviewTab(body) {
+  const s = state.s;
+  const e = econSnapshot();
+  const pw = powered();
+  const cities = (state.cities[s.home] || []).length;
+  const built = Object.values(s.cityB).reduce((a, x) => a + x.length, 0);
+  const row = (k, v, col) => '<div class="brow"><span>' + k + '</span>'
+    + '<span style="color:' + (col || 'var(--holo-dim)') + '">' + v + '</span></div>';
+  body.innerHTML = '<div class="sub">' + cname(s.home) + '</div>'
+    + row('DAG', state.clock.day)
+    + row('IDEOLOGI', IDEOLOGIES[s.nation.ideology].icon + ' ' + IDEOLOGIES[s.nation.ideology].name.toUpperCase(), 'var(--amber)')
+    + row('STÄDER', pw.size + ' MED EL AV ' + cities)
+    + row('BYGGNADER', built)
+    + row('FÖRBINDELSER', Object.keys(s.links).length)
+    + row('ELNÄT', s.lines.filter((l) => l.done).length + ' LEDNINGAR')
+    + '<div class="sub">DAGLIGT</div>'
+    + row('PENGAR', e.inc.money.toFixed(1), e.inc.money >= 0 ? 'var(--green)' : 'var(--red)')
+    + row('UNDERHÅLL', '-' + e.upkeep.toFixed(1), 'var(--red)')
+    + row('FORSKNING', '+' + e.inc.research.toFixed(1))
+    + row('POLITISK MAKT', '+' + e.inc.pp.toFixed(1))
+    + row('MANSKAP', '+' + e.inc.man.toFixed(1))
+    + row('STRÖM', Math.round(e.mw) + ' / ' + e.cap + ' MW', e.mw > e.cap ? 'var(--red)' : 'var(--green)')
+    + '<div class="sub">BYGGKÖ (' + s.queue.length + ')</div>';
+  if (!s.queue.length) body.innerHTML += '<div class="dim">INGET PÅGÅR.</div>';
+  for (const j of s.queue.slice(0, 12)) {
+    const name = j.type === 'building' ? BUILDINGS[j.key].name
+      : j.type === 'plant' ? 'KRAFTVERK'
+        : j.type === 'line' ? 'ELLEDNING'
+          : j.type === 'research' ? j.name
+            : j.type === 'buy' ? 'LEVERANS ' + RESOURCES[j.res].name : j.unit;
+    body.innerHTML += '<div class="brow"><span>' + name + '</span>'
+      + '<span class="dim">' + j.left + ' / ' + j.total + ' DAGAR</span></div>';
+  }
+}
+
+// --- IDEOLOGI: bonusarna är satta efter vad systemen faktiskt gör ---
+function renderIdeologyTab(body) {
+  const s = state.s;
+  body.innerHTML = '<div class="dim" style="line-height:2;margin-bottom:8px">'
+    + 'IDEOLOGIN STYR BASPOÄNGEN, BYGGKOSTNADEN OCH UNDERHÅLLET. BYTE KOSTAR 60 POLITISK MAKT.</div>';
+  for (const [id, io] of Object.entries(IDEOLOGIES)) {
+    const cur = id === s.nation.ideology;
+    const mods = Object.entries(io.mods)
+      .map(([k, v]) => (POINTS[k] ? POINTS[k].icon : k.toUpperCase()) + ' ' + (v > 0 ? '+' : '') + v + '%')
+      .join('  ');
+    const btn = document.createElement('button');
+    btn.className = 'bbtn' + (cur ? '' : '');
+    btn.style.borderColor = cur ? 'var(--amber)' : '';
+    btn.innerHTML = io.icon + ' <b>' + io.name.toUpperCase() + '</b>'
+      + (cur ? ' <span style="color:var(--amber)">NUVARANDE</span>' : '')
+      + '<div class="bdesc">' + io.desc + '</div>'
+      + '<div class="bdesc" style="color:var(--holo)">' + mods + '</div>';
+    btn.onclick = () => {
+      if (cur) return;
+      if (s.res.pp < 60) { warn('KRÄVER 60 POLITISK MAKT'); return; }
+      s.res.pp -= 60;
+      s.nation.ideology = id;
+      toast(io.icon + ' ' + io.name.toUpperCase() + ' INFÖRD', 'amber', 6000);
+      renderTop(); renderNation();
+    };
+    body.appendChild(btn);
+  }
+}
+
 // ---------- AI: bygger upp sitt eget land ----------
 function aiTick() {
   const w = state.world;
@@ -834,34 +903,64 @@ async function boot() {
   }
   globe.setCities(state.cities);
   globe.onSelectCity = onCityClicked;
-  globe.onSelect = (c) => { if (c) toast(`${c.name.toUpperCase()} \u{2022} KLICKA PÅ EN STAD FÖR ATT BYGGA`, '', 3000); };
+  globe.onSelect = (c) => showCountry(c);   // landsfaktan ska alltid svara på klick
   // V6 körs alltid i 3D — pixelläget finns inte här
   if (globe.setMode3D(true) !== true) {
     $('#loading').textContent = 'DIN WEBBLÄSARE SAKNAR WEBGL — TRADE WARS KRÄVER 3D';
     return;
   }
   $('#loading').style.display = 'none';
-  $('#menu').style.display = 'flex';
+  $('#menu').classList.add('show');
 }
 
-$('#btnStart')?.addEventListener('click', () => {
-  $('#menu').style.display = 'none';
-  toast('VÄLJ DITT HEMLAND PÅ KLOTET', 'amber', 8000);
-  globe.onSelect = (c) => {
-    if (!c) return;
-    if (state.s) return;
-    if (!confirm(`Bygga upp ${c.name}?`)) return;
-    startGame(c.id);
-  };
+$('#btnSolo')?.addEventListener('click', () => {
+  $('#menu').classList.remove('show');
+  if ($('#hud')) $('#hud').style.display = 'block';
+  $('#toggles').style.display = 'flex';
+  toast('VÄLJ DITT HEMLAND — KLICKA ETT LAND OCH TRYCK GÖR TILL HEMLAND', 'amber', 12000);
+  globe.onSelect = (c) => showCountry(c);
 });
+
+// Landsfaktan: samma flöde som i V5 — klicka ett land, läs fakta, välj det.
+function showCountry(c) {
+  const panel = $('#infopanel');
+  if (!c) { panel.style.display = 'none'; return; }
+  state.selCountry = c.id;
+  panel.style.display = 'block';
+  $('#iname').textContent = c.name.toUpperCase();
+  const f = state.facts[c.id] || {};
+  const flag = $('#fflag');
+  if (f.a2) {
+    flag.src = 'https://flagcdn.com/w80/' + f.a2.toLowerCase() + '.png';
+    flag.style.display = 'block';
+  } else {
+    flag.style.display = 'none';
+  }
+  const nCities = (state.cities[c.id] || []).length;
+  $('#fpop').innerHTML = f.p ? '<b>INVÅNARE:</b> ' + (f.p / 1e6).toFixed(1) + ' MILJONER' : '';
+  $('#fcap').innerHTML = f.c ? '<b>HUVUDSTAD:</b> ' + String(f.c).toUpperCase() : '';
+  $('#fcity').innerHTML = '<b>STÄDER:</b> ' + nCities;
+  const mine = state.s?.claims[c.id];
+  $('#istatus').textContent = !state.s ? 'VÄLJ SOM HEMLAND'
+    : mine ? (c.id === state.s.home ? 'DITT HEMLAND' : 'DITT — ' + integrationOf(c.id) + '% INTEGRERAT')
+      : 'FRÄMMANDE LAND';
+  const cb = $('#claimbtn');
+  cb.style.display = state.s ? 'none' : 'block';
+  cb.textContent = 'GÖR TILL HEMLAND';
+  cb.onclick = () => { if (!state.s) startGame(c.id); };
+  const fb = $('#fbuild');
+  if (fb) fb.style.display = 'none';
+}
 
 function startGame(home) {
   newRealm(home);
   state.mode = 'solo';
-  globe.onSelect = (c) => { if (c) toast(`${c.name.toUpperCase()}`, '', 2500); };
+  globe.onSelect = (c) => showCountry(c);
   applyState();
-  $('#hud').style.display = 'block';
+  if ($('#hud')) $('#hud').style.display = 'block';
   $('#toggles').style.display = 'flex';
+  if ($('#claimbtn')) $('#claimbtn').style.display = 'none';
+  if ($('#infopanel')) $('#infopanel').style.display = 'none';
   globe.animateTo(capitalLLOf(home), 3.2, 1600);
   renderTop();
   toast(`\u{1F3D7}\u{FE0F} ${cname(home)} — HUVUDSTADEN HAR ETT VINDKRAFTVERK. DRA EL TILL FLER STÄDER.`, 'amber', 12000);
@@ -886,8 +985,9 @@ for (const kind of ['road', 'rail', 'sea', 'air']) {
 $('#bm_line')?.addEventListener('click', () => startBuildMode('line'));
 $('#bmcancel')?.addEventListener('click', cancelBuildMode);
 $('#cpclose')?.addEventListener('click', () => { $('#citypanel').style.display = 'none'; });
-$('#btnNation')?.addEventListener('click', () => openNation());
-$('#natclose')?.addEventListener('click', () => { $('#natpanel').style.display = 'none'; });
+$('#nationbtn')?.addEventListener('click', () => openNation());
+$('#iclose')?.addEventListener('click', () => { if ($('#infopanel')) $('#infopanel').style.display = 'none'; });
+$('#natclose')?.addEventListener('click', () => { $('#nation').classList.remove('show'); });
 for (const b of document.querySelectorAll('.nattab')) {
   b.addEventListener('click', () => { natTab = b.dataset.tab; renderNation(); });
 }
