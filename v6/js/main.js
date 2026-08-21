@@ -290,8 +290,7 @@ function updateBuildBar() {
 
 function onCityClicked(city) {
   const cid = city.country;
-  const idx = (state.cities[cid] || []).indexOf(city);
-  const key = cityKey(cid, idx);
+  const key = cityKey(cid, city.idx);
   const bm = state.build;
   if (!bm) { state.selCity = key; openCityPanel(key); return; }
   if (!state.s.claims[cid]) { warn('DU KONTROLLERAR INTE DET LANDET'); return; }
@@ -836,6 +835,11 @@ async function boot() {
   globe.setCities(state.cities);
   globe.onSelectCity = onCityClicked;
   globe.onSelect = (c) => { if (c) toast(`${c.name.toUpperCase()} \u{2022} KLICKA PÅ EN STAD FÖR ATT BYGGA`, '', 3000); };
+  // V6 körs alltid i 3D — pixelläget finns inte här
+  if (globe.setMode3D(true) !== true) {
+    $('#loading').textContent = 'DIN WEBBLÄSARE SAKNAR WEBGL — TRADE WARS KRÄVER 3D';
+    return;
+  }
   $('#loading').style.display = 'none';
   $('#menu').style.display = 'flex';
 }

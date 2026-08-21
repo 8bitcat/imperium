@@ -134,12 +134,14 @@ export class Globe {
   setCities(byCountry) {
     this.cities = [];
     for (const [country, list] of Object.entries(byCountry)) {
-      for (const c of list) {
+      list.forEach((c, idx) => {
+        // idx MÅSTE följa med: listan sorteras om här, och spelet slår upp
+        // städer på 'landId:index' i originaldatan
         this.cities.push({
-          ...c, country,
+          ...c, country, idx,
           tier: c.tier ?? (c.c ? 0 : (c.p >= 3e6 ? 0 : c.p >= 800e3 ? 1 : 2)),
         });
-      }
+      });
     }
     this.cities.sort((a, b) => b.p - a.p);
     this.sceneDirty = true;
@@ -2111,10 +2113,11 @@ export class Globe {
       // världen bara huvudstäder och storstäder.
       const maxTier = this.zoom < 1.6 ? 0 : this.zoom < 2.6 ? 1 : this.zoom < 3.8 ? 2 : 3;
       for (const city of this.cities) {
+        // Städerna i DINA länder är spelplanen — de måste alltid gå att klicka
+        // på, oavsett zoom. (Gallringen här gjorde att bara huvudstaden var
+        // valbar, och då gick det inte att bygga någonting alls.)
         const mine = !!this.claims?.[city.country];
         if (!mine && city.tier > Math.min(maxTier, 1) && !city.c) continue;
-        if (mine && this.zoom < 1.8 && city.tier > 1 && !city.c) continue;
-        if (!mine && city.tier > maxTier && !city.c) continue;
         if (!this._front(city.ll, 1.5)) continue;
         const p = this._project(city.ll);
         if (!p || p[0] < -4 || p[1] < -4 || p[0] > W + 4 || p[1] > H + 4) continue;
