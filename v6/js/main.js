@@ -950,6 +950,13 @@ function showCountry(c) {
   cb.onclick = () => { if (!state.s) startGame(c.id); };
   const fb = $('#fbuild');
   if (fb) fb.style.display = 'none';
+  // NATION-knappen bor i landsfaktan — den MÅSTE visas för egna länder,
+  // annars finns ingen väg in i menyerna alls
+  const nb = $('#nationbtn');
+  if (nb) {
+    nb.style.display = mine ? 'block' : 'none';
+    nb.onclick = () => openNation();
+  }
 }
 
 function startGame(home) {
@@ -960,7 +967,7 @@ function startGame(home) {
   if ($('#hud')) $('#hud').style.display = 'block';
   $('#toggles').style.display = 'flex';
   if ($('#claimbtn')) $('#claimbtn').style.display = 'none';
-  if ($('#infopanel')) $('#infopanel').style.display = 'none';
+
   globe.animateTo(capitalLLOf(home), 3.2, 1600);
   renderTop();
   toast(`\u{1F3D7}\u{FE0F} ${cname(home)} — HUVUDSTADEN HAR ETT VINDKRAFTVERK. DRA EL TILL FLER STÄDER.`, 'amber', 12000);
@@ -986,6 +993,7 @@ $('#bm_line')?.addEventListener('click', () => startBuildMode('line'));
 $('#bmcancel')?.addEventListener('click', cancelBuildMode);
 $('#cpclose')?.addEventListener('click', () => { $('#citypanel').style.display = 'none'; });
 $('#nationbtn')?.addEventListener('click', () => openNation());
+$('#btnRiket')?.addEventListener('click', () => openNation());
 $('#iclose')?.addEventListener('click', () => { if ($('#infopanel')) $('#infopanel').style.display = 'none'; });
 $('#natclose')?.addEventListener('click', () => { $('#nation').classList.remove('show'); });
 for (const b of document.querySelectorAll('.nattab')) {

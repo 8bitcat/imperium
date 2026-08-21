@@ -462,6 +462,23 @@ export class Globe {
     }
   }
 
+  // Städerna i egna länder ritas som tydliga markörer i kompositpasset —
+  // mörk ram + ljus kärna, så de läser mot vilken ägarfärg som helst.
+  _drawOwnCities(b, t) {
+    if (!this.claims) return;
+    for (const v of this._visCities || []) {
+      if (!this.claims[v.city.country]) continue;
+      const x = Math.round(v.x), y = Math.round(v.y);
+      const cap = !!v.city.c;
+      b.fillStyle = 'rgba(4,10,18,0.92)';
+      b.fillRect(x - 2, y - 2, 5, 5);
+      b.fillStyle = cap ? '#ffd24f' : '#bfeaff';
+      b.fillRect(x - 1, y - 1, 3, 3);
+      b.fillStyle = cap ? '#fff3c4' : '#ffffff';
+      b.fillRect(x, y, 1, 1);
+    }
+  }
+
   // Varje transportslag ska gå att känna igen på en halv sekund.
   _drawVehicle(b, kind, x, y) {
     if (kind === 'road') {
@@ -730,6 +747,7 @@ export class Globe {
       this._drawSatellites(b, t);
     }
 
+    this._drawOwnCities(b, t);
     this._drawInfra(b, t);
     this._drawPen(b);
 
@@ -2176,12 +2194,15 @@ export class Globe {
     entries.sort((a, b) => b.area - a.area);
     this._labels = entries.slice(0, 28);
 
-    if (this.showCities && this.zoom >= 2.2) {
+    if (this.showCities && this.zoom >= 1.9) {
       let count = 0;
       for (const v of this._visCities) {
-        if (count >= 28) break;
-        if (v.city.tier === 2 && this.zoom < 5) continue;
-        if (v.city.tier === 3 && this.zoom < 6.5) continue;
+        if (count >= 40) break;
+        const mine = !!this.claims?.[v.city.country];
+        // egna städer får namn tidigt — man ska kunna sikta på dem när man bygger
+        if (!mine && v.city.tier === 2 && this.zoom < 5) continue;
+        if (!mine && v.city.tier === 3 && this.zoom < 6.5) continue;
+        if (mine && this.zoom < 2.6 && !v.city.c) continue;
         this._labels.push({ x: v.x, y: v.y, text: v.city.n.toUpperCase(), kind: 'city', capital: !!v.city.c });
         count++;
       }
