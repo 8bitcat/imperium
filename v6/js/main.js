@@ -1053,6 +1053,7 @@ $('#btnSolo')?.addEventListener('click', () => {
   $('#menu').classList.remove('show');
   if ($('#hud')) $('#hud').style.display = 'block';
   $('#topbar').style.display = 'flex';
+  $('#resbar').style.display = 'flex';
   $('#toggles').style.display = 'flex';
   toast('VÄLJ DITT HEMLAND — KLICKA ETT LAND OCH TRYCK GÖR TILL HEMLAND', 'amber', 12000);
   globe.onSelect = (c) => showCountry(c);
