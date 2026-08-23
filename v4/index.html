@@ -487,11 +487,14 @@
   }
   #natres { font-size: 8px; color: var(--text); display: flex; gap: 14px; flex-wrap: wrap; }
   #natres b { color: var(--amber); font-weight: normal; }
-  /* rutan måste rymma en lagbeskrivning på 2–3 meningar utan att hoppa i höjd */
+  /* Förhandsrutan får ALDRIG ändra höjd när man hovrar — då hoppar hela panelen
+     under den. Höjden är därför fast och innehållet scrollar internt. I LAGAR
+     reserveras extra plats eftersom beskrivningarna är 2–3 meningar långa. */
   #natpreview {
     font-size: 7px; color: var(--holo-dim); line-height: 1.9;
-    min-height: 30px; max-height: 84px; overflow-y: auto; margin-top: 5px;
+    height: 30px; overflow: hidden; margin-top: 5px;
   }
+  #nation[data-tab="lagar"] #natpreview { height: 76px; overflow-y: auto; }
   #natpreview .dp { color: #4ae37a; }
   #natpreview .dn { color: var(--red); }
   #natpreview .dc { color: var(--amber); }

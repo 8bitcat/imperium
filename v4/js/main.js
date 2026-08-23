@@ -993,11 +993,18 @@ function renderFactTrade(c, dealsOnly = false) {
   }
   // V5: ideologisk fiendskap fördyrar handeln — och stoppar den helt till slut.
   const ideoWall = tradeBlockedBy(s.nation, ideoOf(c.id));
-  const priceMul = tradeCostFactor(s.nation, ideoOf(c.id));
-  if (priceMul > 1 && !ideoWall) {
+  // ideologisk fiendskap fördyrar; egen infrastruktur gör handeln billigare
+  const infraCut = tradeDevFactor(worldCtx().world, Object.keys(s.claims || {}));
+  const priceMul = tradeCostFactor(s.nation, ideoOf(c.id)) * infraCut;
+  if (!ideoWall && (Math.abs(priceMul - 1) > 0.01 || infraCut < 1)) {
+    const bits = [];
+    if (ideoGap(c.id) > 35) bits.push(`<span style="color:var(--red)">\u{26A0}\u{FE0F} IDEOLOGISK FRIKTION (${ideoGap(c.id)})</span>`);
+    if (infraCut < 1) bits.push(`<span style="color:#4ae37a">\u{1F309} DIN INFRASTRUKTUR -${Math.round((1 - infraCut) * 100)}%</span>`);
+    const diff = Math.round((priceMul - 1) * 100);
+    bits.push(diff === 0 ? 'NORMALPRIS' : `<span style="color:${diff > 0 ? 'var(--red)' : '#4ae37a'}">SLUTPRIS ${diff > 0 ? '+' : ''}${diff}%</span>`);
     const note = document.createElement('div');
-    note.style.cssText = 'font-size:6px;color:var(--red);line-height:1.9;margin:2px 0';
-    note.textContent = `\u{26A0}\u{FE0F} IDEOLOGISK FRIKTION (${ideoGap(c.id)}) — HANDELN KOSTAR ${Math.round((priceMul - 1) * 100)}% MER`;
+    note.style.cssText = 'font-size:6px;line-height:1.9;margin:2px 0;color:var(--holo-dim)';
+    note.innerHTML = bits.join(' \u{00B7} ');
     ft.appendChild(note);
   }
   for (const r of theirs) {
@@ -2179,6 +2186,11 @@ function tickDay() {
   // V5: modifierarna omprövas varje dag mot landets faktiska läge
   tickModifiersNow();
 
+  // Skyddsnät: skulle händelserutan försvinna utan att ett val gjordes sitter
+  // pendingEvent kvar och INGA fler händelser skulle komma resten av partiet.
+  // Går rutan inte att se längre släpper vi flaggan.
+  if (state.pendingEvent && !$('#eventovl').classList.contains('show')) state.pendingEvent = null;
+
   // V5: händelser. En händelse ungefär varannan minut realtid (≈60 speldagar),
   // men bara om något i landets läge faktiskt matchar en händelse.
   if (!state.pendingEvent && --s.nextEvent <= 0) {
@@ -2618,9 +2630,10 @@ function maybeAttackPlayer(ctx) {
   const att = cands.sort((a, b) => aiMight(world, b) - aiMight(world, a))[0];
   const s = state.solo;
   // allierade och vapenvilor respekteras; ideologiskt närstående låter dig vara
+  // allierade och vapenvilor respekteras
+  if (isAlly(att) || truceLeft(att)) return;
   const options = mine
-    .filter((m) => aiCanReach(world, att, m.cid) && !world.aiWars.some((w) => w.target === m.cid))
-    .filter(() => !isAlly(att) && !truceLeft(att));
+    .filter((m) => aiCanReach(world, att, m.cid) && !world.aiWars.some((w) => w.target === m.cid));
   if (!options.length) return;
   // V5: värdera varje mål — svagt försvar och högt värde först
   const scored = options.map((m) => ({
@@ -2672,6 +2685,7 @@ function aiWorldTick() {
     advanceGoals(ctx);
   }
   tickVotes(ctx);
+  aiDevelopmentTick(ctx);
   if (Math.random() < 0.08) maybeAttackPlayer(ctx);
   tickAiWars(ctx);
   tickDefenses(ctx);
@@ -2771,23 +2785,6 @@ function aiDevTick(ctx) {
       if (old) old.type = old.type === 'INF' ? 'TANK' : 'FLYG';
     }
   }
-  // V5: länderna bygger också ut infrastruktur och stadsnivå. Rika, fredliga
-  // länder drar ifrån — det syns direkt i INFRASTRUKTUR-lagret på kartan.
-  const atWar = world.aiWars.some((w) => w.att === c.id || w.target === c.id);
-  const wealth = Math.min(2, (WEALTH_TIER[c.id] || 1) * (1 + (d.eco || 0) * 0.35));
-  const built = aiDevStep(world, c.id, { wealth, atWar, dream });
-  if (built) {
-    // erövrade områden lyfts med kärnlandet, men långsammare
-    for (const held of world.aiEmpires?.[c.id]?.owned || []) {
-      if (Math.random() < 0.4) raiseDev(world, held, built.kind, Math.ceil(DEV_STEP / 2));
-    }
-    if (built.level % 25 === 0) {
-      toast(`${DEV_KINDS[built.kind].icon} ${c.name.toUpperCase()}: ${DEV_KINDS[built.kind].name} NIVÅ ${built.level} (${devLabel(built.level)})`, '', 5000);
-      logEvent(`${DEV_KINDS[built.kind].icon} ${cname(c.id)} NÅR ${DEV_KINDS[built.kind].name} ${built.level}`);
-    }
-    if (state.infraLayer) refreshInfraLayer();
-  }
-
   // rymdprogrammet i mål → landet skjuter upp satelliter som syns på globen
   if (focus === 'space' && d.space >= 2) {
     world.spaceNations ||= [];
@@ -2798,6 +2795,36 @@ function aiDevTick(ctx) {
       updateSpaceNations();
     }
   }
+}
+
+// V5: världens länder bygger ut infrastruktur och stadsnivå.
+// Detta körs VARJE världstick över flera länder — låg det kvar i aiDevTick (som
+// bara nås på ~24% av ticken och då för ett enda land) hann kartan aldrig
+// förändras under ett parti, och hela INFRASTRUKTUR-lagret var meningslöst.
+const AI_DEV_PER_TICK = 4;
+function aiDevelopmentTick(ctx) {
+  const { world, blocked } = ctx;
+  const all = globe.countries.filter((c) => !blocked.has(c.id));
+  if (!all.length) return;
+  let changed = false;
+  for (let i = 0; i < AI_DEV_PER_TICK; i++) {
+    const c = all[Math.floor(Math.random() * all.length)];
+    const d = (world.dev[c.id] ||= { mil: 0, eco: 0, wel: 0, space: 0 });
+    const atWar = world.aiWars.some((w) => w.att === c.id || w.target === c.id);
+    const wealth = Math.min(2, (WEALTH_TIER[c.id] || 1) * (1 + (d.eco || 0) * 0.35));
+    const built = aiDevStep(world, c.id, { wealth, atWar, dream: aiDream(world, c.id) });
+    if (!built) continue;
+    changed = true;
+    // erövrade områden lyfts med kärnlandet, men långsammare
+    for (const held of world.aiEmpires?.[c.id]?.owned || []) {
+      if (Math.random() < 0.4) raiseDev(world, held, built.kind, Math.ceil(DEV_STEP / 2));
+    }
+    if (built.level % 25 === 0) {
+      toast(`${DEV_KINDS[built.kind].icon} ${c.name.toUpperCase()}: ${DEV_KINDS[built.kind].name} NIVÅ ${built.level} (${devLabel(built.level)})`, '', 5000);
+      logEvent(`${DEV_KINDS[built.kind].icon} ${cname(c.id)} NÅR ${DEV_KINDS[built.kind].name} ${built.level}`);
+    }
+  }
+  if (changed && state.infraLayer) refreshInfraLayer();
 }
 
 // Länder byter ideologi när de kört fast — för att låsa upp nya fördelar
@@ -3315,6 +3342,8 @@ function modSummary(mods, max = 4) {
 function renderNationTab() {
   const body = $('#natbody');
   document.querySelectorAll('.nattab').forEach((el) => el.classList.toggle('on', el.dataset.tab === natTab));
+  // fliken styr förhandsrutans fasta höjd (se #natpreview i index.html)
+  $('#nation').dataset.tab = natTab;
   recomputeNation();
   if (natTab === 'lagar') return renderLawsTab(body);
   if (natTab === 'ideologi') return renderIdeologyTab(body);
@@ -4685,9 +4714,10 @@ function wireToggles() {
   const tgIn = $('#tgInfra');
   tgTe.addEventListener('click', () => {
     const on = !globe.showTerrain || state.infraLayer;
-    // terräng och infrastruktur delar samma färglager — bara ett i taget
+    // terräng och infrastruktur delar samma färglager — bara ett i taget.
+    // OBS: bara klassen får styra synligheten. show() sätter inline display:none
+    // som annars slår ut .show för gott och legenden aldrig kommer tillbaka.
     state.infraLayer = false;
-    show($('#infralegend'), false);
     $('#infralegend').classList.remove('show');
     tgIn.classList.remove('on');
     if (on) globe.setTerrainColors(terrainColorMap ||= buildTerrainColors());

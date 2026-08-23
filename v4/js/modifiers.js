@@ -219,8 +219,10 @@ export const MODIFIERS = {
     when: (c) => c.harmony < 0.3,
     mods: { ideopower: -18, polpower: -12, approval: -8, unrest: 8 },
     actions: [
-      { text: 'ANPASSA LAGARNA EFTER PARTIET', cost: { pp: 40 }, tip: 'Kostar politisk makt — men du måste ändå ändra lagarna själv.' },
-      { text: 'BYT IDEOLOGI I STÄLLET', tip: 'Gratis råd: gå till IDEOLOGI-fliken och välj en linje du faktiskt styr efter.' },
+      { text: 'KALLA TILL PARTIKONGRESS', cost: { pp: 40 }, temp: { ideopower: 18, stability: 12, unrest: -10 },
+        tip: 'Köper dig arbetsro. Harmonin måste du ändå lagstifta fram i LAGAR-fliken.' },
+      { text: 'STÅ FAST — PARTIET FÅR ANPASSA SIG', cost: { pp: 25 }, temp: { polpower: 15, statepower: 10, ideopower: -10, approval: -6 },
+        tip: 'Du kör över din egen rörelse. Makten består, trovärdigheten inte.' },
     ],
   },
 
