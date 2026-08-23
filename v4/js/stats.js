@@ -58,9 +58,11 @@ export function computeStats(nation, sources = {}) {
     const law = sources.laws?.[id] || 0;
     const ideo = sources.ideology?.[id] || 0;
     const res = sources.research?.[id] || 0;
+    const mods = sources.modifiers?.[id] || 0;      // V5: aktiva modifierare
+    const dev = sources.development?.[id] || 0;     // V5: infrastruktur + stadsnivå
     const extra = sources.extra?.[id] || 0;   // händelser, atomslag, tillfällig oro m.m.
-    const total = Math.max(-100, Math.min(100, b + law + ideo + res + extra));
-    breakdown[id] = { base: b, laws: law, ideology: ideo, research: res, extra, total };
+    const total = Math.max(-100, Math.min(100, b + law + ideo + res + mods + dev + extra));
+    breakdown[id] = { base: b, laws: law, ideology: ideo, research: res, modifiers: mods, development: dev, extra, total };
   }
   return breakdown;
 }

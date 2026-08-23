@@ -425,12 +425,13 @@
   .docrow { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 12px; }
 
   /* ---- forskningsfliken ---- */
-  .resrow { display: flex; align-items: center; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
-  .resrow .rname { flex: 0 0 150px; font-size: 7px; color: var(--text); }
+  /* nio nivåer per gren (satelliter tio) — boxarna får bli smalare och radbryta */
+  .resrow { display: flex; align-items: stretch; gap: 4px; margin: 6px 0; flex-wrap: wrap; }
+  .resrow .rname { flex: 0 0 150px; font-size: 7px; color: var(--text); align-self: center; }
   .tierbox {
-    font-family: inherit; font-size: 6px; padding: 5px 6px; cursor: pointer;
+    font-family: inherit; font-size: 6px; padding: 4px 5px; cursor: pointer;
     border: 1px solid rgba(55,224,255,0.25); background: rgba(0, 12, 20, 0.6);
-    color: var(--holo-dim); max-width: 130px; text-align: left; line-height: 1.6;
+    color: var(--holo-dim); flex: 1 1 96px; max-width: 118px; text-align: left; line-height: 1.55;
   }
   .tierbox.done { border-color: rgba(62,230,200,0.6); color: var(--green, #3ee6c8); cursor: default; }
   .tierbox.avail { border-color: var(--amber); color: var(--amber); }
@@ -486,14 +487,83 @@
   }
   #natres { font-size: 8px; color: var(--text); display: flex; gap: 14px; flex-wrap: wrap; }
   #natres b { color: var(--amber); font-weight: normal; }
+  /* rutan måste rymma en lagbeskrivning på 2–3 meningar utan att hoppa i höjd */
   #natpreview {
     font-size: 7px; color: var(--holo-dim); line-height: 1.9;
-    height: 30px; overflow: hidden; margin-top: 5px;
+    min-height: 30px; max-height: 84px; overflow-y: auto; margin-top: 5px;
   }
   #natpreview .dp { color: #4ae37a; }
   #natpreview .dn { color: var(--red); }
   #natpreview .dc { color: var(--amber); }
   #natpreview .desc { color: var(--holo); }
+  /* ---- V5: händelser & modifierare ---- */
+  .evcard { width: min(560px, 94vw); text-align: left; }
+  .evhead {
+    font-size: 11px; color: var(--amber); letter-spacing: 2px; line-height: 1.7;
+    border-bottom: 1px solid rgba(255,176,46,0.3); padding-bottom: 8px; margin-bottom: 10px;
+  }
+  #evtext, #modtext {
+    font-size: 8px; color: var(--text); line-height: 2.1;
+    text-transform: none; letter-spacing: 0.3px; margin-bottom: 12px;
+  }
+  #modfix {
+    font-size: 7px; color: var(--holo); line-height: 2; margin-bottom: 10px;
+    text-transform: none; border-left: 2px solid var(--holo); padding-left: 7px;
+  }
+  #evchoices, #modchoices { display: flex; flex-direction: column; gap: 6px; }
+  .evchoice {
+    font-family: inherit; font-size: 7px; text-align: left; cursor: pointer;
+    border: 1px solid rgba(55,224,255,0.3); background: rgba(0,14,24,0.7);
+    color: var(--holo); padding: 8px 10px; line-height: 1.9; letter-spacing: 0.5px;
+  }
+  .evchoice:hover:not(:disabled) { border-color: var(--amber); color: var(--amber); background: rgba(20,14,0,0.7); }
+  .evchoice:disabled { opacity: 0.35; cursor: not-allowed; }
+  .evchoice .efx { display: block; margin-top: 4px; font-size: 6px; }
+  .evchoice .etip { display: block; margin-top: 3px; font-size: 6px; color: var(--holo-dim); text-transform: none; font-style: italic; }
+  .evchoice .ep { color: #4ae37a; }
+  .evchoice .en { color: var(--red); }
+  .evchoice .ec { color: var(--amber); }
+  #evfoot { font-size: 6px; color: var(--holo-dim); margin-top: 10px; text-align: center; letter-spacing: 1px; }
+
+  /* modifierarlistan i NATION-fliken */
+  .modrow {
+    display: flex; align-items: flex-start; gap: 7px; padding: 6px 8px; margin: 4px 0;
+    border-left: 3px solid var(--holo-dim); background: rgba(0,12,20,0.5); cursor: pointer;
+  }
+  .modrow.good { border-left-color: #4ae37a; }
+  .modrow.bad { border-left-color: var(--red); }
+  .modrow.mixed { border-left-color: var(--amber); }
+  .modrow .mtxt { flex: 1; font-size: 7px; line-height: 1.9; }
+  .modrow .mname { color: var(--text); }
+  .modrow .mkind { font-size: 6px; color: var(--holo-dim); }
+  .modrow .meff { font-size: 6px; }
+
+  /* ---- V5: infrastrukturlagret ---- */
+  #infralegend {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: 54px; z-index: 45;
+    display: none; background: rgba(3,10,18,0.88); border: 1px solid var(--panel-border);
+    padding: 7px 12px 8px; text-align: center; min-width: 300px;
+  }
+  #infralegend.show { display: block; }
+  #infralegend .ilhead { font-size: 7px; color: var(--amber); letter-spacing: 2px; margin-bottom: 5px; }
+  #ilbar { height: 9px; border: 1px solid rgba(55,224,255,0.3); }
+  #illabels { display: flex; justify-content: space-between; font-size: 6px; color: var(--holo-dim); margin-top: 3px; }
+  #infralegend .tbtn { margin-top: 6px; }
+
+  /* utvecklingsraderna i landkortet */
+  .devrow { display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 7px; }
+  .devrow .dvname { flex: 0 0 96px; color: var(--holo-dim); }
+  .devbar { flex: 1; height: 8px; border: 1px solid rgba(55,224,255,0.25); position: relative; }
+  .devbar i { position: absolute; inset: 0; width: 0; display: block; }
+  .devrow .dvlvl { flex: 0 0 76px; text-align: right; color: var(--text); }
+
+  /* ideologins linje i LAGAR-fliken */
+  .lawopt.fav { border-color: rgba(255,176,46,0.55); }
+  .lname .ideowant { color: var(--amber); opacity: 0.85; }
+  #natpreview .lawdesc {
+    display: block; margin-top: 4px; color: var(--text);
+    line-height: 1.75; text-transform: none; letter-spacing: 0.2px;
+  }
   #natbody { overflow-y: auto; padding: 14px 16px 18px; }
   #lawconfirm {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -666,6 +736,7 @@
   <div class="frow" id="freli"></div>
   <div class="frow" id="frank"></div>
   <div class="frow" id="finc"></div>
+  <div id="fdev"></div>
   <div id="fdiplo" style="display:none"></div>
   <div id="finteg" style="display:none"></div>
   <div id="fres"></div>
@@ -710,13 +781,42 @@
   <button class="btn" id="pencancel">&#10005; AVBRYT</button>
 </div>
 
+<!-- V5: händelser. En sak händer i landet och du måste svara. -->
+<div id="eventovl" class="overlay">
+  <div class="card evcard">
+    <div class="evhead"><span id="evicon">&#9888;</span> <span id="evtitle"></span></div>
+    <div id="evtext"></div>
+    <div id="evchoices"></div>
+    <div id="evfoot">VALET G&Aring;R INTE ATT &Aring;NGRA</div>
+  </div>
+</div>
+
+<!-- V5: en tilldelad modifierare med åtgärder att välja mellan -->
+<div id="modovl" class="overlay">
+  <div class="card evcard">
+    <div class="evhead"><span id="modicon"></span> <span id="modtitle"></span></div>
+    <div id="modtext"></div>
+    <div id="modfix"></div>
+    <div id="modchoices"></div>
+  </div>
+</div>
+
 <div id="toggles">
   <button class="tbtn on" id="tgCities">&#127961; STÄDER</button>
   <button class="tbtn" id="tgTerrain">&#127757; TERRÄNG</button>
+  <button class="tbtn" id="tgInfra">&#128647; INFRASTRUKTUR</button>
   <button class="tbtn" id="tg3d">&#127760; 3D</button>
   <button class="tbtn" id="tgSpin">&#128260; SNURR</button>
   <button class="tbtn on" id="tgTrade">&#128230; HANDEL</button>
   <button class="tbtn" id="tgLegend">&#128220; TILLGÅNGAR</button>
+</div>
+
+<!-- V5: skalan för infrastrukturlagret, mörkrött → mörkblått -->
+<div id="infralegend">
+  <div class="ilhead">&#128647; <span id="ilkind">INFRASTRUKTUR</span></div>
+  <div id="ilbar"></div>
+  <div id="illabels"><span>0 INGEN</span><span>50</span><span>100 V&Auml;RLDSLEDANDE</span></div>
+  <button class="tbtn" id="ilswap">&#127961; VISA STADSNIV&Aring;</button>
 </div>
 
 <div id="citypanel">
@@ -780,6 +880,7 @@
       <button class="nattab" data-tab="lagar">LAGAR</button>
       <button class="nattab" data-tab="ideologi">IDEOLOGI</button>
       <button class="nattab" data-tab="forskning">FORSKNING</button>
+      <button class="nattab" data-tab="modifierare">MODIFIERARE</button>
       <button class="nattab" data-tab="kabinett">KABINETT</button>
       <button class="nattab" data-tab="block">BLOCK</button>
     </div>

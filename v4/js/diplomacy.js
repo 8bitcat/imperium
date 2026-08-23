@@ -1,6 +1,7 @@
 // IMPERIUM V5 — DIPLOMATI. Relationer är valutan: allianser, vapenvila,
 // sanktioner och block läser alla samma relationsvärde (−100 … +100).
 import { IDEO_AXIS, RELIGIONS } from './integration.js';
+import { ideologyRelationBias, ideologyDistance, ALLY_MAX_DISTANCE } from './ideologies.js';
 
 export const REL = {
   ALLIED: 70, FRIENDLY: 35, NEUTRAL: 0, COOL: -25, HOSTILE: -55,
@@ -15,15 +16,28 @@ export function relLabel(v) {
   return { name: 'HATAR DIG', color: '#ff4f4f' };
 }
 
+// Ta emot antingen 'fascism' eller { ideology, doctrine } — doktrinen räknas med
+// när den finns, så en Anarcho-capitalist och en Anarcho-communist inte längre
+// behandlas som identiska.
+const asNation = (x) => (typeof x === 'string' ? { ideology: x, doctrine: null } : (x || { ideology: null, doctrine: null }));
+
 // Naturligt läge mellan två nationer utifrån ideologi och religion.
 // Relationen driver långsamt mot detta värde; händelser ger stora hopp.
+//
+// V5: ideologin räknas nu på TVÅ axlar (ekonomi + auktoritet) plus uttalade
+// ärkefiendskap, i stället för en enda vänster–höger-linje. Ytterlighets-
+// ideologier gör därför världen fientlig på riktigt: fascism och kommunism kan
+// inte längre sluta fred bara för att relationen råkar ha drivit uppåt.
 export function naturalRelation(myIdeo, theirIdeo, myRel, theirRel) {
-  const gap = Math.abs((IDEO_AXIS[myIdeo] ?? 0) - (IDEO_AXIS[theirIdeo] ?? 0));
-  let v = 25 - gap * 14;                       // samma ideologi = +25, motpol = −59
+  const a = asNation(myIdeo), b = asNation(theirIdeo);
+  let v = ideologyRelationBias(a, b);          // +28 vid identiska, −57 vid ärkefiender
+  // den gamla 1D-axeln finns kvar som en lätt korrigering för ideologier utan axes
+  const gap = Math.abs((IDEO_AXIS[a.ideology] ?? 0) - (IDEO_AXIS[b.ideology] ?? 0));
+  v -= gap * 2;
   if (myRel && theirRel && myRel !== theirRel) {
     v -= RELIGIONS[myRel]?.fam === RELIGIONS[theirRel]?.fam ? 5 : 14;
   }
-  return Math.max(-80, Math.min(60, v));
+  return Math.max(-95, Math.min(60, Math.round(v)));
 }
 
 // Händelser som flyttar relationen direkt
@@ -52,8 +66,16 @@ export const ALLY_MIN_REL = 40;      // krävs för att ens få fråga
 export const TRUCE_DAYS = 360;       // tre spelår (120 dagar/år)
 
 // Vill AI:t gå med på allians? Väger relation, hot och ideologisk närhet.
-export function aiAcceptsAlliance(rel, theirStance, threatened) {
-  let chance = (rel - ALLY_MIN_REL) / 60;
+// V5: ideologiskt avstånd är nu en hård spärr — bortom ALLY_MAX_DISTANCE
+// allierar de sig aldrig, hur bra relationen än är. Ett extremt land får
+// helt enkelt räkna med att stå ensamt.
+export function aiAcceptsAlliance(rel, theirStance, threatened, me, them) {
+  if (me && them) {
+    const d = ideologyDistance(asNation(me), asNation(them));
+    if (d > ALLY_MAX_DISTANCE) return false;
+    var ideoPenalty = d / 120;                 // upp till −0.46 nära spärren
+  }
+  let chance = (rel - ALLY_MIN_REL) / 60 - (ideoPenalty || 0);
   if (threatened) chance += 0.35;
   if (theirStance === 'defensive') chance += 0.2;
   if (theirStance === 'ultra') chance -= 0.4;
