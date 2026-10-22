@@ -55,13 +55,23 @@ async function startServer() {
 // svarar på allt spelet kan fråga om så partiet inte står still
 const ANSWER_DIALOGS = () => {
   const on = (id) => document.querySelector(id)?.classList.contains('show');
-  let n = 0;
-  if (on('#eventovl')) { document.querySelector('#evchoices .evchoice:not([disabled])')?.click(); n++; }
-  if (on('#modovl')) { [...document.querySelectorAll('#modchoices .evchoice')].pop()?.click(); n++; }
-  if (on('#blocask')) { document.querySelector('#blocNo').click(); n++; }
-  if (on('#flagpick')) { document.querySelector('#flagNo').click(); n++; }
-  if (document.querySelector('#waralert')?.classList.contains('show')) { document.querySelector('#waok').click(); n++; }
-  return n;
+  const r = { n: 0, stuck: null };
+  if (on('#eventovl')) {
+    const btn = document.querySelector('#evchoices .evchoice:not([disabled])');
+    if (btn) btn.click();
+    else {
+      // inget val går att betala och rutan saknar stängknapp: en riktig spelare
+      // sitter fast här. Rapporteras som fel; rutan tvingas bort så testet går vidare
+      r.stuck = document.querySelector('#evtitle').textContent;
+      document.querySelector('#eventovl').classList.remove('show');
+    }
+    r.n++;
+  }
+  if (on('#modovl')) { [...document.querySelectorAll('#modchoices .evchoice')].pop()?.click(); r.n++; }
+  if (on('#blocask')) { document.querySelector('#blocNo').click(); r.n++; }
+  if (on('#flagpick')) { document.querySelector('#flagNo').click(); r.n++; }
+  if (document.querySelector('#waralert')?.classList.contains('show')) { document.querySelector('#waok').click(); r.n++; }
+  return r;
 };
 
 async function main() {
@@ -80,6 +90,17 @@ async function main() {
   const shot = async (name) => {
     await page.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
     await page.screenshot({ path: join(OUT, name + '.png') });
+  };
+  const stuck = new Set();
+  const answer = async () => {
+    const r = await page.evaluate(ANSWER_DIALOGS);
+    if (r.stuck) stuck.add(r.stuck);
+    return r.n;
+  };
+  // en händelse eller modifierare kan dyka upp när som helst och täcka knappen
+  const tap = async (sel) => {
+    await answer();
+    await page.click(sel);
   };
   const visible = (sel) => page.evaluate((s) => {
     const el = document.querySelector(s);
@@ -131,41 +152,44 @@ async function main() {
         });
         if (aiErr) tickErrors.push(aiErr);
       }
-      answered += await page.evaluate(ANSWER_DIALOGS);
+      answered += await answer();
     }
     const day = await page.evaluate(() => window.IMPERIUM.solo.clock.day);
     check(`${DAYS} speldagar utan krasch`, tickErrors.length === 0 && day > DAYS,
       `dag ${day}, ${answered} rutor besvarade${tickErrors.length ? `, ${tickErrors.length} fel:\n    ${tickErrors[0].split('\n').slice(0, 4).join('\n    ')}` : ''}`);
-    await page.evaluate(ANSWER_DIALOGS);
+    await answer();
     await shot('04-efter-120-dagar');
+    // klockan stoppas så ingen ny händelse lägger sig över knapparna medan
+    // gränssnittet testas (mot Pages tar stegen nog lång tid för att det ska hända)
+    await page.evaluate(() => { window.IMPERIUM.solo.clock.paused = true; });
 
     // 5. NATION-panelen, varje flik
-    await page.click('#nationbtn');
+    await tap('#nationbtn');
     await page.waitForFunction(() => getComputedStyle(document.querySelector('#nation')).display !== 'none');
     const tabs = await page.$$eval('.nattab', (els) => els.map((e) => e.dataset.tab));
     const before = pageErrors.length;
     for (const t of tabs) {
-      await page.click(`.nattab[data-tab="${t}"]`);
+      await tap(`.nattab[data-tab="${t}"]`);
       await page.waitForTimeout(150);
       await shot(`05-nation-${t}`);
     }
     check('alla NATION-flikar öppnas', pageErrors.length === before && tabs.length >= 7, tabs.join(', '));
-    await page.click('#natclose');
+    await tap('#natclose');
 
     // 6. kartlagren av/på, sedan 3D-planeten
     const layerErrs = pageErrors.length;
     for (const id of ['tgCities', 'tgTerrain', 'tgInfra', 'tgTrade', 'tgLegend']) {
       if (!(await visible('#' + id))) continue;
-      await page.click('#' + id);
+      await tap('#' + id);
       await page.waitForTimeout(250);
-      await page.click('#' + id);
+      await tap('#' + id);
     }
     check('kartlagren växlar', pageErrors.length === layerErrs);
-    await page.click('#tg3d');
+    await tap('#tg3d');
     await page.waitForTimeout(2500);
     const is3d = await page.evaluate(() => !!window.IMPERIUM.globe.mode3d || localStorage.getItem('imperium.mode3d') === '1');
     await shot('06-3d');
-    await page.click('#tg3d');
+    await tap('#tg3d');
     await page.waitForTimeout(500);
     check('3D-läget går att slå på och av', pageErrors.length === layerErrs, is3d ? '' : 'WebGL saknas i testwebbläsaren — se skärmbilden');
 
@@ -178,10 +202,12 @@ async function main() {
     const back = await page.evaluate(() => ({ day: window.IMPERIUM.solo.clock.day, home: window.IMPERIUM.solo.home }));
     check('sparat parti fortsätter', back.day >= saved && String(back.home) === HOME, `sparat dag ${saved}, tillbaka på dag ${back.day}`);
     await page.waitForTimeout(1500);
-    await page.evaluate(ANSWER_DIALOGS);
+    await answer();
     await shot('07-fortsatt');
 
-    // 8. konsolen
+    // 8. mjuklås och konsolen
+    check('ingen händelse låser spelet', stuck.size === 0,
+      stuck.size ? `${[...stuck].join(', ')} — inget val gick att betala och rutan gick inte att stänga` : '');
     const resourceNoise = consoleErrors.filter((t) => /Failed to load resource|net::ERR_/.test(t));
     const realConsole = consoleErrors.filter((t) => !resourceNoise.includes(t));
     check('inga JavaScript-fel', pageErrors.length === 0, pageErrors.length ? '\n    ' + pageErrors.slice(0, 3).map((e) => e.split('\n').slice(0, 3).join('\n    ')).join('\n    ') : '');
