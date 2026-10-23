@@ -564,6 +564,8 @@ export class Globe {
 
   // ---------- rendering ----------
   _frame(t) {
+    // V5.9: rummets dolda värd behöver världen men ingen bild
+    if (this.sleeping) { requestAnimationFrame((tt) => this._frame(tt)); return; }
     if (this.anim) {
       if (this.anim.t0 == null) this.anim.t0 = t;
       const a = this.anim;

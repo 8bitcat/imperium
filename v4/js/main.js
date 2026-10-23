@@ -38,7 +38,8 @@ const $ = (s) => document.querySelector(s);
 const PLAYER_COLORS = ['#ff4f4f', '#4fa8ff', '#ffd24f', '#b06bff', '#ff9f3e', '#3ee6c8', '#ff6fd8', '#a4e34a'];
 const SOLO_COLOR_DEFAULT = '#ff4f4f';
 // V5.8: spelaren väljer själv sitt lands färg — allt från vitt till svart
-const soloColor = () => state.solo?.color || SOLO_COLOR_DEFAULT;
+// (i ett rum äger värden färgerna — där gäller färgen värden gett dig)
+const soloColor = () => (state.mode === 'player' ? state.me?.color : state.solo?.color) || SOLO_COLOR_DEFAULT;
 function lumOf(hex) {
   const n = parseInt(String(hex).slice(1), 16);
   return 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
@@ -55,11 +56,18 @@ function puppetColor() { const c = soloColor(); return lumOf(c) > 200 ? mixHex(c
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.8.0';
-export const VERSION_DATE = '2026-10-23';
-export const VERSION_NAME = 'KALLA KRIGET';
+export const VERSION = '5.9.0';
+export const VERSION_DATE = '2026-10-24';
+export const VERSION_NAME = 'KOMPISRUMMET';
 
 const globe = new Globe($('#globe'));
+
+// V5.9: SPELA MED KOMPISAR. Den som skapar ett rum kör rummets värd (samma
+// värdlogik som TV-läget) osynligt i en dold ram med ?server=1, och går själv
+// med i rummet som spelare — så värden spelar precis som kompisarna.
+const PARAMS = new URLSearchParams(location.search);
+const SERVER = PARAMS.has('server');
+if (SERVER) globe.sleeping = true;   // ingen ser globen i den dolda ramen — rita inget
 
 const state = {
   mode: null,          // 'tv' | 'player' | 'solo'
@@ -235,12 +243,16 @@ function renderTopbar() {
   $('#topleft').textContent = `IMPERIUM V${VERSION} // GEOSCAPE`;
   const el = $('#topright');
   if (state.mode === 'tv') el.textContent = `RUM ${net.code} • ${state.players.length} SPELARE`;
-  else if (state.mode === 'player') el.textContent = `${state.me?.name || ''} • RUM ${net.code || ''}`;
-  else if (state.mode === 'solo') {
+  else if (state.mode === 'player') {
+    // V5.9: tryck på rumskoden för att visa den igen och bjuda in fler
+    const n = state.players.filter((p) => !p.offline).length;
+    el.textContent = `${state.me?.name || ''} • RUM ${net.code || ''} • \u{1F465} ${n}`;
+  } else if (state.mode === 'solo') {
     const n = Object.keys(state.solo?.claims || {}).length;
     const form = state.solo?.nation?.formation;
     el.textContent = form ? `${form.name.toUpperCase()} • ${n} LÄNDER` : (n ? `ERÖVRADE LÄNDER: ${n}` : 'ERÖVRINGSLÄGE');
   }
+  el.classList.toggle('roomlink', state.mode === 'player');
 }
 
 function applyState() {
@@ -4692,6 +4704,11 @@ function setSoloColor(c) {
   const s = state.solo;
   if (!s || !/^#[0-9a-f]{6}$/i.test(c)) return;
   s.color = c.toLowerCase();
+  // i ett rum bestämmer värden: den får färgen, och alla ser den vid nästa uppdatering
+  if (state.mode === 'player') {
+    if (state.me) state.me.color = s.color;
+    net.send('color', { color: s.color });
+  }
   for (const cl of Object.values(s.claims || {})) cl.color = cl.puppet ? puppetColor() : s.color;
   applyState();
   updateArmyMarker();
@@ -5272,7 +5289,7 @@ $('#attackbtn').addEventListener('click', () => {
     const ownerP = playerOwning(target.id);
     if (ownerP && ownerP.id !== net.myId) {
       net.send('pvp', { target: target.id });
-      toast(`ANFALLSORDER MOT ${target.name.toUpperCase()} SKICKAD — TV:N AVGÖR (KÖAS OM ${ownerP.name.toUpperCase()} STRIDER)`, 'amber', 6000);
+      toast(`ANFALLSORDER MOT ${target.name.toUpperCase()} SKICKAD — VÄRDEN AVGÖR (KÖAS OM ${ownerP.name.toUpperCase()} STRIDER)`, 'amber', 6000);
       show($('#attackbtn'), false);
       return;
     }
@@ -5501,7 +5518,7 @@ function wireToggles() {
     toast(got ? '\u{1F30D} 3D-PLANET PÅ' : '\u{1F53B} PIXELLÄGE PÅ', '', 3000);
   });
   try {
-    if (localStorage.getItem('imperium.mode3d') === '1' && globe.setMode3D(true) === true) tg3.classList.add('on');
+    if (!SERVER && localStorage.getItem('imperium.mode3d') === '1' && globe.setMode3D(true) === true) tg3.classList.add('on');
   } catch (e) { /* privat läge */ }
   // jorden kan snurra av sig själv — eller stå helt stilla
   const tgS = $('#tgSpin');
@@ -5786,6 +5803,92 @@ function startWorldLoad() {
 }
 
 // ---------- TV-läge (värd) ----------
+// Rummets kod, QR och länk. TV:n visar den hela tiden; i spelarläget kan den
+// stängas och öppnas igen genom att trycka på RUM-koden uppe till höger.
+function showRoomCode(code, player = false) {
+  const url = location.protocol === 'file:'
+    ? null
+    : location.origin + location.pathname + '?room=' + code;
+  $('#qrcodeTxt').textContent = code;
+  $('#qrtitle').innerHTML = player ? `&#9654; RUM ${code} — BJUD IN KOMPISAR` : '&#9654; ANSLUT MED MOBIL';
+  $('#qrhow').innerHTML = player
+    ? `KOMPISARNA TRYCKER <b>SPELA MED KOMPISAR</b> OCH SKRIVER <b>${code}</b> — ELLER SKANNAR RUTAN`
+      + (state.hosting ? '<br>DU ÄR VÄRD — STÄNGER DU FLIKEN STÄNGS RUMMET' : '')
+    : '';
+  $('#qrclose').style.display = player ? '' : 'none';
+  if (url) {
+    const qr = qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    const img = new Image();
+    img.src = qr.createDataURL(5, 2);
+    img.width = player ? 120 : 150; img.height = img.width;
+    $('#qrimg').replaceChildren(img);
+    $('#qrurl').textContent = url.replace(/^https?:\/\//, '');
+    $('#qrcopy').style.display = 'block';
+    $('#qrcopy').onclick = () => {
+      navigator.clipboard?.writeText(url)
+        .then(() => toast('\u{1F4CB} LÄNKEN KOPIERAD', 'amber', 3000))
+        .catch(() => {
+          const r = document.createRange();
+          r.selectNodeContents($('#qrurl'));
+          const sel = window.getSelection();
+          sel.removeAllRanges(); sel.addRange(r);
+          toast('MARKERAD — TRYCK KOPIERA', '', 4000);
+        });
+    };
+  } else {
+    $('#qrimg').textContent = 'Deploya spelet för att kunna skanna QR';
+  }
+  show($('#qrpanel'));
+}
+$('#qrclose').addEventListener('click', () => show($('#qrpanel'), false));
+$('#topright').addEventListener('click', () => {
+  if (state.mode !== 'player' || !net.code) return;
+  const open = $('#qrpanel').style.display !== 'none' && $('#qrpanel').style.display !== '';
+  if (open) show($('#qrpanel'), false); else showRoomCode(net.code, true);
+});
+
+// Skapa ett rum: värden startas i en dold ram, och när den har en kod går man
+// själv med i rummet precis som kompisarna gör. resume = återuppta värdens sparade rum.
+function createRoom(name, resume = false) {
+  $('#joinerr').textContent = resume ? 'ÖPPNAR RUMMET IGEN…' : 'SKAPAR RUMMET…';
+  $('#btnCreate').disabled = true;
+  document.querySelector('#roomserver')?.remove();
+  const fr = document.createElement('iframe');
+  fr.id = 'roomserver';
+  fr.title = 'rummets värd';
+  fr.src = `${location.pathname}?server=1&name=${encodeURIComponent(name)}${resume ? '&resume=1' : ''}`;
+  fr.style.cssText = 'position:fixed;left:-10px;top:-10px;width:2px;height:2px;border:0;opacity:0;pointer-events:none';
+  const failT = setTimeout(() => {
+    window.removeEventListener('message', onMsg);
+    fr.remove();
+    $('#btnCreate').disabled = false;
+    $('#joinerr').textContent = 'RUMMET GICK INTE ATT SKAPA — KOLLA INTERNET OCH FÖRSÖK IGEN';
+  }, 45000);
+  const onMsg = (e) => {
+    if (e.source !== fr.contentWindow || e.origin !== location.origin) return;
+    if (e.data?.imperium === 'room' && /^[A-Z0-9]{4}$/.test(e.data.code || '')) {
+      clearTimeout(failT);
+      window.removeEventListener('message', onMsg);
+      state.hosting = true;
+      startPlayer(name, e.data.code);
+    } else if (e.data?.imperium === 'error') {
+      $('#joinerr').textContent = 'NÄTVERKSFEL NÄR RUMMET SKAPADES: ' + String(e.data.type || '').toUpperCase();
+    }
+  };
+  window.addEventListener('message', onMsg);
+  document.body.appendChild(fr);
+}
+
+// Värden varnar innan fliken stängs medan kompisar är kvar i rummet
+window.addEventListener('beforeunload', (e) => {
+  if (state.hosting && state.mode === 'player' && state.players.filter((p) => !p.offline).length > 1) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
 function startTV(wantCode) {
   state.mode = 'tv';
   state.hostWorld = { aiOwned: {}, aiEmpires: {}, countryArmies: {}, aiWars: [], moving: [], aiGoals: {}, votes: [] };
@@ -5805,35 +5908,18 @@ function startTV(wantCode) {
   net.host((code) => {
     renderTopbar();
     saveGame();
-    const url = location.protocol === 'file:'
-      ? null
-      : location.origin + location.pathname + '?room=' + code;
-    $('#qrcodeTxt').textContent = code;
-    if (url) {
-      const qr = qrcode(0, 'M');
-      qr.addData(url);
-      qr.make();
-      const img = new Image();
-      img.src = qr.createDataURL(5, 2);
-      img.width = 150; img.height = 150;
-      $('#qrimg').replaceChildren(img);
-      $('#qrurl').textContent = url.replace(/^https?:\/\//, '');
-      $('#qrcopy').style.display = 'block';
-      $('#qrcopy').onclick = () => {
-        navigator.clipboard?.writeText(url)
-          .then(() => toast('\u{1F4CB} LÄNKEN KOPIERAD', 'amber', 3000))
-          .catch(() => {
-            const r = document.createRange();
-            r.selectNodeContents($('#qrurl'));
-            const sel = window.getSelection();
-            sel.removeAllRanges(); sel.addRange(r);
-            toast('MARKERAD — TRYCK KOPIERA', '', 4000);
-          });
+    if (SERVER) {
+      // berätta för spelarsidan att rummet finns — men först när världen är
+      // laddad och ett återupptaget partis spelare är tillbaka på sina platser,
+      // annars hinner värden ansluta innan den känns igen som sig själv
+      const tell = () => {
+        if (!globe.countries.length || state.resumePending) { setTimeout(tell, 300); return; }
+        parent.postMessage({ imperium: 'room', code }, location.origin);
       };
-    } else {
-      $('#qrimg').textContent = 'Deploya spelet för att kunna skanna QR';
+      tell();
+      return;
     }
-    show($('#qrpanel'));
+    showRoomCode(code);
     toast('RUM SKAPAT — SKANNA QR MED MOBILEN', 'amber', 6000);
   }, wantCode);
 
@@ -5886,6 +5972,14 @@ function startTV(wantCode) {
         broadcastState();
         applyState();
         toast(`${name.toUpperCase()} ANSLÖT TILL KRIGSRUMMET`, 'amber');
+      } else if (t === 'color') {
+        // V5.9: spelaren valde sitt lands färg i faktionsvalet
+        const player = state.players.find((p) => p.id === peerId);
+        const c = String(d?.color || '').toLowerCase();
+        if (!player || !/^#[0-9a-f]{6}$/.test(c)) return;
+        player.color = c;
+        broadcastState();
+        applyState();
       } else if (t === 'claim') {
         const player = state.players.find((p) => p.id === peerId);
         const id = String(d?.country || '');
@@ -5986,7 +6080,10 @@ function startTV(wantCode) {
         }
       }
     },
-    netError: (type) => toast('NÄTVERKSFEL: ' + type, 'red'),
+    netError: (type) => {
+      toast('NÄTVERKSFEL: ' + type, 'red');
+      if (SERVER) parent.postMessage({ imperium: 'error', type }, location.origin);
+    },
   });
 }
 
@@ -6209,6 +6306,9 @@ function startPlayer(name, code) {
         toast(d.resume
           ? '\u{21BB} DU ÄR TILLBAKA — DIN SESSION ÅTERUPPTAS'
           : 'ANSLUTEN! VÄLJ DITT HEMLAND PÅ GLOBEN', 'amber', 5000);
+        // V5.9: rummets kod syns direkt så man kan bjuda in fler
+        showRoomCode(net.code, true);
+        $('#btnCreate').disabled = false;
       } else if (t === 'state') {
         state.players = d.players;
         state.aiWorldRemote = d.aiWorld || null;
@@ -6274,7 +6374,7 @@ function startPlayer(name, code) {
         toast('LANDET ÄR REDAN TAGET!', 'red');
       }
     },
-    hostLost: () => toast('TAPPADE KONTAKTEN MED TV:N', 'red', 8000),
+    hostLost: () => toast('TAPPADE KONTAKTEN MED RUMMET — VÄRDEN KAN HA STÄNGT', 'red', 8000),
   });
 }
 
@@ -6354,7 +6454,7 @@ function finishPvpBattle(result) {
       defSurvivors: (result.defSurvivors || []).map(({ type, hp }) => ({ type, hp })),
     });
   } else {
-    toast('STRIDEN ÄR ÖVER — TV:N RÄKNAR SAMMAN', '', 4000);
+    toast('STRIDEN ÄR ÖVER — VÄRDEN RÄKNAR SAMMAN', '', 4000);
   }
   state.pvpBattleId = null;
   state.pvpRole = null;
@@ -6387,6 +6487,8 @@ function backToLobby(by) {
 
 // ---------- SPARAT SPEL: ett pågående parti överlever en omladdning ----------
 const GAME_KEY = 'imperium.game';
+// V5.9: ett rum man skapat sparas för sig — annars skulle värden skriva över ens soloparti
+const ROOM_KEY = 'imperium.room';
 function saveGame() {
   try {
     if (state.mode === 'solo' && state.solo?.nation) {
@@ -6417,8 +6519,10 @@ function saveGame() {
       }));
     } else if (state.mode === 'tv') {
       const w = state.hostWorld;
-      localStorage.setItem(GAME_KEY, JSON.stringify({
+      localStorage.setItem(SERVER ? ROOM_KEY : GAME_KEY, JSON.stringify({
         mode: 'tv', at: Date.now(), code: net.code, version: VERSION,
+        // V5.9: ett rum som skapats via SPELA MED KOMPISAR — värden spelar själv
+        hostPlays: SERVER || undefined, hostName: SERVER ? PARAMS.get('name') || '' : undefined,
         players: state.players.map(({ ...p }) => ({ ...p, offline: true })),
         hostWorld: {
           aiOwned: w.aiOwned, aiEmpires: w.aiEmpires, countryArmies: w.countryArmies,
@@ -6435,9 +6539,9 @@ function saveGame() {
   } catch (e) { /* fullt lager */ }
 }
 
-function loadGame() {
+function loadGame(key = GAME_KEY) {
   try {
-    const raw = localStorage.getItem(GAME_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const g = JSON.parse(raw);
     return g && Date.now() - (g.at || 0) < 24 * 3600e3 ? g : null;
@@ -6665,6 +6769,7 @@ function resumeGame(g) {
     return true;
   }
   if (g.mode === 'tv') {
+    state.resumePending = true;   // V5.9: rummets dolda värd väntar med koden tills spelarna är tillbaka
     startTV(g.code);
     const pending = () => {
       if (!globe.countries.length) { setTimeout(pending, 400); return; }
@@ -6675,6 +6780,7 @@ function resumeGame(g) {
       state.players = g.players || [];
       state.world = g.world || {};
       state.history = g.history || [];
+      state.resumePending = false;
       applyState();
       broadcastState();
       toast(`\u{21BB} SPELET ÅTERUPPTAGET — SPELARNA KAN ANSLUTA MED SAMMA NAMN`, 'amber', 10000);
@@ -6733,6 +6839,21 @@ if (savedGame) {
   b.style.display = 'block';
   b.addEventListener('click', () => resumeGame(savedGame));
 }
+// V5.9: ett rum man själv skapat kan öppnas igen — kompisarna går med på samma kod
+const savedRoom = SERVER ? null : loadGame(ROOM_KEY);
+if (savedRoom?.hostPlays && savedRoom.hostName) {
+  const b = document.createElement('button');
+  b.id = 'btnContinueRoom';
+  b.className = 'btn amber';
+  b.innerHTML = `&#8635; FORTSÄTT RUMMET ${savedRoom.code || '?'} (SOM ${savedRoom.hostName.toUpperCase()})`;
+  $('#btnContinue').after(b);
+  b.addEventListener('click', () => {
+    overlay('#menu', false);
+    overlay('#join', true);
+    $('#joinname').value = savedRoom.hostName;
+    createRoom(savedRoom.hostName, true);
+  });
+}
 // spara partiet regelbundet så en omladdning aldrig kostar spelet
 setInterval(saveGame, 8000);
 // har man en sparad session erbjuds den direkt i anslutningsrutan
@@ -6762,6 +6883,11 @@ $('#btnJoinBack').addEventListener('click', () => {
   overlay('#join', false);
   overlay('#menu', true);
 });
+$('#btnCreate').addEventListener('click', () => {
+  const name = $('#joinname').value.trim();
+  if (!name) { $('#joinerr').textContent = 'SKRIV DITT NAMN'; $('#joinname').focus(); return; }
+  createRoom(name);
+});
 $('#btnJoinGo').addEventListener('click', () => {
   const name = $('#joinname').value.trim();
   const code = $('#joincode').value.trim().toUpperCase();
@@ -6773,6 +6899,13 @@ $('#btnJoinGo').addEventListener('click', () => {
 [$('#joinname'), $('#joincode')].forEach((el) => el.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') $('#btnJoinGo').click();
 }));
+
+// V5.9: den dolda ramen är rummets värd — starta den direkt (eller återuppta rummet)
+if (SERVER) {
+  overlay('#menu', false);
+  const g = PARAMS.has('resume') ? loadGame(ROOM_KEY) : null;
+  if (!(g?.mode === 'tv' && resumeGame(g))) startTV();
+}
 
 const roomParam = new URLSearchParams(location.search).get('room');
 if (roomParam && roomParam.length === 4) {

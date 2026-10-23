@@ -57,6 +57,13 @@ läser `facts.p` (inkomst, arméstorlek, statistik) följer med. Sparas som `pop
 `state.solo.color` (`soloColor()`/`soloInk()`/`puppetColor()`); globe.js gör gråskalor ljusa
 (`ownerFill`) och ger mörka riken ljus kant (`ownerEdge`).
 
+**Spela med kompisar (V5.9):** tre lägen — `solo`, `tv` (värd som äger världen) och `player`.
+SKAPA RUM (`createRoom`) startar värden i en dold iframe `?server=1&name=…` (TV-logiken,
+`SERVER`-flaggan, `globe.sleeping` = ingen ritning) som postar rumskoden till sidan, som
+sedan går med som vanlig `player` (`state.hosting`). Kompisar går med på koden (`#join`) eller
+`?room=KOD`. Färg i ett rum = värdens `player.color` (meddelandet `color`). Värdrummet sparas i
+`imperium.room` (`ROOM_KEY`, menyn: FORTSÄTT RUMMET), solo/TV i `imperium.game`.
+
 Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
 
 ### Regler som gäller för nya saker
@@ -84,6 +91,10 @@ Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
   måste deklareras `highp` i fragmentshadern.
 - d3-polygon ritad medurs täcker resten av jorden — testa `geoContains` och vänd ringen.
 - Multiplayer: TV:n äger världen. Ändringar i spellogiken måste fungera både solo och via `worldCtx()`.
+  I spelarläget är `worldCtx().world` spelarens EGEN nation — världen därifrån ligger i
+  `state.aiWorldRemote` (fylls av `aiWorldSummary()` på värden; nya världsfält måste in där).
+- `node --check fil.js` släpper igenom syntaxfel i de här ES-modulerna (Node 22, ingen
+  package.json). Kontrollera med `node --input-type=module --check < v4/js/main.js`.
 
 ## Testa
 

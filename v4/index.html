@@ -116,6 +116,13 @@
   #qrpanel img { display: block; margin: 6px auto; image-rendering: pixelated; border: 4px solid #fff; }
   #qrpanel .code { color: var(--amber); font-size: 18px; letter-spacing: 4px; margin-top: 6px; text-shadow: 0 0 10px rgba(255,176,46,0.6); }
   #qrpanel .url { color: var(--holo-dim); font-size: 7px; margin-top: 5px; word-break: break-all; max-width: 180px; }
+  /* V5.9: rummets kod i spelarläget — kompisarna skriver in den */
+  #qrpanel .qrhow { color: var(--holo); font-size: 6px; line-height: 1.9; margin-top: 6px; max-width: 190px; }
+  #qrpanel .qrhow b { color: var(--amber); }
+  #topright.roomlink { pointer-events: auto; cursor: pointer; text-decoration: underline dotted; }
+  .card .ordiv { font-size: 7px; color: var(--holo-dim); margin: 14px 0 2px; }
+  #join .logo { font-size: 13px; line-height: 1.7; letter-spacing: 3px; }
+  #join .tagline { line-height: 2; }
 
   /* ---- togglar ---- */
   .ctitle { color: var(--amber); font-size: 11px; letter-spacing: 1px; }
@@ -821,9 +828,10 @@
 </div>
 
 <div id="qrpanel" class="panel">
-  <div class="ptitle">&#9654; ANSLUT MED MOBIL</div>
+  <div class="ptitle"><span id="qrtitle">&#9654; ANSLUT MED MOBIL</span> <button class="pclose" id="qrclose" style="display:none">&#10005;</button></div>
   <div id="qrimg"></div>
   <div class="code" id="qrcodeTxt"></div>
+  <div class="qrhow" id="qrhow"></div>
   <div class="url" id="qrurl"></div>
   <button id="qrcopy" class="btn">&#128203; KOPIERA LÄNKEN</button>
 </div>
@@ -906,25 +914,28 @@
     <div id="menuversion"></div>
     <button id="btnContinue" class="btn amber" style="display:none">&#8635; FORTSÄTT SPELET</button>
     <button id="btnSolo" class="btn amber">&#9876; ERÖVRA VÄRLDEN (PROTOTYP)</button>
-    <button id="btnTV" class="btn">&#128250; STARTA TV-LÄGE</button>
-    <button id="btnJoin" class="btn">&#128241; GÅ MED I SPEL</button>
+    <button id="btnJoin" class="btn amber">&#128101; SPELA MED KOMPISAR</button>
+    <button id="btnTV" class="btn">&#128250; STARTA TV-LÄGE (STOR SKÄRM)</button>
     <div class="err" id="menuerr"></div>
     <a class="v1link" href="../v3/">&#8592; V3 — ARMÉER &amp; STRID</a>
     <div style="font-size:6px; color:var(--holo-dim); margin-top:10px; line-height:1.8">SPRITES: BERKLEYTORENO &amp; UMREX (NEWGROUNDS) — CC BY-NC-SA 3.0<br>TILES: KENNEY.NL — CC0 &nbsp;&#8226;&nbsp; INOFFICIELLT FANVERK</div>
   </div>
 </div>
 
-<!-- GÅ MED -->
+<!-- SPELA MED KOMPISAR (V5.9): skapa ett rum med en kod, eller gå med i kompisarnas -->
 <div id="join" class="overlay">
   <div class="card">
-    <div class="logo" style="font-size:16px">ANSLUT</div>
-    <div class="tagline">GÅ MED I ETT SPEL PÅ TV:N</div>
+    <div class="logo">SPELA MED KOMPISAR</div>
+    <div class="tagline">SKAPA ETT RUM OCH GE KODEN TILL KOMPISARNA — ELLER SKRIV IN DERAS KOD</div>
     <label>DITT NAMN</label>
-    <input id="joinname" class="field" maxlength="12" placeholder="NAMN">
+    <input id="joinname" class="field" maxlength="12" placeholder="NAMN" autocomplete="off">
+    <button id="btnCreate" class="btn amber">&#127968; SKAPA RUM</button>
+    <div class="ordiv">— ELLER GÅ MED I ETT RUM —</div>
     <label>RUMSKOD</label>
-    <input id="joincode" class="field" maxlength="4" placeholder="ABCD" autocapitalize="characters">
-    <button id="btnJoinGo" class="btn amber">ANSLUT</button>
+    <input id="joincode" class="field" maxlength="4" placeholder="ABCD" autocapitalize="characters" autocomplete="off" spellcheck="false">
+    <button id="btnJoinGo" class="btn amber">&#128273; GÅ MED I RUMMET</button>
     <button id="btnResume" class="btn" style="display:none">&#8635; FORTSÄTT DIN GAMLA SESSION</button>
+    <div class="err" id="joinerr"></div>
     <button id="btnJoinBack" class="btn">TILLBAKA</button>
   </div>
 </div>
