@@ -1,4 +1,5 @@
 // IMPERIUM V5 — HÄNDELSER.
+import { money, people } from './real.js';
 //
 // En händelse är något som inträffar I ditt land och som du måste svara på.
 // Varje händelse har 2–5 val, och varje val har konsekvenser.
@@ -1061,10 +1062,10 @@ export function pickEvent(c, seen = {}) {
 // Går valet att välja med nuvarande resurser?
 export function affordable(choice, c) {
   const need = choice.cost || {};
-  if ((need.money || 0) > c.money) return `KRÄVER ${need.money} \u{1F4B0}`;
+  if ((need.money || 0) > c.money) return `KRÄVER ${money(need.money)}`;
   if ((need.pp || 0) > c.pp) return `KRÄVER ${need.pp} \u{2696}\u{FE0F}`;
   if ((need.rp || 0) > c.rp) return `KRÄVER ${need.rp} \u{1F52C}`;
-  if ((need.man || 0) > c.man) return `KRÄVER ${need.man} \u{1FA96}`;
+  if ((need.man || 0) > c.man) return `KRÄVER ${people(need.man)} \u{1FA96}`;
   return null;
 }
 

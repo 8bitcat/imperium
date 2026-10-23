@@ -25,6 +25,7 @@ import { STANCES, stanceOf, setStance } from './stance.js';
 import { relLabel, naturalRelation, REL_EVENTS, sanctionFor, ALLY_MIN_REL, TRUCE_DAYS,
   aiAcceptsAlliance, BLOC_TYPES, BLOC_COST } from './diplomacy.js';
 import { scoreCountry, medalFor } from './ranking.js';
+import { money, people, soldiersOf, soldiersText } from './real.js';
 import { POSTS, MINISTER_COST, makeCandidate, clashOf, cabinetMods, loyaltyLevel,
   levelOf, levelMult, xpToNext, LEVEL_TITLES, MAX_LEVEL } from './ministers.js';
 import { BLOC_RULES, BLOC_FOUND_COST, BLOC_INVITE_COST, BLOC_NAMES, canJoinBloc,
@@ -464,7 +465,7 @@ function refreshInfoPanel() {
   const itg = integOf(c.id);
   const factor = itg ? phaseOf(itg.pct).income : 1;
   $('#finc').innerHTML = (part ? `<b style="color:var(--amber)">DIN DEL:</b> ${part.taken}/${part.of} ORTER (${Math.round(part.share * 100)}%) — RESTEN ÄR SJÄLVSTÄNDIG<br>` : '')
-    + `<b>INKOMST:</b> ${mineInc ? '' : '+'}${Math.round(inc * (mineInc ? factor : 1))} \u{1F4B0}/DAG`
+    + `<b>INKOMST:</b> ${mineInc ? '' : '+'}${money(inc * (mineInc ? factor : 1))}/DAG`
     + (mineInc ? (factor < 1 ? ` <span style="color:var(--red)">(AV ${inc} — EJ INTEGRERAT)</span>` : '')
       : ' <span style="color:var(--holo-dim)">VID ERÖVRING</span>');
 
@@ -536,7 +537,8 @@ function refreshInfoPanel() {
       claimBtn.textContent = 'GÖR TILL HEMLAND';
       show(claimBtn, true);
     } else {
-      const defN = state.mode === 'solo' ? countryArmy(c.id).units.length : defenderArmy(c, state.facts[c.id]).length;
+      const defUnits = state.mode === 'solo' ? countryArmy(c.id).units : defenderArmy(c, state.facts[c.id]);
+      const defN = defUnits.length;
       const ownerP = state.mode === 'player' ? playerOwning(c.id) : null;
       const world = state.mode === 'player' ? (state.aiWorldRemote || {}) : s;
       // V5: skilj på annekterat (uppgått i erövraren) och lydstat (finns kvar)
@@ -563,7 +565,7 @@ function refreshInfoPanel() {
       const war = s.wars[c.id];
       if (!war) {
         const truce = truceLeft(c.id);
-        setStatus(`FÖRSVAR: ${defN} ENHETER${conqTxt}`, '');
+        setStatus(`FÖRSVAR: ${soldiersText(defUnits)} (${defN} FÖRBAND)${conqTxt}`, '');
         if (truce) {
           $('#istatus').innerHTML += `<br><span style="color:var(--holo)">\u{1F54A}\u{FE0F} VAPENVILA — ${Math.ceil(truce)} DAGAR KVAR</span>`;
         } else if (isAlly(c.id)) {
@@ -624,7 +626,7 @@ function renderFactDev(c) {
     const cost = stepCost(lvl + queued * DEV_STEP);
     const btn = document.createElement('button');
     btn.className = 'armybtn';
-    btn.innerHTML = `\u{1F528} BYGG UT +${DEV_STEP}<br>${cost.money} \u{1F4B0} + ${cost.rp} \u{1F52C} \u{00B7} ${cost.days} DAGAR`
+    btn.innerHTML = `\u{1F528} BYGG UT +${DEV_STEP}<br>${money(cost.money)} + ${cost.rp} \u{1F52C} \u{00B7} ${cost.days} DAGAR`
       + (queued ? `<br><span style="color:var(--amber)">${queued} REDAN I KÖN</span>` : '');
     btn.addEventListener('click', () => queueDev(c.id, kind));
     el.appendChild(btn);
@@ -728,7 +730,7 @@ function renderFactDiplomacy(c) {
     el.appendChild(btn);
     const gift = document.createElement('button');
     gift.className = 'btn';
-    gift.innerHTML = '\u{1F381} SKICKA GÅVA (200 \u{1F4B0}) <small>+12 RELATION</small>';
+    gift.innerHTML = '\u{1F381} SKICKA GÅVA (${money(200)}) <small>+12 RELATION</small>';
     gift.addEventListener('click', () => {
       if (s.res.money < 200) { warn('FÖR LITE PENGAR'); return; }
       s.res.money -= 200;
@@ -828,7 +830,7 @@ function renderFactIntegration(c) {
   const btn = document.createElement('button');
   btn.className = 'btn amber';
   btn.style.marginTop = '5px';
-  btn.innerHTML = `\u{1F91D} INTEGRERA SNABBARE (+${cost.gain}%)<br>${cost.money} \u{1F4B0} + ${cost.pp} \u{2696}\u{FE0F}`;
+  btn.innerHTML = `\u{1F91D} INTEGRERA SNABBARE (+${cost.gain}%)<br>${money(cost.money)} + ${cost.pp} \u{2696}\u{FE0F}`;
   const blocked = s.res.money < cost.money ? 'FÖR LITE PENGAR'
     : s.res.pp < cost.pp ? 'FÖR LITE POLITICAL POWER' : null;
   if (blocked) { btn.disabled = true; btn.title = blocked; }
@@ -869,7 +871,7 @@ function renderFactBuild(c) {
     const uName = UNIT_TYPES[type].name;
     const btn = document.createElement('button');
     btn.className = 'armybtn';
-    btn.innerHTML = `${uName}<br>${fCost} \u{1F4B0} + ${b.man} \u{1F9CD}${b.needs.length ? '<br>KRÄVER ' + b.needs.map((r) => RESOURCES[r].icon).join('') : ''}`;
+    btn.innerHTML = `${uName}<br>${money(fCost)} + ${people(b.man)} \u{1F9CD}${b.needs.length ? '<br>KRÄVER ' + b.needs.map((r) => RESOURCES[r].icon).join('') : ''}`;
     const resReq = b.research && (s.nation.research[b.research[0]] || 0) < b.research[1]
       ? `KRÄVER FORSKNING: ${RESEARCH[b.research[0]].name.toUpperCase()} T${b.research[1]}` : null;
     const blocked = unitBuildingBlocked(c.id, type)
@@ -977,7 +979,7 @@ function renderCityPanel(cid) {
       for (const [bid, B] of Object.entries(BUILDINGS)) {
         const btn = document.createElement('button');
         btn.className = 'armybtn';
-        btn.innerHTML = `${B.icon} ${B.name}<br>${B.money} \u{1F4B0} \u{2022} ${B.days}D<br><small>${B.desc}</small>`;
+        btn.innerHTML = `${B.icon} ${B.name}<br>${money(B.money)} \u{2022} ${B.days}D<br><small>${B.desc}</small>`;
         const resReq = B.research && (s.nation.research[B.research[0]] || 0) < B.research[1]
           ? `KRÄVER FORSKNING: ${RESEARCH[B.research[0]].name.toUpperCase()} T${B.research[1]}` : null;
         const dupe = built.includes(bid) || queued.some((q) => q.building === bid) ? 'FINNS REDAN I STADEN' : null;
@@ -1023,7 +1025,7 @@ function renderFactTrade(c, dealsOnly = false) {
   for (const d of deals) {
     const btn = document.createElement('button');
     btn.className = 'armybtn';
-    btn.innerHTML = `AVBRYT: ${RESOURCES[d.res].icon} ${RESOURCES[d.res].name.toUpperCase()}<br>(${d.upkeep} \u{1F4B0}/DAG)`;
+    btn.innerHTML = `AVBRYT: ${RESOURCES[d.res].icon} ${RESOURCES[d.res].name.toUpperCase()}<br>(${money(d.upkeep)}/DAG)`;
     btn.addEventListener('click', () => {
       s.trade = s.trade.filter((x) => x !== d);
       toast(`AVTALET OM ${RESOURCES[d.res].name.toUpperCase()} AVSLUTAT`, '', 4000);
@@ -1054,7 +1056,7 @@ function renderFactTrade(c, dealsOnly = false) {
     const upkeep = Math.round(baseUpkeep * priceMul);
     const btn = document.createElement('button');
     btn.className = 'armybtn';
-    btn.innerHTML = `KÖP ${RESOURCES[r].icon} ${RESOURCES[r].name.toUpperCase()}<br>${price} \u{1F4B0} + ${upkeep} \u{1F4B0}/DAG`;
+    btn.innerHTML = `KÖP ${RESOURCES[r].icon} ${RESOURCES[r].name.toUpperCase()}<br>${money(price)} + ${money(upkeep)}/DAG`;
     const blocked = ideoWall ? ideoWall
       : (s.trade || []).length >= tradeSlots()
       ? `MAX ${tradeSlots()} AVTAL — BYGG \u{1F91D} HANDELSMARKNAD I EN STAD`
@@ -1101,7 +1103,7 @@ globe.onSelectArmy = (m) => {
   $('#fpop').innerHTML = (esp >= 2 ? `<b>FRÅN:</b> ${cname(m.att)}` : `<b>FRÅN:</b> OKÄNT <span style="color:var(--holo-dim)">(KRÄVER SPIONAGE T2)</span>`)
     + (esp >= 1 ? ` <b>MOT:</b> ${cname(m.target)}` : ` <b>MOT:</b> ? <span style="color:var(--holo-dim)">(T1)</span>`);
   $('#fcap').innerHTML = esp >= 3
-    ? `<b>STYRKA:</b> ${m.units.length} ENHETER`
+    ? `<b>STYRKA:</b> ${soldiersText(m.units)} (${m.units.length} FÖRBAND)`
     : `<b>STYRKA:</b> OKÄND <span style="color:var(--holo-dim)">(KRÄVER SPIONAGE T3)</span>`;
   $('#fcity').innerHTML = esp >= 1 ? `<b>FRAMME:</b> ${pct}% AV VÄGEN` : '';
   if (esp >= 4) {
@@ -1235,7 +1237,7 @@ function finishIntercept(m, result) {
     s.res.money += 100;
     $('#bresTitle').textContent = 'GENSKJUTNING LYCKAD!';
     $('#bresTitle').style.color = 'var(--amber)';
-    $('#bresText').innerHTML = `${cname(m.att)}S INVASION AV ${cname(m.target)} ÄR STOPPAD<br>+100 \u{1F4B0} KRIGSBYTE`;
+    $('#bresText').innerHTML = `${cname(m.att)}S INVASION AV ${cname(m.target)} ÄR STOPPAD<br>+${money(100)} KRIGSBYTE`;
   } else if (result.retreat) {
     s.army.units = expandUnits(result.survivors);
     $('#bresTitle').textContent = 'RETRÄTT';
@@ -1985,15 +1987,15 @@ function renderResbar() {
   const s = state.solo;
   if (!s?.res) return;
   $('#rday').textContent = 'DAG ' + s.clock.day;
-  $('#rmoney').textContent = s.res.money;
-  $('#rman').textContent = s.res.man;
+  $('#rmoney').textContent = money(s.res.money);
+  $('#rman').textContent = people(s.res.man);
   $('#rrp').textContent = s.res.rp;
   $('#rpp').textContent = s.res.pp;
   $('#pausebtn').innerHTML = s.clock.paused ? '&#9654; SPELA' : '&#9208; PAUS';
   // resursraden inne i NATION-panelen — så beslut kan fattas utan att stänga
   $('#natres').innerHTML = `<span>DAG <b>${s.clock.day}</b></span>` +
-    `<span>\u{1F4B0} <b>${s.res.money}</b></span>` +
-    `<span>\u{1F9CD} <b>${s.res.man}</b></span>` +
+    `<span>\u{1F4B0} <b>${money(s.res.money)}</b></span>` +
+    `<span>\u{1F9CD} <b>${people(s.res.man)}</b></span>` +
     `<span>\u{1F52C} <b>${s.res.rp}</b></span>` +
     `<span>\u{2696}\u{FE0F} <b>${s.res.pp}</b></span>`;
 }
@@ -2065,7 +2067,7 @@ function tickDay() {
     }
     if (n) {
       s.res.money += tax; s.res.rp += taxRp; s.res.pp += taxPp;
-      toast(`\u{1F4B0} LYDSTATSSKATT FRÅN ${n} LYDSTAT${n > 1 ? 'ER' : ''}: +${tax} \u{1F4B0} +${taxRp} \u{1F52C} +${taxPp} \u{2696}\u{FE0F}`, 'amber', 7000);
+      toast(`\u{1F4B0} LYDSTATSSKATT FRÅN ${n} LYDSTAT${n > 1 ? 'ER' : ''}: +${money(tax)} +${taxRp} \u{1F52C} +${taxPp} \u{2696}\u{FE0F}`, 'amber', 7000);
     }
   }
   // V5: omvärldens sanktioner biter på ekonomin
@@ -2074,7 +2076,7 @@ function tickDay() {
     const hit = Math.round(Math.abs(s.sanction.income) * 30);
     s.res.money = Math.max(0, s.res.money - hit);
     if (s.clock.day % 40 === 0) {
-      toast(`${s.sanction.icon} ${s.sanction.name} — ${s.sanction.desc} (-${hit} \u{1F4B0}/DAG)`, 'red', 8000);
+      toast(`${s.sanction.icon} ${s.sanction.name} — ${s.sanction.desc} (-${money(hit)}/DAG)`, 'red', 8000);
     }
   }
   // integrationskontorens upkeep
@@ -2122,7 +2124,7 @@ function tickDay() {
   // oro får konsekvenser
   if (st.unrest.total > 40 && s.clock.day % 12 === 0) {
     s.res.money = Math.max(0, s.res.money - 120);
-    toast('STREJKER! ORON KOSTAR 120 \u{1F4B0}', 'red', 5000);
+    toast(`STREJKER! ORON KOSTAR ${money(120)}`, 'red', 5000);
   }
   // val (om landet har rimligt fria val)
   if (['entirelyfree', 'free', 'mostlyfree', 'balanced'].includes(s.nation.laws.elections) && s.clock.day % 90 === 0) {
@@ -2376,15 +2378,15 @@ function maybeFireEvent() {
 function effectHtml(ch) {
   const bits = [];
   const cost = ch.cost || {};
-  if (cost.money) bits.push(`<span class="ec">-${cost.money} \u{1F4B0}</span>`);
+  if (cost.money) bits.push(`<span class="ec">-${money(cost.money)}</span>`);
   if (cost.pp) bits.push(`<span class="ec">-${cost.pp} \u{2696}\u{FE0F}</span>`);
   if (cost.rp) bits.push(`<span class="ec">-${cost.rp} \u{1F52C}</span>`);
-  if (cost.man) bits.push(`<span class="ec">-${cost.man} \u{1FA96}</span>`);
+  if (cost.man) bits.push(`<span class="ec">-${people(cost.man)} \u{1FA96}</span>`);
   const res = ch.res || {};
-  if (res.money) bits.push(`<span class="ep">+${res.money} \u{1F4B0}</span>`);
+  if (res.money) bits.push(`<span class="ep">+${money(res.money)}</span>`);
   if (res.pp) bits.push(`<span class="ep">+${res.pp} \u{2696}\u{FE0F}</span>`);
   if (res.rp) bits.push(`<span class="ep">+${res.rp} \u{1F52C}</span>`);
-  if (res.man) bits.push(`<span class="ep">+${res.man} \u{1FA96}</span>`);
+  if (res.man) bits.push(`<span class="ep">+${people(res.man)} \u{1FA96}</span>`);
   for (const [grp, tag] of [['temp', ' (TILLF.)'], ['perm', ' (PERM.)']]) {
     for (const [k, v] of Object.entries(ch[grp] || {})) {
       const good = statGoodness(k, v) > 0;
@@ -2483,7 +2485,7 @@ function queueDev(cid, kind) {
   const already = (s.devQueue || []).filter((q) => q.cid === cid && q.kind === kind).length;
   const cost = stepCost(lvl + already * DEV_STEP);
   if ((s.devQueue || []).length >= 4) { warn('MAX 4 BYGGPROJEKT I KÖN'); return; }
-  if (s.res.money < cost.money) { warn(`KRÄVER ${cost.money} \u{1F4B0} — DU HAR ${s.res.money}`); return; }
+  if (s.res.money < cost.money) { warn(`KRÄVER ${money(cost.money)} — DU HAR ${money(s.res.money)}`); return; }
   if (s.res.rp < cost.rp) { warn(`KRÄVER ${cost.rp} \u{1F52C} — DU HAR ${s.res.rp}`); return; }
   s.res.money -= cost.money;
   s.res.rp -= cost.rp;
@@ -3409,7 +3411,7 @@ function renderNationTab() {
   const info = document.createElement('div');
   info.style.cssText = 'font-size:7px;color:var(--holo-dim);margin-bottom:4px;line-height:1.8';
   info.innerHTML = (s.army
-    ? `NUVARANDE STYRKA: \u{1FA96}${comp.INF} \u{1F6E1}\u{FE0F}${comp.TANK} \u{2708}\u{FE0F}${comp.FLYG} &nbsp;•&nbsp; DINA TILLGÅNGAR: ${[...owned].map((r) => RESOURCES[r].icon).join(' ') || '–'}`
+    ? `NUVARANDE STYRKA: ${soldiersText(s.army.units)} — \u{1FA96}${comp.INF} \u{1F6E1}\u{FE0F}${comp.TANK} \u{2708}\u{FE0F}${comp.FLYG} FÖRBAND &nbsp;•&nbsp; DINA TILLGÅNGAR: ${[...owned].map((r) => RESOURCES[r].icon).join(' ') || '–'}`
     : 'INGEN ARMÉ — EN NY MOBILISERAS EFTER NEDERLAG')
     + (s.leader ? `<br>\u{1F3A9} LEDARE: ${s.leader.n.toUpperCase()} (${leaderDesc(s.leader)})` : '');
   armyDiv.appendChild(info);
@@ -3421,7 +3423,7 @@ function renderNationTab() {
     const uName = UNIT_TYPES[type].name; // faktionens namn efter applyFaction
     const btn = document.createElement('button');
     btn.className = 'armybtn';
-    btn.innerHTML = `${uName}<br>${fCost} \u{1F4B0} + ${b.man} \u{1F9CD}${b.needs.length ? '<br>KRÄVER ' + b.needs.map((r) => RESOURCES[r].icon).join('') : ''}`;
+    btn.innerHTML = `${uName}<br>${money(fCost)} + ${people(b.man)} \u{1F9CD}${b.needs.length ? '<br>KRÄVER ' + b.needs.map((r) => RESOURCES[r].icon).join('') : ''}`;
     const resReq = b.research && (s.nation.research[b.research[0]] || 0) < b.research[1]
       ? `KRÄVER FORSKNING: ${RESEARCH[b.research[0]].name.toUpperCase()} T${b.research[1]}` : null;
     const blocked = !s.army ? 'INGEN ARMÉ'
@@ -4359,7 +4361,7 @@ function openDemands(target, cbKey, result) {
     for (const pct of [0.1, 0.5, 0.9]) {
       const b = document.createElement('button');
       b.className = 'lawopt' + (pct === 0.5 ? ' cur' : '');
-      b.textContent = `${pct * 100}% (+${seizeAmount(pop, pct)} \u{1F4B0})`;
+      b.textContent = `${pct * 100}% (+${money(seizeAmount(pop, pct))})`;
       b.addEventListener('click', () => {
         demandState.choices.seize = pct;
         opts.querySelectorAll('.lawopt').forEach((x) => x.classList.remove('cur'));
@@ -4379,7 +4381,7 @@ function openDemands(target, cbKey, result) {
     info.style.cssText = 'font-size:7px;color:var(--holo-dim);margin:4px 0';
     const repDaily = () => Math.max(1, Math.round((pop / 4e6) * (demandState.choices.repPct / 0.15)));
     const updInfo = () => {
-      info.textContent = `${demandState.choices.repPct * 100}% I ${demandState.choices.repYears} ÅR → +${repDaily()} \u{1F4B0}/DAG I ${demandState.choices.repYears * 30} DAGAR`;
+      info.textContent = `${demandState.choices.repPct * 100}% I ${demandState.choices.repYears} ÅR → +${money(repDaily())}/DAG I ${demandState.choices.repYears * 30} DAGAR`;
     };
     const mkRow = (values, key, fmt) => {
       const row = document.createElement('div');
@@ -4448,8 +4450,8 @@ $('#demConfirm').addEventListener('click', () => {
         relChange(ally, 25, `DU AVTRÄDDE ${cname(target.id)}`);
         s.aiOwned[target.id] = ally;
         ensureAiEmpire(s, ally).owned.push(target.id);
-        got.push(`AVTRÄTT TILL ${cname(ally)} MOT ${pay} \u{1F4B0}`);
-        logEvent(`\u{1F91D} DU AVTRÄDDE ${cname(target.id)} TILL ${cname(ally)} MOT ${pay} \u{1F4B0}`, { mine: true });
+        got.push(`AVTRÄTT TILL ${cname(ally)} MOT ${money(pay)}`);
+        logEvent(`\u{1F91D} DU AVTRÄDDE ${cname(target.id)} TILL ${cname(ally)} MOT ${money(pay)}`, { mine: true });
       } else {
         // Delerövring har riktig geometri: kartan färgar bara den yta du tog,
         // och resten av landet förblir ett självständigt land som du kan gå i
@@ -4528,13 +4530,13 @@ $('#demConfirm').addEventListener('click', () => {
   if (cb.demands.seize && choices.seize) {
     const amt = seizeAmount(pop, choices.seize);
     s.res.money += amt;
-    got.push(`+${amt} \u{1F4B0} BESLAGTAGET`);
+    got.push(`+${money(amt)} BESLAGTAGET`);
   }
   if (cb.demands.reparations && checked('reparations')) {
     const daily = Math.max(1, Math.round((pop / 4e6) * (choices.repPct / 0.15)));
     const days = choices.repYears * 30;
     s.reparations.push({ from: target.name, daily, days });
-    got.push(`SKADESTÅND ${choices.repPct * 100}% I ${choices.repYears} ÅR (+${daily} \u{1F4B0}/DAG)`);
+    got.push(`SKADESTÅND ${choices.repPct * 100}% I ${choices.repYears} ÅR (+${money(daily)}/DAG)`);
   }
 
   delete s.wars[target.id];
@@ -4601,7 +4603,7 @@ $('#chCancel').addEventListener('click', () => {
 $('#nukebtn').addEventListener('click', () => {
   const s = state.solo;
   if (!selectedCountry || !s?.nation) return;
-  if (s.res.money < 500) { warn('KRÄVER 500 \u{1F4B0}'); return; }
+  if (s.res.money < 500) { warn(`KRÄVER ${money(500)}`); return; }
   state.pendingTarget = selectedCountry;
   s.prevAt = s.army?.at;
   s.res.money -= 500;
@@ -4701,7 +4703,7 @@ function finishBattle(result) {
     endWarTruce(target.id);
     $('#bresTitle').textContent = 'NEDERLAG';
     $('#bresTitle').style.color = 'var(--red)';
-    $('#bresText').innerHTML = `ARMÉN KROSSADES${result.auto ? ` (AUTO, ${result.defLeft} FIENDER KVAR)` : ''} — EN NY ARMÉ MOBILISERAS I HEMLANDET.<br>${target.name.toUpperCase()} KRÄVER SKADESTÅND: -${penalty} \u{1F4B0}`;
+    $('#bresText').innerHTML = `ARMÉN KROSSADES${result.auto ? ` (AUTO, ${result.defLeft} FIENDER KVAR)` : ''} — EN NY ARMÉ MOBILISERAS I HEMLANDET.<br>${target.name.toUpperCase()} KRÄVER SKADESTÅND: -${money(penalty)}`;
   }
   updateArmyMarker();
   applyState();

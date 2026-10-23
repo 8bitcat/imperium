@@ -1,16 +1,17 @@
 // IMPERIUM v4 — stadsbyggnader: produktion, poäng, råvaror och handel. Allt är data.
 // unlocksUnit = gör enhetstypen byggbar i landet där byggnaden står.
 // daily = daglig avkastning. resource = landet producerar råvaran. tradeSlot = +1 handelsavtal.
+import { money, people } from './real.js';
 
 export const BUILDINGS = {
   kasern: { name: 'KASERN', icon: '\u{1F396}\u{FE0F}', money: 120, days: 4, unlocksUnit: 'INF', desc: 'GÖR INFANTERI BYGGBART I LANDET' },
   fabrik: { name: 'STRIDSVAGNSFABRIK', icon: '\u{1F3ED}', money: 260, days: 6, unlocksUnit: 'TANK', research: ['tanks', 1], desc: 'GÖR STRIDSVAGNAR BYGGBARA I LANDET' },
   flygbas: { name: 'FLYGBAS', icon: '\u{1F6EB}', money: 340, days: 8, unlocksUnit: 'FLYG', research: ['aircraft', 1], desc: 'GÖR FLYG BYGGBART I LANDET' },
   universitet: { name: 'UNIVERSITET', icon: '\u{1F393}', money: 220, days: 5, daily: { rp: 2 }, desc: '+2 \u{1F52C} PER DAG' },
-  bank: { name: 'BANK', icon: '\u{1F3E6}', money: 220, days: 5, daily: { money: 8 }, desc: '+8 \u{1F4B0} PER DAG' },
-  rekryt: { name: 'REKRYTERINGSKONTOR', icon: '\u{1F9CD}', money: 150, days: 4, daily: { man: 1 }, desc: '+1 \u{1F9CD} PER DAG' },
+  bank: { name: 'BANK', icon: '\u{1F3E6}', money: 220, days: 5, daily: { money: 8 }, desc: `+${money(8)} PER DAG` },
+  rekryt: { name: 'REKRYTERINGSKONTOR', icon: '\u{1F9CD}', money: 150, days: 4, daily: { man: 1 }, desc: `+${people(1)} REKRYTER PER DAG` },
   marknad: { name: 'HANDELSMARKNAD', icon: '\u{1F91D}', money: 200, days: 5, tradeSlot: 1, desc: '+1 HANDELSAVTAL' },
-  integration: { name: 'INTEGRATIONSKONTOR', icon: '\u{1F3DB}\u{FE0F}', money: 260, days: 6, upkeep: 6, office: true, desc: 'INTEGRERAR LANDET SNABBARE (6 \u{1F4B0}/DAG)' },
+  integration: { name: 'INTEGRATIONSKONTOR', icon: '\u{1F3DB}\u{FE0F}', money: 260, days: 6, upkeep: 6, office: true, desc: `INTEGRERAR LANDET SNABBARE (${money(6)}/DAG)` },
   gruva: { name: 'GRUVA', icon: '\u{26CF}\u{FE0F}', money: 240, days: 6, resource: 'JARN', research: ['economy', 1], desc: 'PRODUCERAR JÄRN' },
   raffinaderi: { name: 'RAFFINADERI', icon: '\u{1F6E2}\u{FE0F}', money: 320, days: 7, resource: 'OLJA', research: ['economy', 2], desc: 'PRODUCERAR OLJA' },
 };
