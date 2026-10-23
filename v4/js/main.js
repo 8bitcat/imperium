@@ -39,9 +39,9 @@ const SOLO_COLOR = '#ff4f4f';
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.6.0';
+export const VERSION = '5.7.0';
 export const VERSION_DATE = '2026-10-23';
-export const VERSION_NAME = 'VERKLIGHETEN';
+export const VERSION_NAME = 'FOLKET';
 
 const globe = new Globe($('#globe'));
 
@@ -104,8 +104,9 @@ function isAboutMe(msg) {
 
 function fmtPop(p) {
   if (!p) return 'OKÄNT';
+  if (p >= 1e9) return (p / 1e9).toFixed(2).replace('.', ',') + ' MILJARDER';
   if (p >= 1e6) return (p / 1e6).toFixed(1).replace('.', ',') + ' MILJONER';
-  return p.toLocaleString('sv-SE');
+  return Math.round(p).toLocaleString('sv-SE');
 }
 
 function resIcons(countryId) {
@@ -411,7 +412,10 @@ function refreshInfoPanel() {
     flag.style.display = 'none';
   }
 
-  $('#fpop').innerHTML = `<b>INVÅNARE:</b> ${fmtPop(fact.p)}`;
+  // V5.7: befolkningen lever — visa hur mycket den ändrats sedan start
+  const popCh = fact.p0 ? (fact.p / fact.p0 - 1) * 100 : 0;
+  $('#fpop').innerHTML = `<b>INVÅNARE:</b> ${fmtPop(fact.p)}`
+    + (Math.abs(popCh) >= 0.05 ? ` <span style="color:${popCh > 0 ? '#4ae37a' : 'var(--red)'}">(${popCh > 0 ? '+' : '-'}${Math.abs(popCh).toFixed(1).replace('.', ',')} % SEDAN START)</span>` : '');
   $('#fcap').innerHTML = fact.c ? `<b>HUVUDSTAD:</b> ${fact.c.toUpperCase()}` : '';
   const nCities = (state.cities[c.id] || []).length;
   $('#fcity').innerHTML = nCities ? `<b>STÄDER:</b> ${nCities}` : '';
@@ -1803,6 +1807,71 @@ function tickIndLag() {
   }
 }
 
+// ---------- V5.7: LEVANDE BEFOLKNING ----------
+// Ett spelår = 120 dagar (samma som årstiderna på globen). Var 10:e dag växer
+// eller krymper varje land med sin verkliga takt (Världsbanken) plus det som
+// politiken ändrat i födda, döda och flyttningar — dina lagar i ditt rike,
+// AI-ländernas egna lagar hos dem. Befolkningen (state.facts[cid].p) styr sedan
+// inkomster, arméernas storlek och statistiken; startvärdet sparas i p0.
+const DAYS_PER_YEAR = 120;
+function tickPopulation() {
+  if (!hasIndicatorData()) return;
+  const s = state.solo;
+  const world = worldCtx().world;
+  const step = 10 / DAYS_PER_YEAR;
+  for (const c of globe.countries) {
+    const fact = state.facts[c.id];
+    const base = baseOfInd(c.id);
+    if (!fact?.p || !base) continue;
+    fact.p0 ??= fact.p;
+    const mine = !!s?.stats && (s.home === c.id || !!s.claims?.[c.id]);
+    const owner = world?.aiOwned?.[c.id] || c.id;
+    const T0 = baselineTotalsOf(c.id);
+    const v = countryIndicators(c.id, mine ? statTotals(s.stats) : nationTotalsOf(owner), T0,
+      mine ? s.nation?.laws : state.world?.[owner]?.laws || null);
+    if (!v) continue;
+    // samma tal som STATISTIK visar som "befolkningsförändring per år"
+    fact.p = Math.max(1000, fact.p + v.popchange * step);
+  }
+  if (state.indRankCache) state.indRankCache.at = 0;
+  popMilestone();
+}
+
+// en notis när rikets befolkning passerar en ny jämn milstolpe (uppåt eller nedåt)
+function popMilestone() {
+  const s = state.solo;
+  if (!s?.home) return;
+  let pop = 0;
+  for (const { cid, share } of myRealmParts()) pop += (state.facts[cid]?.p || 0) * share;
+  if (!pop) return;
+  const step = 10 ** Math.max(5, Math.floor(Math.log10(pop)) - 1);
+  const mark = Math.floor(pop / step);
+  if (s.popMark == null || s.popStep !== step) { s.popMark = mark; s.popStep = step; return; }
+  if (mark === s.popMark) return;
+  const up = mark > s.popMark;
+  s.popMark = mark;
+  const name = (s.nation?.formation?.name || globe.getCountry(s.home)?.name || '').toUpperCase();
+  toast(`${up ? '\u{1F476}' : '\u{1F4C9}'} ${name}S BEFOLKNING ${up ? 'PASSERAR' : 'SJUNKER UNDER'} ${fmtPop((up ? mark : mark + 1) * step)}`, up ? 'amber' : 'red', 7000);
+}
+
+// befolkningen sparas för de länder som ändrats sedan start
+function savedPops() {
+  const out = {};
+  for (const [cid, f] of Object.entries(state.facts || {})) if (f.p0 && f.p !== f.p0) out[cid] = Math.round(f.p);
+  return out;
+}
+function applyPendingPops() {
+  const pp = state.pendingPops;
+  if (!pp || !Object.keys(state.facts || {}).length) return;
+  for (const [cid, p] of Object.entries(pp)) {
+    const f = state.facts[cid];
+    if (!f) continue;
+    f.p0 ??= f.p;
+    f.p = p;
+  }
+  state.pendingPops = null;
+}
+
 // Landets nationsvärden i STARTLÄGET: standardlagar + dess verkliga ideologi.
 // Det verkliga datat innehåller redan landets politik, så statistiken flyttas
 // bara av skillnaden mot detta (statistics.js: minus).
@@ -2204,6 +2273,7 @@ function tickDay() {
   const s = state.solo;
   s.clock.day++;
   tickIndLag();   // V5.6: statistiken glider mot det läge politiken pekar ut
+  if (state.mode === 'solo' && s.clock.day % 10 === 0) tickPopulation();   // V5.7
   const st = s.stats;
   s.res.money = Math.max(0, s.res.money + Math.round(10 + st.income.total * 0.3));
   // varje ägt land bidrar efter sin ekonomiska tyngd — MEN erövrade länder ger
@@ -5309,6 +5379,7 @@ function startWorldLoad() {
     state.cities = cities;
     state.facts = facts;
     setIndicatorData(ind, facts);   // V5.6: verkliga mått för statistiken
+    applyPendingPops();             // V5.7: ett sparat partis befolkning
     globe.setCities(cities);
     globe.setRoutes(buildRoutes(cities));
     classifySeaRoutes();
@@ -5957,9 +6028,11 @@ function saveGame() {
           devQueue: s.devQueue, devLevels: s.devLevels, aiPuppets: s.aiPuppets,
           indLag: s.indLag,   // V5.6: hur långt politiken hunnit slå igenom i statistiken
           known: [...(s.known || [])],
+          popMark: s.popMark, popStep: s.popStep,
         },
         world: state.world || {},
         history: (state.history || []).slice(0, 120),
+        pops: savedPops(),   // V5.7: länder vars befolkning ändrats
       }));
     } else if (state.mode === 'tv') {
       const w = state.hostWorld;
@@ -6192,6 +6265,8 @@ function resumeGame(g) {
       });
       state.world = g.world || {};
       state.history = g.history || [];
+      state.pendingPops = g.pops || null;   // V5.7: läggs in så fort landsfakta laddats
+      applyPendingPops();
       // V5.6: lagkategorier som tillkommit sedan partiet sparades börjar i startläget
       if (s.nation) s.nation.laws = { ...defaultLaws(), ...(s.nation.laws || {}) };
       if (s.faction) applyFaction(FACTIONS[s.faction]);

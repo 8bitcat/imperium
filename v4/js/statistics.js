@@ -12,6 +12,7 @@
 // närmast i BNP per capita (markeras som uppskattat).
 import { dollars, bigNumber } from './real.js';
 import { LAWS } from './laws.js';
+import { LAW_EXTRAS } from './laws-extra.js';
 
 export const IND_GROUPS = [
   { id: 'eko', name: 'EKONOMI', icon: '\u{1F4B0}' },
@@ -19,6 +20,7 @@ export const IND_GROUPS = [
   { id: 'bef', name: 'BEFOLKNING', icon: '\u{1F465}' },
   { id: 'kun', name: 'KUNSKAP & TEKNIK', icon: '\u{1F4DA}' },
   { id: 'sam', name: 'SAMHÄLLE & RÄTT', icon: '\u{2696}\u{FE0F}' },
+  { id: 'brt', name: 'BROTT & SÄKERHET', icon: '\u{1F6A8}' },
   { id: 'nat', name: 'MILJÖ', icon: '\u{1F333}' },
   { id: 'fvr', name: 'FÖRSVAR', icon: '\u{1F396}\u{FE0F}' },
 ];
@@ -61,6 +63,17 @@ export const INDICATORS = [
     fx: { factory: 8 }, desc: 'Tillverkningsindustrins del av ekonomin' },
   { id: 'services', name: 'Tjänster', group: 'eko', fmt: 'pctgdp', better: null, mode: 'add', min: 10, max: 90, agg: 'gdp',
     fx: { gdp: 4, factory: -6, research: 2 }, desc: 'Tjänstesektorns del av ekonomin' },
+  // V5.7
+  { id: 'govspend', name: 'Statens utgifter', group: 'eko', fmt: 'pctgdp', better: null, mode: 'add', min: 8, max: 70, agg: 'gdp',
+    fx: { welfare: 10, statepower: 6, income: 4, milpower: 3 }, desc: 'Statens utgifter i procent av BNP' },
+  { id: 'curacc', name: 'Bytesbalans', group: 'eko', fmt: 'pp', better: 'high', mode: 'add', min: -30, max: 30, agg: 'gdp',
+    fx: { factory: 4, gdp: 1 }, desc: 'Vad landet tjänar mot omvärlden, procent av BNP' },
+  { id: 'stockcap', name: 'Börsvärde', group: 'eko', fmt: 'pctgdp', better: 'high', mode: 'mul', agg: 'gdp',
+    fx: { gdp: 0.4, freedom: 0.2, stability: 0.3, statepower: -0.2 }, desc: 'Börsbolagens värde i procent av BNP' },
+  { id: 'bankacc', name: 'Har bankkonto', group: 'eko', fmt: 'pct', better: 'high', mode: 'add', min: 5, max: 100,
+    fx: { gdp: 8, hdi: 6 }, desc: 'Andel vuxna med bankkonto eller konto i mobilen' },
+  { id: 'labor', name: 'Arbetskraft', group: 'eko', fmt: 'count', better: 'high', mode: 'mul', agg: 'sum',
+    fx: { gdp: 0.05, immigration: 0.05 }, desc: 'Personer som arbetar eller söker arbete' },
   { id: 'tourists', name: 'Turister per år', group: 'eko', fmt: 'count', better: 'high', mode: 'mul', agg: 'sum',
     fx: { safety: 0.3, qol: 0.2, freedom: 0.2, unrest: -0.4 }, desc: 'Utländska besökare på ett år' },
   { id: 'airpax', name: 'Flygresenärer per år', group: 'eko', fmt: 'count', better: 'high', mode: 'mul', agg: 'sum',
@@ -72,6 +85,10 @@ export const INDICATORS = [
     fx: { qol: 3, welfare: 2.5, hdi: 2, safety: 1, unrest: -1.5 }, desc: 'Hur länge en nyfödd kan väntas leva' },
   { id: 'happiness', name: 'Lycka', group: 'hal', fmt: 'score10', better: 'high', agg: 'derived',
     fx: { qol: 1.2, approval: 1, freedom: 0.8, unrest: -1, safety: 0.5 }, desc: 'Hur nöjda människor är med sina liv (0–10)' },
+  { id: 'lifefem', name: 'Livslängd kvinnor', group: 'hal', fmt: 'years', better: 'high', mode: 'add', min: 40, max: 95,
+    fx: { qol: 3, welfare: 2.5, hdi: 2, safety: 0.5, unrest: -1 }, desc: 'Hur länge en nyfödd flicka kan väntas leva' },
+  { id: 'lifemale', name: 'Livslängd män', group: 'hal', fmt: 'years', better: 'high', mode: 'add', min: 40, max: 92,
+    fx: { qol: 3, welfare: 2, hdi: 2, safety: 1.5, unrest: -2 }, desc: 'Hur länge en nyfödd pojke kan väntas leva' },
   { id: 'infmort', name: 'Spädbarnsdödlighet', group: 'hal', fmt: 'per1000', better: 'low', mode: 'mul',
     fx: { welfare: -0.3, qol: -0.2, hdi: -0.25, corruption: 0.1 }, desc: 'Barn som dör före ett års ålder, per 1 000 födda' },
   { id: 'u5mort', name: 'Barnadödlighet', group: 'hal', fmt: 'per1000', better: 'low', mode: 'mul',
@@ -90,6 +107,12 @@ export const INDICATORS = [
     fx: { welfare: -0.5, gdp: -0.4, corruption: 0.3, unrest: 0.2 }, desc: 'Andel som lever på under 2,15 $ om dagen' },
   { id: 'gini', name: 'Inkomstskillnader (Gini)', group: 'hal', fmt: 'num1', better: 'low', mode: 'add', min: 20, max: 70,
     fx: { welfare: -10, statepower: -2, gdp: 2, corruption: 4 }, desc: '0 = alla tjänar lika, 100 = en person tjänar allt' },
+  { id: 'overweight', name: 'Övervikt', group: 'hal', fmt: 'pct', better: 'low', mode: 'add', min: 3, max: 85,
+    fx: { qol: -3, gdp: 2 }, desc: 'Andel vuxna med övervikt' },
+  { id: 'undernourish', name: 'Undernäring', group: 'hal', fmt: 'pct', better: 'low', mode: 'mul',
+    fx: { welfare: -0.4, gdp: -0.4, corruption: 0.2 }, desc: 'Andel som inte får tillräckligt med mat' },
+  { id: 'sanitation', name: 'Säkra toaletter', group: 'hal', fmt: 'pct', better: 'high', mode: 'add', min: 3, max: 100,
+    fx: { hdi: 8, welfare: 4 }, desc: 'Andel med toalett och avlopp som är säkra' },
   { id: 'smoking', name: 'Rökare', group: 'hal', fmt: 'pct', better: 'low', mode: 'add', min: 2, max: 50,
     fx: { qol: -4, hdi: -3, freedom: 2 }, desc: 'Andel vuxna som röker' },
   { id: 'alcohol', name: 'Alkohol', group: 'hal', fmt: 'liters', better: 'low', mode: 'add', min: 0, max: 18,
@@ -112,6 +135,10 @@ export const INDICATORS = [
   { id: 'urban', name: 'Andel i städer', group: 'bef', fmt: 'pct', better: null, mode: 'add', min: 10, max: 100,
     fx: { factory: 6, gdp: 4 }, desc: 'Andel som bor i städer' },
   { id: 'netmig', name: 'Nettoinvandring per år', group: 'bef', fmt: 'scount', better: null, agg: 'sum', desc: 'Invandrare minus utvandrare på ett år' },
+  { id: 'births', name: 'Födda per år', group: 'bef', fmt: 'count', better: null, agg: 'sum', desc: 'Barn som föds på ett år' },
+  { id: 'deaths', name: 'Döda per år', group: 'bef', fmt: 'count', better: null, agg: 'sum', desc: 'Människor som dör på ett år' },
+  { id: 'popchange', name: 'Befolkningsförändring per år', group: 'bef', fmt: 'scount', better: null, agg: 'sum',
+    desc: 'Födda minus döda plus nettoinvandring — så mycket växer eller krymper befolkningen' },
   { id: 'area', name: 'Yta', group: 'bef', fmt: 'km2', better: 'high', agg: 'sum', desc: 'Rikets landyta' },
   { id: 'density', name: 'Befolkningstäthet', group: 'bef', fmt: 'perkm2', better: null, agg: 'derived', desc: 'Invånare per kvadratkilometer' },
 
@@ -128,14 +155,38 @@ export const INDICATORS = [
     fx: { research: 2.5 }, desc: 'Vad landet lägger på forskning, procent av BNP' },
   { id: 'patents', name: 'Patentansökningar per år', group: 'kun', fmt: 'count', better: 'high', mode: 'mul', agg: 'sum',
     fx: { research: 0.8, gdp: 0.2, freedom: 0.2 }, desc: 'Nya uppfinningar som söker patent' },
+  { id: 'primary', name: 'Fullföljd grundskola', group: 'kun', fmt: 'pct', better: 'high', mode: 'add', min: 10, max: 110,
+    fx: { hdi: 8, welfare: 4 }, desc: 'Andel barn som går ut grundskolan' },
+  { id: 'researchers', name: 'Forskare', group: 'kun', fmt: 'permillion', better: 'high', mode: 'mul',
+    fx: { research: 0.6, hdi: 0.1 }, desc: 'Forskare per miljon invånare' },
+  { id: 'articles', name: 'Vetenskapliga artiklar per år', group: 'kun', fmt: 'count', better: 'high', mode: 'mul', agg: 'sum',
+    fx: { research: 0.7, freedom: 0.1 }, desc: 'Publicerade forskningsartiklar på ett år' },
+  { id: 'broadband', name: 'Bredband', group: 'kun', fmt: 'per100', better: 'high', mode: 'add', min: 0, max: 60,
+    fx: { gdp: 10, research: 6 }, desc: 'Fasta bredbandsabonnemang per 100 invånare' },
   { id: 'internet', name: 'Internetanvändare', group: 'kun', fmt: 'pct', better: 'high', mode: 'add', min: 1, max: 100,
     fx: { research: 10, freedom: 10, gdp: 8, statepower: -3 }, desc: 'Andel som använder internet' },
   { id: 'mobile', name: 'Mobilabonnemang', group: 'kun', fmt: 'per100', better: 'high', mode: 'add', min: 1, max: 200,
     fx: { gdp: 20, freedom: 5 }, desc: 'Mobilabonnemang per 100 invånare' },
 
   // ---------- SAMHÄLLE & RÄTT ----------
-  { id: 'homicide', name: 'Mord', group: 'sam', fmt: 'per100k', better: 'low', mode: 'mul',
+  { id: 'homicide', name: 'Mord', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
     fx: { safety: -0.6, unrest: 0.4, corruption: 0.3, welfare: -0.15 }, desc: 'Mord per 100 000 invånare och år' },
+  { id: 'robbery', name: 'Rån', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { safety: -0.5, unrest: 0.4, welfare: -0.2, corruption: 0.2 }, desc: 'Rån per 100 000 invånare och år' },
+  { id: 'burglary', name: 'Inbrott', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { safety: -0.4, welfare: -0.15, unrest: 0.2 }, desc: 'Inbrott per 100 000 invånare och år' },
+  { id: 'drugcrime', name: 'Narkotikabrott', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { corruption: 0.3, unrest: 0.2, safety: -0.2 }, desc: 'Narkotikabrott per 100 000 invånare och år' },
+  { id: 'cybercrime', name: 'Nätbedrägerier', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { research: 0.2, safety: -0.2 }, desc: 'Anmälda bedrägerier på nätet per 100 000 invånare och år' },
+  { id: 'prisoners', name: 'Fångar', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { statepower: 0.4, freedom: -0.4, safety: 0.2 }, desc: 'Människor i fängelse per 100 000 invånare' },
+  { id: 'police', name: 'Poliser', group: 'brt', fmt: 'per100k', better: null, mode: 'mul',
+    fx: { statepower: 0.4, safety: 0.2 }, desc: 'Poliser per 100 000 invånare' },
+  { id: 'feelsafe', name: 'Trygghet', group: 'brt', fmt: 'pct', better: 'high', mode: 'add', min: 5, max: 99,
+    fx: { safety: 15, unrest: -10, freedom: 3 }, desc: 'Andel som känner sig trygga ute ensamma på kvällen' },
+  { id: 'traffic', name: 'Trafikdöda', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { qol: -0.2, hdi: -0.2, safety: -0.2 }, desc: 'Döda i trafiken per 100 000 invånare och år' },
   { id: 'voice', name: 'Demokrati & yttrandefrihet', group: 'sam', fmt: 'wgi', better: 'high', mode: 'add', min: -2.5, max: 2.5,
     fx: { freedom: 2, ideopower: -0.3, statepower: -0.5 }, desc: 'Fria val, fri press och fri organisering (0–100)' },
   { id: 'pressfree', name: 'Pressfrihet', group: 'sam', fmt: 'score100', better: 'high', agg: 'derived', desc: 'Hur fritt journalister kan arbeta (0–100)' },
@@ -161,6 +212,8 @@ export const INDICATORS = [
     fx: { factory: 0.5, qol: -0.2, gdp: 0.1 }, desc: 'Ton koldioxid per person och år' },
   { id: 'pm25', name: 'Luftföroreningar', group: 'nat', fmt: 'ugm3', better: 'low', mode: 'mul',
     fx: { factory: 0.5, qol: -0.4 }, desc: 'Fina partiklar i luften (PM2,5)' },
+  { id: 'energyuse', name: 'Energianvändning per invånare', group: 'nat', fmt: 'kgoe', better: null, mode: 'mul',
+    fx: { factory: 0.4, gdp: 0.1 }, desc: 'Energi per person och år, i kilo olja' },
   { id: 'renew', name: 'Förnybar energi', group: 'nat', fmt: 'pct', better: 'high', mode: 'add', min: 0, max: 100,
     fx: { qol: 12, research: 4, factory: -6 }, desc: 'Andel av energin från sol, vind, vatten och bio' },
   { id: 'forest', name: 'Skog', group: 'nat', fmt: 'pct', better: 'high', mode: 'add', min: 0, max: 98,
@@ -173,6 +226,10 @@ export const INDICATORS = [
   { id: 'reserve', name: 'Reservister', group: 'fvr', fmt: 'count', better: 'high', agg: 'derived', desc: 'Manskap som kan kallas in' },
   { id: 'milx', name: 'Försvarsutgifter', group: 'fvr', fmt: 'pctgdp', better: null, mode: 'add', min: 0, max: 40, agg: 'gdp',
     fx: { milpower: 3, readiness: 2, welfare: -1 }, desc: 'Vad landet lägger på försvaret, procent av BNP' },
+  { id: 'milpers', name: 'Militär personal', group: 'fvr', fmt: 'pct', better: null, mode: 'add', min: 0, max: 15,
+    fx: { milpower: 1, manpower: 1.5 }, desc: 'Andel av arbetskraften som är militärer' },
+  { id: 'armsexp', name: 'Vapenexport', group: 'fvr', fmt: 'usdbig', better: null, mode: 'mul', agg: 'sum',
+    fx: { milpower: 0.8, factory: 0.3 }, desc: 'Värdet av vapen som säljs till andra länder per år' },
   { id: 'milbudget', name: 'Försvarsbudget', group: 'fvr', fmt: 'usdbig', better: 'high', agg: 'derived', desc: 'Försvarets pengar på ett år' },
 ];
 
@@ -220,10 +277,57 @@ export const LAW_EFFECTS = {
     privatized: { gdpgrowth: ['+', 0.5], fdi: ['+', 1.5] }, full: { gdpgrowth: ['+', 0.8], fdi: ['+', 3], gini: ['+', 3] },
   },
   housing: { public: { gini: ['+', -2], debt: ['+', 6] }, rentcontrol: { gini: ['+', -1] }, deregulated: { gini: ['+', 3] } },
-  firearms: { free: { homicide: ['*', 1.8] }, licensed: { homicide: ['*', 1.2] }, ban: { homicide: ['*', 0.85] }, stateonly: { homicide: ['*', 0.75] } },
-  drugs: { legal: { homicide: ['*', 0.85] }, decriminalized: { homicide: ['*', 0.95] }, war: { homicide: ['*', 1.3] } },
-  punishments: { minimal: { homicide: ['*', 1.15] }, harsh: { homicide: ['*', 0.93] }, veryharsh: { homicide: ['*', 0.88] } },
-  surveillance: { none: { voice: ['+', 0.2] }, mass: { voice: ['+', -0.4], homicide: ['*', 0.9] }, total: { voice: ['+', -0.9], homicide: ['*', 0.85] } },
+  firearms: {
+    free: { homicide: ['*', 1.8], robbery: ['*', 1.2], feelsafe: ['+', -4] }, licensed: { homicide: ['*', 1.2] },
+    ban: { homicide: ['*', 0.85], robbery: ['*', 0.9] }, stateonly: { homicide: ['*', 0.75], robbery: ['*', 0.85] },
+  },
+  drugs: {
+    legal: { homicide: ['*', 0.85], drugcrime: ['*', 0.15], prisoners: ['*', 0.85] },
+    decriminalized: { homicide: ['*', 0.95], drugcrime: ['*', 0.4], prisoners: ['*', 0.9] },
+    strict: { drugcrime: ['*', 1.4], prisoners: ['*', 1.15] },
+    war: { homicide: ['*', 1.3], drugcrime: ['*', 2.2], prisoners: ['*', 1.5] },
+  },
+  punishments: {
+    minimal: { homicide: ['*', 1.15], prisoners: ['*', 0.6] }, low: { prisoners: ['*', 0.8] },
+    harsh: { homicide: ['*', 0.93], prisoners: ['*', 1.3] }, veryharsh: { homicide: ['*', 0.88], prisoners: ['*', 1.7] },
+  },
+  rehabilitation: {
+    veryhigh: { prisoners: ['*', 0.8], robbery: ['*', 0.9] }, high: { prisoners: ['*', 0.9] },
+    unavailable: { prisoners: ['*', 1.15], robbery: ['*', 1.1] }, nonexistent: { prisoners: ['*', 1.25], robbery: ['*', 1.15] },
+  },
+  trials: { long: { prisoners: ['*', 0.9] }, speedup: { prisoners: ['*', 1.1] }, quick: { prisoners: ['*', 1.2] } },
+  surveillance: {
+    none: { voice: ['+', 0.2], cybercrime: ['*', 1.1] },
+    mass: { voice: ['+', -0.4], homicide: ['*', 0.9], cybercrime: ['*', 0.85], feelsafe: ['+', 3] },
+    total: { voice: ['+', -0.9], homicide: ['*', 0.85], cybercrime: ['*', 0.75], feelsafe: ['+', 5] },
+  },
+  // V5.7: de sex nya lagarna
+  alcohol_policy: {
+    free: { alcohol: ['*', 1.25] }, licensed: { alcohol: ['*', 1.1] }, monopoly: { alcohol: ['*', 0.8] },
+    restricted: { alcohol: ['*', 0.6] }, prohibition: { alcohol: ['*', 0.3], homicide: ['*', 1.15] },
+  },
+  transport: {
+    freetransit: { co2: ['*', 0.85], pm25: ['*', 0.85], traffic: ['*', 0.8] }, transitfirst: { co2: ['*', 0.92], pm25: ['*', 0.9], traffic: ['*', 0.9] },
+    roads: { co2: ['*', 1.08], traffic: ['*', 1.1] }, carnation: { co2: ['*', 1.2], pm25: ['*', 1.15], traffic: ['*', 1.25] },
+    private: { traffic: ['*', 1.1] },
+  },
+  agriculture: {
+    collective: { agri: ['+', 3], undernourish: ['*', 1.2] }, subsidized: { agri: ['+', 1.5], undernourish: ['*', 0.8] },
+    organic: { protected: ['+', 2], pm25: ['*', 0.95] }, freemarket: { agri: ['+', -1] }, agribusiness: { agri: ['+', -1.5], forest: ['+', -3] },
+  },
+  citizenship: { birthright: { netmig: ['*', 1.15] }, easy: { netmig: ['*', 1.08] }, bloodline: { netmig: ['*', 0.8] }, loyalty: { netmig: ['*', 0.7] } },
+  childcare: {
+    free: { femlabor: ['+', 8], fert: ['+', 0.15], birth: ['+', 1] }, subsidized: { femlabor: ['+', 4], fert: ['+', 0.08], birth: ['+', 0.5] },
+    familycash: { femlabor: ['+', -4], fert: ['+', 0.1], birth: ['+', 0.6] }, private: { femlabor: ['+', -3], fert: ['+', -0.1], birth: ['+', -0.6] },
+    none: { femlabor: ['+', -8], fert: ['+', -0.15], birth: ['+', -1] },
+  },
+  policing: {
+    unarmed: { police: ['*', 0.9], homicide: ['*', 1.05], feelsafe: ['+', 2] },
+    community: { police: ['*', 0.95], homicide: ['*', 0.95], prisoners: ['*', 0.85], feelsafe: ['+', 4] },
+    tough: { prisoners: ['*', 1.3], robbery: ['*', 0.85], feelsafe: ['+', 2] },
+    militarized: { police: ['*', 1.4], prisoners: ['*', 1.5], homicide: ['*', 0.9], feelsafe: ['+', -2] },
+    secretpolice: { police: ['*', 1.8], prisoners: ['*', 1.8], voice: ['+', -0.6], feelsafe: ['+', -8] },
+  },
   internet: {
     free: { internet: ['+', 4] }, censored: { internet: ['+', -8], voice: ['+', -0.3] },
     firewall: { internet: ['+', -20], voice: ['+', -0.6] },
@@ -247,8 +351,8 @@ export const LAW_EFFECTS = {
   equality: {
     full: { femlabor: ['+', 10], womenparl: ['+', 12], gii: ['+', -0.04] },
     strong: { femlabor: ['+', 5], womenparl: ['+', 6], gii: ['+', -0.02] },
-    traditional: { femlabor: ['+', -12], womenparl: ['+', -8], gii: ['+', 0.1], fert: ['+', 0.4] },
-    restricted: { femlabor: ['+', -30], womenparl: ['=', 0], gii: ['+', 0.3], fert: ['+', 0.9], literacy: ['+', -8] },
+    traditional: { femlabor: ['+', -12], womenparl: ['+', -8], gii: ['+', 0.1], fert: ['+', 0.4], birth: ['+', 2.5] },
+    restricted: { femlabor: ['+', -30], womenparl: ['=', 0], gii: ['+', 0.3], fert: ['+', 0.9], birth: ['+', 5], literacy: ['+', -8] },
   },
   military_service: { none: { milx: ['+', -0.4] }, high: { milx: ['+', 0.5], youthunemp: ['+', -3] }, mandatory: { milx: ['+', 1], unemp: ['+', -1], youthunemp: ['+', -6] } },
   healthcare: { fullyfree: { healthx: ['+', 2], life: ['+', 1] }, free: { healthx: ['+', 1], life: ['+', 0.5] }, mostlyunfree: { life: ['+', -0.7] }, unfree: { life: ['+', -1.5], infmort: ['*', 1.2] } },
@@ -260,7 +364,10 @@ export const LAW_EFFECTS = {
     protectionism: { imports: ['*', 0.85], fdi: ['+', -1] }, disengagement: { exports: ['*', 0.75], imports: ['*', 0.7], fdi: ['+', -2], tourists: ['*', 0.7] },
     isolationist: { exports: ['*', 0.5], imports: ['*', 0.5], fdi: ['+', -4], tourists: ['*', 0.3] },
   },
-  popgrowth: { none: { fert: ['+', -0.4] }, discouraged: { fert: ['+', -0.2] }, encouraged: { fert: ['+', 0.3] }, mandatory: { fert: ['+', 0.8], birth: ['+', 4] } },
+  popgrowth: {
+    none: { fert: ['+', -0.4], birth: ['+', -3] }, discouraged: { fert: ['+', -0.2], birth: ['+', -1.5] },
+    encouraged: { fert: ['+', 0.3], birth: ['+', 2] }, mandatory: { fert: ['+', 0.8], birth: ['+', 5] },
+  },
   workhours: { minimum: { unemp: ['+', 1] }, extended: { unemp: ['+', -0.5] }, maximum: { unemp: ['+', -1], life: ['+', -1] } },
   immigration: {
     noborders: { netmig: ['*', 3], popgrowth: ['+', 0.8] }, open: { netmig: ['*', 2], popgrowth: ['+', 0.4] },
@@ -269,6 +376,11 @@ export const LAW_EFFECTS = {
     closed: { netmig: ['=', 0], popgrowth: ['+', -0.3] }, deportation: { netmig: ['%pop', -0.006], popgrowth: ['+', -0.8] },
   },
 };
+
+// V5.7: nya lagalternativ (laws-extra.js) kan ha egna direkta effekter
+for (const [cat, list] of Object.entries(LAW_EXTRAS)) {
+  for (const e of list) if (e.effects) (LAW_EFFECTS[cat] ||= {})[e.option.id] = e.effects;
+}
 
 // startläget per lagkategori (det verkliga datat har redan landets politik)
 const DEFAULT_LAW = Object.fromEntries(Object.entries(LAWS).map(([cat, L]) =>
@@ -298,6 +410,8 @@ export function fmtInd(id, v) {
     case 'score10': return `${dec(v, 1)} / 10`;
     case 'score100': return `${Math.round(v)} / 100`;
     case 'tons': return `${dec(v, 1)} TON`;
+    case 'permillion': return `${bigNumber(v)} / MILJON`;
+    case 'kgoe': return `${bigNumber(v)} KG OLJA`;
     case 'ugm3': return `${dec(v, 1)} UG/M3`;
     case 'liters': return `${dec(v, 1)} LITER`;
     default: return dec(v, 1);
@@ -307,14 +421,18 @@ export function fmtInd(id, v) {
 // ---------- data + uppskattning av det som saknas ----------
 let BASE = {};          // cid -> { nyckel: värde }
 let EST = {};           // cid -> Set(nycklar som är uppskattade)
+let LIVE = null;        // V5.7: facts-objektet — befolkningen ändras under spelets gång
 const RAW_KEYS = ['gdppc', 'gdpgrowth', 'unemp', 'youthunemp', 'infl', 'lendrate', 'debt', 'tax', 'exports', 'imports',
   'fdi', 'hitech', 'agri', 'manuf', 'services', 'tourists', 'airpax', 'life', 'infmort', 'u5mort', 'doctors', 'beds',
   'healthx', 'water', 'elec', 'poverty', 'gini', 'smoking', 'alcohol', 'popgrowth', 'birth', 'death', 'fert', 'kids',
   'old', 'urban', 'netmig', 'area', 'literacy', 'schoolyears', 'tertiary', 'edux', 'rnd', 'patents', 'internet',
   'mobile', 'homicide', 'voice', 'corruptgov', 'rulelaw', 'polstab', 'goveff', 'regq', 'femlabor', 'womenparl', 'gii',
-  'co2', 'pm25', 'renew', 'forest', 'protected', 'milx', 'hdi'];
+  'co2', 'pm25', 'renew', 'forest', 'protected', 'milx', 'hdi',
+  // V5.7
+  'lifefem', 'lifemale', 'overweight', 'undernourish', 'sanitation', 'researchers', 'articles', 'primary', 'broadband',
+  'govspend', 'curacc', 'stockcap', 'bankacc', 'energyuse', 'armsexp', 'milpers', 'labor', 'traffic'];
 // räknas per invånare — uppskattas som andel och skalas sedan med folkmängden
-const PER_CAPITA_SUMS = { tourists: 1, airpax: 1, patents: 1, netmig: 1 };
+const PER_CAPITA_SUMS = { tourists: 1, airpax: 1, patents: 1, netmig: 1, articles: 1, armsexp: 1, labor: 1 };
 
 // Länder Världsbanken saknar helt (inte medlemmar m.m.) — verkliga värden från
 // nationell statistik, avrundade. Resten fylls av uppskattningen nedan.
@@ -356,6 +474,28 @@ export function setIndicatorData(raw, facts) {
     }
   }
   for (const cid of ids) BASE[cid].pop = popOf(cid);
+  // V5.7: brottsstatistik finns inte i Världsbanken — den uppskattas ur landets
+  // verkliga mordtal, inkomstskillnader, urbanisering, rättsstat och välstånd.
+  for (const cid of ids) {
+    const b = BASE[cid];
+    const H = Math.max(0.2, b.homicide || 3), G = b.gini || 34, Ur = b.urban || 60, Rl = b.rulelaw || 0;
+    const P = Math.max(300, b.gdppc), Ps = b.polstab || 0, Net = b.internet || 50;
+    const model = {
+      robbery: 15 + 18 * H ** 0.8 * (G / 34) * Math.sqrt(Ur / 60),
+      burglary: 80 * (P / 10000) ** 0.35 * Math.max(0.3, 1 - Rl / 6),
+      drugcrime: 40 * (P / 10000) ** 0.3,
+      cybercrime: 3 * Net * (P / 10000) ** 0.3,
+      prisoners: Math.max(20, 60 + 18 * H ** 0.7 - 15 * Rl),
+      police: Math.max(80, 220 - 30 * Rl + 10 * Math.max(0, -Ps)),
+      feelsafe: Math.max(15, Math.min(98, 88 - 7 * Math.sqrt(H) + 3 * Ps)),
+    };
+    for (const [k, v] of Object.entries(model)) {
+      if (Number.isFinite(b[k])) continue;
+      b[k] = v;
+      (EST[cid] ||= new Set()).add(k);
+    }
+  }
+  LIVE = facts;
 }
 
 export function hasIndicatorData() { return Object.keys(BASE).length > 0; }
@@ -404,19 +544,30 @@ export function countryIndicators(cid, T, T0 = null, laws = null) {
       : clampV(base + effect(d.fx, D), d.min, d.max);
   }
   // nettoinvandringen följer invandringsvärdet: +100 ≈ 0,4 % av folkmängden per år
-  v.netmig = (b.netmig || 0) + b.pop * 0.004 * ((D.immigration || 0) / 100);
+  v.netmig = (b.netmig || 0) + (LIVE?.[cid]?.p || b.pop) * 0.004 * ((D.immigration || 0) / 100);
   // lagar som slår direkt på ett mått (bara de som skiljer sig från startläget)
   for (const [cat, opt] of Object.entries(laws || {})) {
     if (opt === DEFAULT_LAW[cat]) continue;
     for (const [id, [op, n]] of Object.entries(LAW_EFFECTS[cat]?.[opt] || {})) {
       if (!Number.isFinite(v[id])) continue;
-      v[id] = op === '+' ? v[id] + n : op === '*' ? v[id] * n : op === '=' ? n : op === '%pop' ? b.pop * n : v[id];
+      v[id] = op === '+' ? v[id] + n : op === '*' ? v[id] * n : op === '=' ? n : op === '%pop' ? (LIVE?.[cid]?.p || b.pop) * n : v[id];
       if (IND[id]) v[id] = clampV(v[id], IND[id].min, IND[id].max);
     }
   }
-  v.pop = b.pop;
+  // V5.7: befolkningen lever — dagens folkmängd i stället för startårets
+  const pop = LIVE?.[cid]?.p || b.pop;
+  v.pop = pop;
   v.area = b.area;
-  v.gdp = v.gdppc * b.pop;
+  v.gdp = v.gdppc * pop;
+  if (Number.isFinite(v.labor)) v.labor *= pop / b.pop;
+  v.births = (v.birth || 0) / 1000 * pop;
+  v.deaths = (v.death || 0) / 1000 * pop;
+  // Världsbankens födda, döda och nettoinvandring summerar sällan exakt till
+  // landets verkliga tillväxt (oregistrerad utvandring m.m.). Resten läggs till
+  // så att startläget växer i verklig takt — och det är detta tal som
+  // befolkningen faktiskt ändras med (main.js: tickPopulation).
+  const resid = (b.popgrowth || 0) / 100 - ((b.birth || 0) - (b.death || 0)) / 1000 - (b.netmig || 0) / b.pop;
+  v.popchange = v.births - v.deaths + (v.netmig || 0) + resid * pop;
   // HDI: verkligt utgångsvärde × hur mycket delarna rört sig
   const h0 = hdiCalc(b.life, b.schoolyears, b.gdppc);
   v.hdi = clampV((b.hdi || h0) * (hdiCalc(v.life, v.schoolyears, v.gdppc) / h0), 0.2, 1);
@@ -518,6 +669,10 @@ export const RANKINGS = [
   { id: 'co2', name: 'MINST UTSLÄPP' },
   { id: 'milbudget', name: 'FÖRSVARSBUDGET' },
   { id: 'area', name: 'STÖRST YTA' },
+  { id: 'feelsafe', name: 'TRYGGAST ATT GÅ UT' },
+  { id: 'popchange', name: 'SNABBAST VÄXANDE' },
+  { id: 'researchers', name: 'FLEST FORSKARE' },
+  { id: 'lifefem', name: 'LÄNGST LIV (KVINNOR)' },
 ];
 
 // rows = [{ key, name, mine, ind }] → sorterade efter måttet (bäst först)

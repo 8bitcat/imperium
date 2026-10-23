@@ -30,6 +30,14 @@ const WB = [
   ['lendrate', 'FR.INR.LEND'], ['hitech', 'TX.VAL.TECH.MF.ZS'], ['pm25', 'EN.ATM.PM25.MC.M3'],
   ['protected', 'ER.PTD.TOTL.ZS'], ['agri', 'NV.AGR.TOTL.ZS'], ['manuf', 'NV.IND.MANF.ZS'],
   ['services', 'NV.SRV.TOTL.ZS'], ['smoking', 'SH.PRV.SMOK'], ['alcohol', 'SH.ALC.PCAP.LI'],
+  // V5.7
+  ['lifefem', 'SP.DYN.LE00.FE.IN'], ['lifemale', 'SP.DYN.LE00.MA.IN'], ['overweight', 'SH.STA.OWAD.ZS'],
+  ['undernourish', 'SN.ITK.DEFC.ZS'], ['sanitation', 'SH.STA.SMSS.ZS'], ['researchers', 'SP.POP.SCIE.RD.P6'],
+  ['articles', 'IP.JRN.ARTC.SC'], ['primary', 'SE.PRM.CMPT.ZS'], ['broadband', 'IT.NET.BBND.P2'],
+  ['govspend', 'GC.XPN.TOTL.GD.ZS'], ['curacc', 'BN.CAB.XOKA.GD.ZS'], ['stockcap', 'CM.MKT.LCAP.GD.ZS'],
+  ['bankacc', 'FX.OWN.TOTL.ZS'], ['energyuse', 'EG.USE.PCAP.KG.OE'], ['armsexp', 'MS.MIL.XPRT.KD'],
+  ['milpers', 'MS.MIL.TOTL.TF.ZS'], ['refugees', 'SM.POP.REFG'], ['refugeesout', 'SM.POP.REFG.OR'],
+  ['labor', 'SL.TLF.TOTL.IN'], ['traffic', 'SH.STA.TRAF.P5'],
   ['corruptgov', 'GOV_WGI_CC.EST', 3], ['goveff', 'GOV_WGI_GE.EST', 3], ['rulelaw', 'GOV_WGI_RL.EST', 3],
   ['voice', 'GOV_WGI_VA.EST', 3], ['polstab', 'GOV_WGI_PV.EST', 3], ['regq', 'GOV_WGI_RQ.EST', 3],
 ];

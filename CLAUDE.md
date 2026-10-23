@@ -33,8 +33,9 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | Fil | Innehåll |
 |---|---|
 | `stats.js` | 22 nationsvärden + `computeStats`. Nya stat-nycklar MÅSTE finnas här, annars noll effekt utan fel |
-| `laws.js` · `ideologies.js` · `research.js` | lagar (36 kategorier) · 19 ideologier/doktriner + axlar + sidogrenar · 18 grenar × 9 nivåer |
-| `events.js` · `modifiers.js` · `development.js` | 87 händelser med villkor · 45 modifierare · stadsnivå/infrastruktur 0–100 |
+| `laws.js` · `ideologies.js` · `research.js` | lagar (42 kategorier, 309 alternativ) · 19 ideologier/doktriner + axlar + sidogrenar · 18 grenar × 9 nivåer |
+| `laws-extra.js` | V5.7: nya alternativ i befintliga lagar (`after`-position, `locks`, `effects`), splitsas in i LAWS vid laddning |
+| `events.js` · `modifiers.js` · `development.js` | 609 händelser med villkor · 45 modifierare · stadsnivå/infrastruktur 0–100 |
 | `war.js` · `integration.js` · `stance.js` | casus belli/krav/historiska riken · integration av erövrat land · ländernas hållning |
 | `diplomacy.js` · `blocs.js` · `ministers.js` · `ranking.js` | relationer/sanktioner · block + fanor · kabinett · världsrankning |
 | `economy.js` · `resources.js` · `buildings.js` · `factions.js` · `leaders.js` | inkomst/arméstorlek · naturtillgångar · stadsbyggnader · 4 faktioner · 200+ ledare |
@@ -42,7 +43,11 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | `globe.js` · `globe3d.js` | pixelglob (d3) · WebGL-planet. All ritning går via `_project`/`_front` så den funkar i båda |
 | `net.js` · `data.js` · `names.js` | PeerJS (värden äger världen) · kartdata · svenska landsnamn |
 | `real.js` | V5.6: allt som VISAS i riktiga tal — 1 💰 = 100 miljoner $, 1 🧍 = 1 000 människor, förband i soldater. Spelet räknar internt i gamla enheter |
-| `statistics.js` | V5.6: 73 verkliga mått per land (data/indicators.json) som nationsvärden + lagar (`LAW_EFFECTS`) flyttar; rikes-ihopräkning, rankningar |
+| `statistics.js` | 101 verkliga mått per land (data/indicators.json; brott är modeller, märkta ~) som nationsvärden + lagar (`LAW_EFFECTS`) flyttar; rikes-ihopräkning, rankningar |
+
+**Befolkningen lever (V5.7):** `state.facts[cid].p` ändras var 10:e dag (`tickPopulation`,
+1 spelår = 120 dagar) med `popchange` ur statistics.js; startvärdet ligger i `p0`. Allt som
+läser `facts.p` (inkomst, arméstorlek, statistik) följer med. Sparas som `pops` i sparfilen.
 | `events/*.js` | V5.6: händelser per tema, ihopslagna i `events.js` |
 
 Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).

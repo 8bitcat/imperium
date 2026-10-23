@@ -12,6 +12,7 @@
 // COUNTRY_IDEOLOGY = grundideologi per land utifrån dagens verkliga läge.
 
 import { LAWS } from './laws.js';
+import { LAW_EXTRAS } from './laws-extra.js';
 
 export const IDEOLOGY_COST = 150;   // Political power för ideologibyte
 export const DOCTRINE_COST = 50;    // Political power för doktrinbyte
@@ -341,7 +342,54 @@ export const LAW_AXIS = {
   internet:           { axis: 'auth', dir:  1 },
   housing:            { axis: 'econ', dir:  1 },
   equality:           { axis: 'auth', dir:  1 },
+  // V5.7
+  alcohol_policy:     { axis: 'auth', dir:  1 },
+  transport:          { axis: 'econ', dir:  1 },
+  agriculture:        { axis: 'econ', dir:  1 },
+  citizenship:        { axis: 'auth', dir:  1 },
+  childcare:          { axis: 'econ', dir:  1 },
+  policing:           { axis: 'auth', dir:  1 },
 };
+
+// ---------- V5.7: spärrar och krav för nya lagar och alternativ ----------
+// De sex nya lagarnas ytterlägen spärras för ideologier som självklart skulle
+// förbjuda dem. Ett nytt alternativ i en befintlig lag (laws-extra.js) får
+// dessutom samma status som sina grannar: ligger det mellan två alternativ som
+// en ideologi KRÄVER blir det tillåtet, ligger det mellan (eller bortom) spärrade
+// alternativ blir det spärrat — annars uppstår hål i ideologins linje.
+const FREE_IDEOLOGIES = ['democracy', 'liberalism', 'socialdemocracy', 'anarchism', 'greens', 'libertarianism'];
+const NEW_LAW_LOCKS = {
+  policing: { secretpolice: [...FREE_IDEOLOGIES, 'christdem', 'technocracy'] },
+  citizenship: { loyalty: FREE_IDEOLOGIES },
+  alcohol_policy: { prohibition: ['liberalism', 'libertarianism', 'anarchism'] },
+  agriculture: { collective: ['libertarianism', 'liberalism'], agribusiness: ['greens', 'communism', 'socialism'] },
+};
+function lockFor(ideoId, cat, optId) {
+  const ideo = IDEOLOGIES[ideoId];
+  if (!ideo) return;
+  const lk = ((ideo.locks ||= {})[cat] ||= []);
+  if (!lk.includes(optId)) lk.push(optId);
+}
+for (const [cat, byOpt] of Object.entries(NEW_LAW_LOCKS)) {
+  for (const [optId, ideos] of Object.entries(byOpt)) for (const id of ideos) lockFor(id, cat, optId);
+}
+for (const [cat, list] of Object.entries(LAW_EXTRAS)) {
+  const order = (LAWS[cat]?.options || []).map((o) => o.id);
+  for (const { option, locks } of list) {
+    for (const id of locks || []) lockFor(id, cat, option.id);
+    const i = order.indexOf(option.id);
+    if (i < 0) continue;
+    const prev = order[i - 1], next = order[i + 1];
+    // mitt emellan: båda grannarna måste vara med; i en ände räcker den enda grannen
+    const both = (arr) => (prev && next ? arr.includes(prev) && arr.includes(next) : arr.includes(prev || next));
+    for (const ideo of Object.values(IDEOLOGIES)) {
+      const req = ideo.requires?.[cat];
+      const lk = ideo.locks?.[cat];
+      if (req && !req.includes(option.id) && both(req)) req.push(option.id);
+      if (lk && !lk.includes(option.id) && both(lk)) lk.push(option.id);
+    }
+  }
+}
 
 // Ideologins läge på axlarna, doktrinen inräknad.
 export function axesOf(nation) {

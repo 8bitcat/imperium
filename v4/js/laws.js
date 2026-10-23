@@ -5,6 +5,8 @@
 // Alternativet med default: true är startläget (mixed/balanced enligt spec).
 // Kostnad att byta: LAW_STEP_COST × antal steg mellan nuvarande och nytt alternativ.
 
+import { LAW_EXTRAS } from './laws-extra.js';
+
 export const LAW_STEP_COST = 15; // Political power per steg
 
 export const LAWS = {
@@ -619,7 +621,124 @@ export const LAWS = {
         desc: 'Kvinnor får inte rösta, äga egendom eller arbeta utan tillstånd. Den gamla ordningen är total. Landet halkar långt efter i välstånd och omvärlden fördömer det.' },
     ],
   },
+
+  // ---------- V5.7: sex nya lagar (Henrys önskemål) ----------
+  alcohol_policy: {
+    name: 'Alcohol policy', icon: '\u{1F37A}',
+    options: [
+      { id: 'free', name: 'Free sale', mods: { freedom: 6, income: 3, approval: 3, qol: -4, safety: -4 },
+        desc: 'Alkohol säljs överallt, dygnet runt, utan särskilda regler. Folk uppskattar friheten och handeln tjänar pengar. Fyllan syns på gatorna och vården får ta hand om följderna.' },
+      { id: 'licensed', name: 'Licensed sale', mods: { freedom: 3, income: 2, qol: -1 },
+        desc: 'Butiker och krogar behöver tillstånd, men tillstånden är lätta att få. Ett öppet och enkelt system. Lite mer drickande än med strängare regler.' },
+      { id: 'regulated', name: 'Regulated', default: true, mods: {},
+        desc: 'Åldersgränser, öppettider och alkoholskatt som i de flesta länder. Varken bonus eller straff. Utgångsläget.' },
+      { id: 'monopoly', name: 'State monopoly', mods: { income: 5, statepower: 3, qol: 3, freedom: -3, approval: -2 },
+        desc: 'Bara statens egna butiker får sälja alkohol, med korta öppettider och höga priser. Folkhälsan blir bättre och vinsten går till staten. Många tycker att det är förmyndaraktigt.' },
+      { id: 'restricted', name: 'Strict limits', mods: { safety: 4, qol: 3, freedom: -6, approval: -4, corruption: 2 },
+        desc: 'Kvoter, licenser för köparen och förbud mot försäljning vissa dagar. Drickandet sjunker tydligt. Svartsprit och smuggling börjar ta över en del av marknaden.' },
+      { id: 'prohibition', name: 'Prohibition', mods: { safety: 2, freedom: -12, approval: -10, corruption: 12, income: -6, unrest: 6 },
+        desc: 'All alkohol är förbjuden. Drickandet minskar, men en hel svart marknad växer fram med smugglare och hemliga barer. Polisen mutas och staten förlorar skatteintäkterna.' },
+    ],
+  },
+  transport: {
+    name: 'Transport policy', icon: '\u{1F686}',
+    options: [
+      { id: 'freetransit', name: 'Free public transit', mods: { qol: 8, welfare: 5, approval: 6, gdp: 2, income: -8 },
+        desc: 'Bussar, tåg och spårvagnar är gratis för alla. Bilarna blir färre, luften renare och alla kan ta sig till jobbet. Det kostar staten mycket varje år.' },
+      { id: 'transitfirst', name: 'Public transit first', mods: { qol: 5, welfare: 2, gdp: 2, income: -3 },
+        desc: 'Staten bygger ut tåg och kollektivtrafik före nya vägar. Städerna blir mindre bilberoende och resorna smidigare. Investeringarna tar tid och pengar.' },
+      { id: 'mixed', name: 'Mixed', default: true, mods: {},
+        desc: 'Vägar och kollektivtrafik byggs ut sida vid sida. Varken bonus eller straff. Utgångsläget.' },
+      { id: 'roads', name: 'Road building', mods: { gdp: 4, factory: 3, qol: -2 },
+        desc: 'Nya motorvägar och broar prioriteras. Godset och pendlarna kommer fram snabbare. Trafiken ökar och med den utsläppen och olyckorna.' },
+      { id: 'carnation', name: 'Car nation', mods: { gdp: 5, factory: 5, freedom: 3, qol: -5, hdi: -1 },
+        desc: 'Allt planeras kring bilen: breda leder, stora parkeringar och billigt bränsle. Bilindustrin blomstrar och folk kan åka vart de vill. Städerna fylls av köer, avgaser och olyckor.' },
+      { id: 'private', name: 'Private roads and tolls', mods: { gdp: 6, income: 4, welfare: -5, qol: -4 },
+        desc: 'Vägarna byggs och drivs av företag som tar betalt för varje kilometer. Staten slipper kostnaden och vägarna hålls i gott skick. De som inte har råd att betala får stanna hemma.' },
+    ],
+  },
+  agriculture: {
+    name: 'Agriculture', icon: '\u{1F33E}',
+    options: [
+      { id: 'collective', name: 'Collective farms', mods: { statepower: 8, factory: 3, gdp: -8, qol: -4, freedom: -6 },
+        desc: 'Jorden ägs av staten och böndernas gårdar slås ihop till stora kollektiv. Staten bestämmer vad som odlas. Utan egna gårdar slutar bönderna anstränga sig och skördarna sjunker.' },
+      { id: 'subsidized', name: 'Heavy subsidies', mods: { approval: 6, stability: 4, income: -6, gdp: -3 },
+        desc: 'Bönderna får stora bidrag för att odla och hålla landsbygden levande. Maten är billig och landet kan föda sig självt. Bidragen kostar mycket och gör jordbruket trögt.' },
+      { id: 'organic', name: 'Organic transition', mods: { qol: 5, hdi: 2, factory: -3, gdp: -2, income: -2 },
+        desc: 'Staten stödjer ekologisk odling utan konstgödsel och kemikalier. Naturen och vattnet mår bättre. Skördarna blir mindre och maten dyrare.' },
+      { id: 'balanced', name: 'Balanced', default: true, mods: {},
+        desc: 'Ett vanligt jordbruk med visst stöd och vissa regler. Varken bonus eller straff. Utgångsläget.' },
+      { id: 'freemarket', name: 'Free market farming', mods: { gdp: 4, income: 3, approval: -3, stability: -2 },
+        desc: 'Inga bidrag, inga kvoter — gårdarna konkurrerar på världsmarknaden. De effektiva växer och maten blir billigare. Många småbönder slås ut och byarna töms.' },
+      { id: 'agribusiness', name: 'Agribusiness giants', mods: { gdp: 6, factory: 4, corruption: 4, qol: -3, approval: -4 },
+        desc: 'Några få jättebolag äger det mesta av jorden och odlar i industriell skala. Produktionen blir enorm och exporten växer. Skogar huggs ner och bolagen får stort inflytande över politiken.' },
+    ],
+  },
+  citizenship: {
+    name: 'Citizenship', icon: '\u{1FAAA}',
+    options: [
+      { id: 'birthright', name: 'Birthright citizenship', mods: { integration: 8, immigration: 6, freedom: 4, ideopower: -3 },
+        desc: 'Alla som föds i landet blir medborgare, oavsett föräldrarnas bakgrund. Nya generationer känner sig hemma direkt. Landet lockar fler som vill flytta hit.' },
+      { id: 'easy', name: 'Easy naturalization', mods: { integration: 5, immigration: 4, approval: 2 },
+        desc: 'Den som bott i landet några år kan enkelt bli medborgare. Nya invånare blir snabbt en del av samhället. Ett öppet och tryggt system.' },
+      { id: 'standard', name: 'Standard', default: true, mods: {},
+        desc: 'Medborgarskap efter en längre tids bosättning och vissa krav. Varken bonus eller straff. Utgångsläget.' },
+      { id: 'testsoath', name: 'Language and civics test', mods: { integration: 6, ideopower: 3, immigration: -3 },
+        desc: 'Den som vill bli medborgare måste klara ett prov i språk och samhällskunskap och avlägga en ed. Nya medborgare kan landets språk och lagar. Vägen till medborgarskap blir längre.' },
+      { id: 'bloodline', name: 'Citizenship by descent only', mods: { ideopower: 8, stability: 3, integration: -8, immigration: -8, freedom: -4 },
+        desc: 'Bara den som har föräldrar från landet kan bli medborgare. Nationen definieras av härkomst. Människor som levt här i hela sitt liv förblir främlingar.' },
+      { id: 'loyalty', name: 'Loyalty citizenship', mods: { statepower: 8, ideopower: 10, freedom: -10, integration: -6, approval: -5, unrest: 4 },
+        desc: 'Medborgarskapet kan ges och tas av staten beroende på lojalitet mot regimen. Ingen vågar längre kritisera ledningen. Rättigheter blir belöningar som kan dras in.' },
+    ],
+  },
+  childcare: {
+    name: 'Childcare', icon: '\u{1F9F8}',
+    options: [
+      { id: 'free', name: 'Free universal childcare', mods: { welfare: 10, qol: 5, approval: 6, gdp: 3, income: -8 },
+        desc: 'Alla barn har rätt till förskola gratis från ett års ålder. Båda föräldrarna kan arbeta och fler vågar skaffa barn. Det är en av statens dyraste reformer.' },
+      { id: 'subsidized', name: 'Subsidized childcare', mods: { welfare: 6, qol: 3, approval: 3, income: -4 },
+        desc: 'Förskolan har låga avgifter som staten betalar största delen av. De flesta familjer har råd. Fler föräldrar kan arbeta heltid.' },
+      { id: 'mixed', name: 'Mixed', default: true, mods: {},
+        desc: 'Förskolor finns, men familjerna betalar en del själva. Varken bonus eller straff. Utgångsläget.' },
+      { id: 'familycash', name: 'Home care allowance', mods: { stability: 4, ideopower: 3, income: -3, gdp: -2 },
+        desc: 'Föräldrar som stannar hemma med barnen får ett bidrag i stället för förskoleplats. Familjerna väljer själva och fler barn föds. Mammorna stannar oftare hemma och karriären får vänta.' },
+      { id: 'private', name: 'Private only', mods: { gdp: 3, income: 3, welfare: -5, approval: -3 },
+        desc: 'Barnomsorgen är helt privat och familjerna betalar själva. Konkurrensen ger många val. Den som tjänar lite får svårt att få ihop jobb och barn.' },
+      { id: 'none', name: 'No childcare', mods: { income: 5, welfare: -8, qol: -4, approval: -5 },
+        desc: 'Det finns ingen organiserad barnomsorg alls — barnen sköts hemma eller av släkten. Staten sparar pengar. Många föräldrar kan inte arbeta och färre vill skaffa barn.' },
+    ],
+  },
+  policing: {
+    name: 'Policing', icon: '\u{1F46E}',
+    options: [
+      { id: 'unarmed', name: 'Unarmed police', mods: { freedom: 8, approval: 4, safety: -4, statepower: -6 },
+        desc: 'Vanliga poliser bär inga vapen, bara särskilda styrkor kallas in vid fara. Polisen ses som en del av folket och få dör i polisingripanden. Grova brottslingar möter mindre motstånd.' },
+      { id: 'community', name: 'Community policing', mods: { freedom: 6, approval: 5, integration: 4, safety: 3, statepower: -4 },
+        desc: 'Poliserna är kända ansikten i sina kvarter och arbetar nära skolor och föreningar. Förtroendet ökar och brott löses med hjälp av invånarna. Det kräver många poliser och tålamod.' },
+      { id: 'standard', name: 'Standard', default: true, mods: {},
+        desc: 'En vanlig polis med vapen, utredare och insatsstyrkor. Varken bonus eller straff. Utgångsläget.' },
+      { id: 'tough', name: 'Zero tolerance', mods: { safety: 8, statepower: 5, freedom: -6, approval: -2, integration: -3 },
+        desc: 'Varje litet brott beivras, från klotter till fylla. Gatorna känns tryggare och de stora brotten minskar. Fängelserna fylls och vissa grupper känner sig jagade.' },
+      { id: 'militarized', name: 'Militarized police', mods: { safety: 10, statepower: 10, readiness: 3, freedom: -12, approval: -6, unrest: 4 },
+        desc: 'Polisen får pansarfordon, automatvapen och militär träning. Gängen trängs tillbaka med kraft. Polisen börjar se ut som en armé på ockuperad mark.' },
+      { id: 'secretpolice', name: 'Secret police', mods: { statepower: 18, ideopower: 8, unrest: -8, freedom: -22, approval: -10, corruption: 8 },
+        desc: 'En hemlig polis övervakar, griper och förhör utan insyn eller domstol. Oppositionen försvinner och oron trycks ner. Ingen vågar längre lita på sina grannar.' },
+    ],
+  },
 };
+
+// V5.7: nya alternativ i de befintliga lagarna (laws-extra.js) läggs in på sin
+// plats längs lagens axel — direkt efter det alternativ som `after` pekar ut.
+for (const [cat, list] of Object.entries(LAW_EXTRAS)) {
+  const opts = LAWS[cat]?.options;
+  if (!opts) continue;
+  for (const { after, option } of list) {
+    if (opts.some((o) => o.id === option.id)) continue;
+    const at = after === '^' ? -1 : opts.findIndex((o) => o.id === after);
+    if (after !== '^' && at < 0) continue;
+    opts.splice(at + 1, 0, option);
+  }
+}
 
 export function defaultLaws() {
   const laws = {};
