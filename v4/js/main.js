@@ -1,6 +1,6 @@
 // IMPERIUM v4 — huvudflöde: nationssystem (stats/lagar/ideologi/forskning) + erövringsläge
 import { Net } from './net.js';
-import { loadWorld, loadCities, loadFacts } from './data.js';
+import { loadWorld, loadCities, loadFacts, loadIndicators } from './data.js';
 import { Globe } from './globe.js';
 import { RESOURCES, RECIPES, resourcesOf } from './resources.js';
 import { STARTER_ARMY, defenderArmy, compOf, autoResolve, biomeFor, BIOMES, mkUnit, loadWarSprites, UNIT_TYPES, consolidate, expandUnits } from './units.js';
@@ -25,7 +25,9 @@ import { STANCES, stanceOf, setStance } from './stance.js';
 import { relLabel, naturalRelation, REL_EVENTS, sanctionFor, ALLY_MIN_REL, TRUCE_DAYS,
   aiAcceptsAlliance, BLOC_TYPES, BLOC_COST } from './diplomacy.js';
 import { scoreCountry, medalFor } from './ranking.js';
-import { money, people, soldiersOf, soldiersText } from './real.js';
+import { money, people, soldiersOf, soldiersText, PEOPLE_PER_MAN } from './real.js';
+import { INDICATORS, IND, IND_GROUPS, RANKINGS, fmtInd, setIndicatorData, hasIndicatorData, isEstimated,
+  baseOf as baseOfInd, countryIndicators, realmIndicators, biggestChanges, rankBy } from './statistics.js';
 import { POSTS, MINISTER_COST, makeCandidate, clashOf, cabinetMods, loyaltyLevel,
   levelOf, levelMult, xpToNext, LEVEL_TITLES, MAX_LEVEL } from './ministers.js';
 import { BLOC_RULES, BLOC_FOUND_COST, BLOC_INVITE_COST, BLOC_NAMES, canJoinBloc,
@@ -453,6 +455,25 @@ function refreshInfoPanel() {
   $('#frank').innerHTML = myRank
     ? `<b>VÄRLDSPLACERING:</b> ${medalFor(myRank.place)} #${myRank.place} <span style="color:var(--holo-dim)">(${myRank.score} POÄNG)</span>`
     : '';
+  // V5.6: verklig statistik för landet (för ett rike: hela rikets värden)
+  if (hasIndicatorData() && baseOfInd(c.id)) {
+    const irows = computeIndicatorRows();
+    const realmRow = irows.find((r) => r.key === c.id);
+    const so = state.solo;
+    const mineC = so?.stats && (so.home === c.id || (so.claims?.[c.id] && !isSplit(c.id)));
+    const ownerC = worldCtx().world?.aiOwned?.[c.id] || c.id;
+    const v = realmRow?.ind || countryIndicators(c.id, mineC ? statTotals(so.stats) : nationTotalsOf(ownerC),
+      baselineTotalsOf(c.id), mineC ? so.nation?.laws : state.world?.[ownerC]?.laws || null);
+    const placeOf = (id) => {
+      if (!realmRow) return '';
+      const r = rankBy(irows, id).find((x) => x.key === c.id);
+      return r ? ` <span style="color:var(--amber)">#${r.place}</span>` : '';
+    };
+    if (v) {
+      $('#frank').innerHTML += `${myRank ? '<br>' : ''}<b>BNP PER CAPITA:</b> ${fmtInd('gdppc', v.gdppc)}${placeOf('gdppc')}`
+        + `<br><b>HDI:</b> ${fmtInd('hdi', v.hdi)}${placeOf('hdi')} &nbsp;<b>LIVSLÄNGD:</b> ${fmtInd('life', v.life)}`;
+    }
+  }
   const rel = religionFor(c.id);
   const stKey = stanceOf(worldCtx().world || {}, c.id);
   const st = STANCES[stKey] || STANCES.neutral;
@@ -1723,6 +1744,136 @@ function computeRanking() {
   return rows;
 }
 
+// ---------- V5.6: STATISTIK — verkliga mått som lagarna flyttar ----------
+const statTotals = (stats) => Object.fromEntries(Object.entries(stats || {}).map(([k, v]) => [k, v.total]));
+
+// rikets delar: hemlandet + erövrade länder (delvis tagna med sin andel).
+// Lydstater är egna länder och räknas inte in.
+function myRealmParts() {
+  const s = state.solo;
+  if (!s?.home) return [];
+  const parts = [{ cid: s.home, share: 1 }];
+  for (const cid of Object.keys(s.claims || {})) {
+    if (cid === s.home || s.claims[cid].puppet) continue;
+    parts.push({ cid, share: s.partial?.[cid]?.share ?? 1 });
+  }
+  return parts;
+}
+
+function mySoldiers() {
+  const s = state.solo;
+  return soldiersOf([...(s?.army?.units || []), ...Object.values(s?.garrisons || {}).flat()]);
+}
+
+// Dina mått. Två lager: "utan politik" = rikets länder med sina verkliga
+// värden, och målet = samma länder med din politik (nationsvärden + lagar).
+// Politiken slår igenom gradvis: `indLag` är hur långt varje mått kommit från
+// "utan politik" mot målet, och följer målet med ~4 % om dagen. En erövring syns
+// däremot direkt, eftersom den ändrar "utan politik".
+// target = vart riket är på väg om inget mer ändras.
+function myIndicators(target = false) {
+  const s = state.solo;
+  if (!s?.stats || !hasIndicatorData()) return null;
+  const parts = myRealmParts();
+  const extra = { soldiers: mySoldiers(), reserve: (s.res?.man || 0) * PEOPLE_PER_MAN };
+  const goal = realmIndicators(parts, statTotals(s.stats), extra, baselineTotalsOf, s.nation?.laws);
+  if (target || !goal || !s.indLag) return goal;
+  const plain = realmIndicators(parts, null, extra, baselineTotalsOf, null, true);
+  const now = {};
+  for (const [id, g] of Object.entries(goal)) {
+    const lag = s.indLag[id];
+    now[id] = lag == null || !Number.isFinite(plain?.[id]) ? g : plain[id] + lag;
+  }
+  return now;
+}
+
+function tickIndLag() {
+  const s = state.solo;
+  if (!s?.stats || !hasIndicatorData()) return;
+  const parts = myRealmParts();
+  const goal = realmIndicators(parts, statTotals(s.stats), {}, baselineTotalsOf, s.nation?.laws);
+  const plain = realmIndicators(parts, null, {}, baselineTotalsOf, null, true);
+  if (!goal || !plain) return;
+  s.indLag ||= {};
+  for (const id of Object.keys(goal)) {
+    if (!Number.isFinite(goal[id]) || !Number.isFinite(plain[id])) continue;
+    const want = goal[id] - plain[id];
+    const cur = s.indLag[id] ?? want;
+    s.indLag[id] = Math.abs(want - cur) <= Math.abs(want) * 0.002 + 1e-9 ? want : cur + (want - cur) * 0.04;
+  }
+}
+
+// Landets nationsvärden i STARTLÄGET: standardlagar + dess verkliga ideologi.
+// Det verkliga datat innehåller redan landets politik, så statistiken flyttas
+// bara av skillnaden mot detta (statistics.js: minus).
+const baselineCache = new Map();
+function baselineTotalsOf(cid) {
+  if (baselineCache.has(cid)) return baselineCache.get(cid);
+  const ide = countryIdeology(cid);
+  const nation = { laws: defaultLaws(), ideology: ide.ideology, doctrine: ide.doctrine, research: {} };
+  enforceRequirements(nation);
+  const T = statTotals(computeStats(nation, { laws: lawMods(nation.laws), ideology: ideologyMods(nation) }));
+  baselineCache.set(cid, T);
+  return T;
+}
+
+// nationsvärdena för ett land som inte är ditt: dess egna lagar och ideologi
+const aiStatCache = new Map();
+function nationTotalsOf(cid) {
+  const hit = aiStatCache.get(cid);
+  if (hit && Date.now() - hit.at < 8000) return hit.T;
+  const w = state.world?.[cid];
+  const ide = ideoOf(cid);
+  const nation = { laws: { ...defaultLaws(), ...(w?.laws || {}) }, ideology: ide.ideology, doctrine: ide.doctrine, research: {} };
+  const T = statTotals(computeStats(nation, { laws: lawMods(nation.laws), ideology: ideologyMods(nation) }));
+  aiStatCache.set(cid, { at: Date.now(), T });
+  return T;
+}
+
+// Alla världens riken med sina mått — samma enheter som världsrankningen:
+// ditt rike, AI-imperierna (kärnland + provinser) och fria länder.
+function computeIndicatorRows() {
+  const s = state.solo;
+  const cache = (state.indRankCache ||= { at: 0, rows: [], sig: '' });
+  // byggs om direkt när ditt rike ändras (hemland, erövringar, delade länder)
+  const sig = `${s?.home || ''}|${Object.keys(s?.claims || {}).length}|${Object.keys(s?.partial || {}).length}`;
+  if (Date.now() - cache.at < 5000 && cache.rows.length && cache.sig === sig) return cache.rows;
+  cache.sig = sig;
+  const world = worldCtx().world;
+  const rows = [];
+  if (!hasIndicatorData()) return rows;
+  const armySoldiers = (cid) => {
+    const units = world?.countryArmies?.[cid]?.units;
+    return units ? soldiersOf(units) : armySizeOf(state.facts[cid]?.p || 5e6, cid) * 3000;
+  };
+  for (const c of globe.countries) {
+    if (!baseOfInd(c.id)) continue;
+    const owner = world?.aiOwned?.[c.id];
+    if (owner && owner !== c.id) continue;                 // provinser räknas i sitt rike
+    if (s?.claims?.[c.id] && c.id !== s.home && !isSplit(c.id)) continue;
+    if (s?.home === c.id) {
+      const ind = myIndicators();
+      if (ind) rows.push({ key: c.id, name: s.nation?.formation?.name || c.name, mine: true, ind });
+      continue;
+    }
+    const parts = [{ cid: c.id, share: isSplit(c.id) ? 1 - (s.partial[c.id].share || 0) : 1 }];
+    let soldiers = armySoldiers(c.id);
+    for (const o of world?.aiEmpires?.[c.id]?.owned || []) { parts.push({ cid: o, share: 1 }); soldiers += armySoldiers(o); }
+    const ind = realmIndicators(parts, nationTotalsOf(c.id), { soldiers }, baselineTotalsOf, state.world?.[c.id]?.laws || null);
+    if (ind) rows.push({ key: c.id, name: world?.aiEmpires?.[c.id]?.name || c.name, mine: false, ind });
+  }
+  cache.rows = rows;
+  cache.at = Date.now();
+  return rows;
+}
+
+// din placering i ett mått (null om det inte går att räkna)
+function myPlaceIn(id) {
+  const ranked = rankBy(computeIndicatorRows(), id);
+  const me = ranked.find((r) => r.mine);
+  return me ? { place: me.place, of: ranked.length } : null;
+}
+
 // ---------- VÄRLDSHISTORIK: allt som händer loggas och går att bläddra i ----------
 function logEvent(text, opts = {}) {
   state.history ||= [];
@@ -1744,12 +1895,28 @@ function logEvent(text, opts = {}) {
 }
 
 let histFilter = 'all';
+let rankKind = 'total';   // V5.6: vilken rankning som visas
 function renderHistory() {
   const list = $('#histlist');
   // V5: rankningsfliken visar världens starkaste nationer
+  // V5.6: … och rankningar i BNP, HDI, livslängd m.m. med verkliga värden
   if (histFilter === 'rank') {
+    const picks = [{ id: 'total', name: 'TOTALT' }, ...(hasIndicatorData() ? RANKINGS : [])];
+    const pickHtml = `<div class="rankpick">${picks.map((p) => `<button data-rk="${p.id}" class="${p.id === rankKind ? 'on' : ''}">${p.name}</button>`).join('')}</div>`;
+    const wire = () => list.querySelectorAll('[data-rk]').forEach((b) => b.addEventListener('click', () => { rankKind = b.dataset.rk; renderHistory(); }));
+    if (rankKind !== 'total') {
+      const ranked = rankBy(computeIndicatorRows(), rankKind);
+      const me = ranked.find((r) => r.mine);
+      const row = (r) => `<div class="hrow${r.mine ? ' mine' : ''}"><span class="hday">${medalFor(r.place) || '#' + r.place}</span> ${r.name.toUpperCase()}`
+        + ` <span style="color:var(--holo-dim)">${fmtInd(rankKind, r.value)}</span></div>`;
+      list.innerHTML = pickHtml + (ranked.length
+        ? ranked.slice(0, 25).map(row).join('') + (me && me.place > 25 ? `<div class="hrow" style="color:var(--holo-dim)">…</div>${row(me)}` : '')
+        : '<div class="hrow" style="color:var(--holo-dim)">VÄRLDEN LADDAS…</div>');
+      wire();
+      return;
+    }
     const rk = computeRanking().slice(0, 25);
-    list.innerHTML = rk.length
+    list.innerHTML = pickHtml + (rk.length
       ? rk.map((r) => `<div class="hrow${r.mine ? ' mine' : ''}">`
         + `<span class="hday">${medalFor(r.place) || '#' + r.place}</span> ${r.name.toUpperCase()}`
         + ` <span style="color:var(--holo-dim)">${r.score}</span>`
@@ -1758,7 +1925,8 @@ function renderHistory() {
         + `\u{1F5FA}\u{FE0F}${Math.round(r.parts.size)} \u{1F465}${Math.round(r.parts.population)} `
         + `\u{2696}\u{FE0F}${Math.round(r.parts.stability)} \u{1F60A}${Math.round(r.parts.qol)} `
         + `\u{1F4DA}${Math.round(r.parts.hdi)}</span></div>`).join('')
-      : '<div class="hrow" style="color:var(--holo-dim)">VÄRLDEN LADDAS…</div>';
+      : '<div class="hrow" style="color:var(--holo-dim)">VÄRLDEN LADDAS…</div>');
+    wire();
     return;
   }
   const rows = (state.history || []).filter((h) =>
@@ -2035,6 +2203,7 @@ function diffMods(newMods, curMods) {
 function tickDay() {
   const s = state.solo;
   s.clock.day++;
+  tickIndLag();   // V5.6: statistiken glider mot det läge politiken pekar ut
   const st = s.stats;
   s.res.money = Math.max(0, s.res.money + Math.round(10 + st.income.total * 0.3));
   // varje ägt land bidrar efter sin ekonomiska tyngd — MEN erövrade länder ger
@@ -2716,7 +2885,9 @@ function aiWorldTick() {
       const wstate = (state.world ||= {});
       const wn = (wstate[c.id] ||= { laws: defaultLaws(), ...countryIdeology(c.id) });
       const opts = LAWS[cat].options;
-      const cur = opts.findIndex((o) => o.id === wn.laws[cat]);
+      // en lag som tillkommit efter att landet skapades börjar i startläget
+      const found = opts.findIndex((o) => o.id === wn.laws[cat]);
+      const cur = found >= 0 ? found : Math.max(0, opts.findIndex((o) => o.default));
       const next = Math.max(0, Math.min(opts.length - 1, cur + (Math.random() < 0.5 ? -1 : 1)));
       if (next !== cur) {
         wn.laws[cat] = opts[next].id;
@@ -3383,12 +3554,75 @@ function modSummary(mods, max = 4) {
     .join(', ');
 }
 
+// V5.6: STATISTIK — verkliga mått för ditt rike, vart de är på väg och din
+// plats i världen. Lagarna slår igenom dag för dag, så "→" visar målet.
+function renderStatsTab(body) {
+  body.innerHTML = '';
+  const now = myIndicators();
+  const goal = myIndicators(true);
+  if (!now) {
+    body.innerHTML = '<div class="natgroup" style="font-size:7px;color:var(--holo-dim)">STATISTIKEN LADDAS…</div>';
+    return;
+  }
+  const rows = computeIndicatorRows();
+  const place = {};
+  for (const d of INDICATORS) {
+    const me = rankBy(rows, d.id).find((r) => r.mine);
+    if (me) place[d.id] = me.place;
+  }
+  const intro = document.createElement('div');
+  intro.style.cssText = 'font-size:6px;color:var(--holo-dim);line-height:2;margin-bottom:8px';
+  intro.textContent = `VERKLIGA VÄRDEN FÖR DITT RIKE. LAGAR, IDEOLOGI OCH FORSKNING FLYTTAR DEM — INTE PÅ EN GÅNG UTAN DAG FÖR DAG, OCH PILEN VISAR VART VÄRDET ÄR PÅ VÄG. # = DIN PLATS AV ${rows.length} RIKEN. ~ = UPPSKATTAT.`;
+  body.appendChild(intro);
+  const parts = myRealmParts();
+  for (const g of IND_GROUPS) {
+    const grp = document.createElement('div');
+    grp.className = 'natgroup';
+    grp.innerHTML = `<div class="gtitle">${g.icon} ${g.name}</div>`;
+    const grid = document.createElement('div');
+    grid.className = 'indgrid';
+    for (const d of INDICATORS.filter((x) => x.group === g.id)) {
+      const v = now[d.id], t = goal?.[d.id];
+      const moving = Number.isFinite(t) && Number.isFinite(v) && fmtInd(d.id, t) !== fmtInd(d.id, v);
+      const good = d.better === 'high' ? t > v : d.better === 'low' ? t < v : null;
+      const est = parts.some((p) => isEstimated(p.cid, d.id));
+      const row = document.createElement('div');
+      row.className = 'indrow';
+      row.innerHTML = `<span class="iname">${d.name.toUpperCase()}<small>${d.desc.toUpperCase()}</small></span>`
+        + `<span class="ival">${est ? '<span class="est">~</span>' : ''}${fmtInd(d.id, v)}`
+        + (moving ? `<span class="to ${good == null ? 'flat' : good ? 'good' : 'bad'}">\u{2192} ${fmtInd(d.id, t)}</span>` : '')
+        + `</span><span class="irank">${place[d.id] ? '#' + place[d.id] : ''}</span>`;
+      grid.appendChild(row);
+    }
+    grp.appendChild(grid);
+    body.appendChild(grp);
+  }
+}
+
+// V5.6: vad en lag skulle göra med den verkliga statistiken — visas i
+// förhandsrutan bredvid nationsvärdena när man hovrar ett alternativ
+function indicatorPreview(deltaMods, laws2 = null) {
+  const s = state.solo;
+  if (!s?.stats || !hasIndicatorData()) return '';
+  const T = statTotals(s.stats);
+  const T2 = { ...T };
+  for (const [k, v] of Object.entries(deltaMods || {})) T2[k] = Math.max(-100, Math.min(100, (T2[k] || 0) + v));
+  const parts = myRealmParts();
+  const laws = s.nation?.laws || null;
+  const ch = biggestChanges(realmIndicators(parts, T, {}, baselineTotalsOf, laws),
+    realmIndicators(parts, T2, {}, baselineTotalsOf, laws2 || laws), 4);
+  if (!ch.length) return '';
+  return '<br>\u{1F4CA} ' + ch.map((c) => `<span class="${c.good == null ? 'dc' : c.good ? 'dp' : 'dn'}">`
+    + `${c.name.toUpperCase()} ${fmtInd(c.id, c.from)} \u{2192} ${fmtInd(c.id, c.to)}</span>`).join(' &nbsp;\u{00B7}&nbsp; ');
+}
+
 function renderNationTab() {
   const body = $('#natbody');
   document.querySelectorAll('.nattab').forEach((el) => el.classList.toggle('on', el.dataset.tab === natTab));
   // fliken styr förhandsrutans fasta höjd (se #natpreview i index.html)
   $('#nation').dataset.tab = natTab;
   recomputeNation();
+  if (natTab === 'statistik') return renderStatsTab(body);
   if (natTab === 'lagar') return renderLawsTab(body);
   if (natTab === 'ideologi') return renderIdeologyTab(body);
   if (natTab === "forskning") return renderResearchTab(body);
@@ -3635,8 +3869,9 @@ function renderLawsTab(body) {
       btn.addEventListener('mouseenter', () => {
         if (locked) { setPreview(`<span class="dn">\u{1F512} ${locked.toUpperCase()}</span>` + lawDesc); return; }
         if (isCur) { setPreview(`<span class="dc">${o.name.toUpperCase()} — NUVARANDE LAG</span>` + lawDesc); return; }
+        const dm = diffMods(o.mods, cur?.mods);
         setPreview(`<span class="dc">${def.name.toUpperCase()} \u{2192} ${o.name.toUpperCase()} — KOSTAR ${cost} \u{2696}\u{FE0F}</span> &nbsp; `
-          + deltaHtml(diffMods(o.mods, cur?.mods)) + lawDesc);
+          + deltaHtml(dm) + indicatorPreview(dm, { ...s.nation.laws, [cat]: o.id }) + lawDesc);
       });
       btn.addEventListener('mouseleave', () => setPreview());
       btn.addEventListener('click', () => {
@@ -3719,7 +3954,8 @@ function renderIdeologyTab(body) {
       card.addEventListener('mouseenter', () => {
         if (isCur) { setPreview('<span class="dc">NUVARANDE IDEOLOGI</span>'); return; }
         if (blocked) { setPreview(`<span class="dn">\u{1F512} ${blocked}</span>`); return; }
-        setPreview(`<span class="dc">${ideo.name.toUpperCase()} — ${IDEOLOGY_COST} \u{2696}\u{FE0F} + TILLFÄLLIG ORO</span> &nbsp; ` + deltaHtml(diffMods(ideo.mods, ideologyMods(s.nation))));
+        const dm = diffMods(ideo.mods, ideologyMods(s.nation));
+        setPreview(`<span class="dc">${ideo.name.toUpperCase()} — ${IDEOLOGY_COST} \u{2696}\u{FE0F} + TILLFÄLLIG ORO</span> &nbsp; ` + deltaHtml(dm) + indicatorPreview(dm));
       });
       card.addEventListener('mouseleave', () => setPreview());
       card.addEventListener('click', () => {
@@ -5061,9 +5297,10 @@ function generateTowns() {
 
 function startWorldLoad() {
   overlay('#loading', true);
-  Promise.all([loadCities(), loadFacts()]).then(([cities, facts]) => {
+  Promise.all([loadCities(), loadFacts(), loadIndicators()]).then(([cities, facts, ind]) => {
     state.cities = cities;
     state.facts = facts;
+    setIndicatorData(ind, facts);   // V5.6: verkliga mått för statistiken
     globe.setCities(cities);
     globe.setRoutes(buildRoutes(cities));
     classifySeaRoutes();
@@ -5710,6 +5947,7 @@ function saveGame() {
           // V5: modifierare, händelsehistorik, utvecklingsnivåer och lydstater
           mods: s.mods, seenEvents: s.seenEvents, trend: s.trend, nextEvent: s.nextEvent,
           devQueue: s.devQueue, devLevels: s.devLevels, aiPuppets: s.aiPuppets,
+          indLag: s.indLag,   // V5.6: hur långt politiken hunnit slå igenom i statistiken
           known: [...(s.known || [])],
         },
         world: state.world || {},
@@ -5756,7 +5994,7 @@ function saveSession() {
       cityB: s.cityB, trade: s.trade, buildQueue: s.buildQueue, researchQueue: s.researchQueue,
       garrisons: s.garrisons, army: s.army, integ: s.integ, wars: s.wars, day: s.clock?.day || 1,
       rel: s.rel, allies: s.allies, truces: s.truces, disarmed: s.disarmed, cabinet: s.nation?.cabinet,
-      partial: s.partial, bloc: s.bloc, aiBlocs: s.aiBlocs, flag: s.flag,
+      partial: s.partial, bloc: s.bloc, aiBlocs: s.aiBlocs, flag: s.flag, indLag: s.indLag,
     }));
   } catch (e) { /* privat läge / fullt lager — strunt samma */ }
 }
@@ -5796,6 +6034,7 @@ function restoreSession(snap, home) {
   s.truces = snap.truces || {};
   s.disarmed = snap.disarmed || [];
   s.partial = snap.partial || {};
+  s.indLag = snap.indLag || null;   // V5.6
   s.stateFlags = snap.stateFlags || {};
   s.bloc = snap.bloc || null;
   s.aiBlocs = snap.aiBlocs || [];

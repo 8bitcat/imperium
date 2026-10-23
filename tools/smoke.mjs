@@ -168,12 +168,22 @@ async function main() {
     await page.waitForFunction(() => getComputedStyle(document.querySelector('#nation')).display !== 'none');
     const tabs = await page.$$eval('.nattab', (els) => els.map((e) => e.dataset.tab));
     const before = pageErrors.length;
+    let statInfo = null;
     for (const t of tabs) {
       await tap(`.nattab[data-tab="${t}"]`);
       await page.waitForTimeout(150);
       await shot(`05-nation-${t}`);
+      // V5.6: statistiken ska visa verkliga värden (Sverige: BNP per capita ~63 000 $)
+      if (t === 'statistik') {
+        statInfo = await page.evaluate(() => ({
+          rows: document.querySelectorAll('.indrow').length,
+          gdppc: [...document.querySelectorAll('.indrow')].find((r) => /^BNP PER CAPITA/.test(r.innerText))?.querySelector('.ival')?.innerText.split('\n')[0] || '',
+        }));
+      }
     }
-    check('alla NATION-flikar öppnas', pageErrors.length === before && tabs.length >= 7, tabs.join(', '));
+    check('alla NATION-flikar öppnas', pageErrors.length === before && tabs.length >= 8, tabs.join(', '));
+    check('statistiken visar verkliga värden', (statInfo?.rows || 0) >= 70 && /\d\s*\$/.test(statInfo?.gdppc || ''),
+      statInfo ? `${statInfo.rows} mått, BNP per capita ${statInfo.gdppc}` : 'fliken saknas');
     await tap('#natclose');
 
     // 6. kartlagren av/på, sedan 3D-planeten

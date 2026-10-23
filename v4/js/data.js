@@ -48,3 +48,15 @@ export async function loadFacts() {
     return {};
   }
 }
+
+// V5.6: verkliga utgångsvärden för statistiken (tools/build-indicators.mjs)
+export async function loadIndicators() {
+  try {
+    const res = await fetch('data/indicators.json');
+    if (!res.ok) throw new Error('indicators ' + res.status);
+    return await res.json();
+  } catch (e) {
+    console.warn('indicators.json saknas — statistiken visas inte', e);
+    return {};
+  }
+}
