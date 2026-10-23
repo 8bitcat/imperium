@@ -33,22 +33,29 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | Fil | Innehåll |
 |---|---|
 | `stats.js` | 22 nationsvärden + `computeStats`. Nya stat-nycklar MÅSTE finnas här, annars noll effekt utan fel |
-| `laws.js` · `ideologies.js` · `research.js` | lagar (42 kategorier, 309 alternativ) · 19 ideologier/doktriner + axlar + sidogrenar · 18 grenar × 9 nivåer |
+| `laws.js` · `ideologies.js` · `research.js` | lagar (48 kategorier, 347 alternativ) · 19 ideologier/doktriner + axlar + sidogrenar · 18 grenar × 9 nivåer |
 | `laws-extra.js` | V5.7: nya alternativ i befintliga lagar (`after`-position, `locks`, `effects`), splitsas in i LAWS vid laddning |
-| `events.js` · `modifiers.js` · `development.js` | 609 händelser med villkor · 45 modifierare · stadsnivå/infrastruktur 0–100 |
-| `war.js` · `integration.js` · `stance.js` | casus belli/krav/historiska riken · integration av erövrat land · ländernas hållning |
+| `laws-more.js` | V5.8: helt nya lagkategorier som bär sin egen `axis`/`dir`, `locks` och `effects` — läses av laws.js, ideologies.js och statistics.js |
+| `events.js` · `modifiers.js` · `development.js` | 699 händelser med villkor · 45 modifierare · stadsnivå/infrastruktur 0–100 |
+| `war.js` · `integration.js` · `stance.js` | casus belli/krav/historiska riken (32 st — ALLA `lands` krävs för utrop, `need` sätts vid laddning) · integration av erövrat land · ländernas hållning |
+| `geopolitics.js` | V5.8: VÄRLDSLÄGET — kalla krig (spänning 0–100, incidenter, kris → ibland varmt krig), val i demokratier, revolutioner/kupper som river upp lagarna. Ren logik; main.js kopplar in den via `geoApi(ctx)` i `aiWorldTick` |
 | `diplomacy.js` · `blocs.js` · `ministers.js` · `ranking.js` | relationer/sanktioner · block + fanor · kabinett · världsrankning |
 | `economy.js` · `resources.js` · `buildings.js` · `factions.js` · `leaders.js` | inkomst/arméstorlek · naturtillgångar · stadsbyggnader · 4 faktioner · 200+ ledare |
 | `battleA.js` · `units.js` | taktikstriden (Advance Wars-lik, används för ALLA krig) · enheter/sprites. `battleB.js` är oanvänd |
 | `globe.js` · `globe3d.js` | pixelglob (d3) · WebGL-planet. All ritning går via `_project`/`_front` så den funkar i båda |
 | `net.js` · `data.js` · `names.js` | PeerJS (värden äger världen) · kartdata · svenska landsnamn |
 | `real.js` | V5.6: allt som VISAS i riktiga tal — 1 💰 = 100 miljoner $, 1 🧍 = 1 000 människor, förband i soldater. Spelet räknar internt i gamla enheter |
-| `statistics.js` | 101 verkliga mått per land (data/indicators.json; brott är modeller, märkta ~) som nationsvärden + lagar (`LAW_EFFECTS`) flyttar; rikes-ihopräkning, rankningar |
+| `statistics.js` | 224 verkliga mått i 13 grupper per land (data/indicators.json; brott är modeller, märkta ~) som nationsvärden + lagar (`LAW_EFFECTS`) flyttar; rikes-ihopräkning, rankningar |
+| `events/*.js` | V5.6: händelser per tema, ihopslagna i `events.js` |
 
 **Befolkningen lever (V5.7):** `state.facts[cid].p` ändras var 10:e dag (`tickPopulation`,
 1 spelår = 120 dagar) med `popchange` ur statistics.js; startvärdet ligger i `p0`. Allt som
 läser `facts.p` (inkomst, arméstorlek, statistik) följer med. Sparas som `pops` i sparfilen.
-| `events/*.js` | V5.6: händelser per tema, ihopslagna i `events.js` |
+
+**Världen är lugnare (V5.8):** `AI_CALM` (main.js) skalar AI:ns expansion, erövrare vilar
+(`world.rest`), och stater i kallt krig rustar hellre än anfaller. Spelarens färg ligger i
+`state.solo.color` (`soloColor()`/`soloInk()`/`puppetColor()`); globe.js gör gråskalor ljusa
+(`ownerFill`) och ger mörka riken ljus kant (`ownerEdge`).
 
 Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
 

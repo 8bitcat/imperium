@@ -28,6 +28,22 @@ function shade(hex, f) {
   return `rgb(${r},${g},${b})`;
 }
 
+// V5.8: spelaren kan välja vilken färg som helst, från vitt till svart.
+// Mättade färger mörkas som förut, men gråskalor behåller sin ljushet — annars
+// blir ett vitt land grått. Mycket mörka riken får en ljus kantlinje så de syns.
+function ownerFill(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  const sat = mx ? (mx - mn) / mx : 0;
+  return shade(hex, sat < 0.2 ? 0.85 : 0.45);
+}
+function ownerEdge(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const lum = 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
+  return lum < 60 ? '#9fb4c4' : hex;
+}
+
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 // Större bergskedjor som polylines (lon/lat) — ger terrängläget höjd och djup.
@@ -1869,7 +1885,7 @@ export class Globe {
         // kantlinjen först och dubbelt så bred: fyllningen ovanpå täcker den
         // inre halvan och alla bågar där bitarna överlappar, så bara den
         // yttre gränsen mot resten av landet syns
-        s.strokeStyle = color; s.lineWidth = 2.2;
+        s.strokeStyle = ownerEdge(color); s.lineWidth = 2.2;
         for (const g of shapes) { s.beginPath(); this.spath(g); s.stroke(); }
         for (const g of shapes) {
           s.beginPath(); this.spath(g);
@@ -1877,7 +1893,7 @@ export class Globe {
             s.fillStyle = terr; s.fill();
             s.globalAlpha = 0.32; s.fillStyle = color; s.fill(); s.globalAlpha = 1;
           } else {
-            s.fillStyle = shade(color, 0.45); s.fill();
+            s.fillStyle = ownerFill(color); s.fill();
           }
         }
         s.restore();
@@ -1894,12 +1910,12 @@ export class Globe {
           s.fillStyle = claim.color; s.fill();
           s.globalAlpha = 1;
         } else {
-          s.fillStyle = shade(claim.color, 0.45);
+          s.fillStyle = ownerFill(claim.color);
           s.fill();
         }
         // med mesh fylls hela riket som EN yta efteråt (se _ownerMeshes.fill),
         // så inga inre gränser eller sömmar syns mellan provinserna
-        if (!useMesh) { s.strokeStyle = claim.color; s.lineWidth = 1; s.stroke(); }
+        if (!useMesh) { s.strokeStyle = ownerEdge(claim.color); s.lineWidth = 1; s.stroke(); }
       } else {
         s.fillStyle = terr || LAND_SHADES[hashId(c.id) % LAND_SHADES.length];
         s.fill();
@@ -1937,14 +1953,14 @@ export class Globe {
           s.fillStyle = om.color; s.fill();
           s.globalAlpha = 1;
         } else {
-          s.fillStyle = shade(om.color, 0.45); s.fill();
+          s.fillStyle = ownerFill(om.color); s.fill();
         }
       }
       s.beginPath(); this.spath(this._borderMesh);
       s.strokeStyle = BORDER; s.lineWidth = 0.55; s.stroke();
       for (const om of this._ownerMeshes) {
         s.beginPath(); this.spath(om.mesh);
-        s.strokeStyle = om.color; s.lineWidth = 1.1; s.stroke();
+        s.strokeStyle = ownerEdge(om.color); s.lineWidth = 1.1; s.stroke();
       }
     }
 

@@ -71,6 +71,7 @@ function sampleCtx(emptyInd = false) {
       return ids.includes(laws[cat]);
     },
     atWar: Math.random() < 0.25, wars: Math.floor(rnd(0, 3)),
+    coldWar: Math.random() < 0.2, worldRevolutions: Math.floor(rnd(0, 4)),   // V5.8
     claims: Math.floor(rnd(1, 15)), puppets: Math.floor(rnd(0, 3)), allies: Math.floor(rnd(0, 3)),
     res: (b) => { if (!RESEARCH[b]) unknown.add(`c.res('${b}')`); return research[b] || 0; },
     mod: (id) => { if (!MODIFIERS[id]) unknown.add(`c.mod('${id}')`); return Math.random() < 0.15; },

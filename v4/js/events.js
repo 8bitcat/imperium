@@ -50,6 +50,8 @@ import { EVENTS as MILITAR } from './events/militar.js';
 import { EVENTS as VETENSKAP } from './events/vetenskap.js';
 import { EVENTS as SAMHALLE } from './events/samhalle.js';
 import { EVENTS as OMVARLD } from './events/omvarld.js';
+import { EVENTS as KALLA_KRIGET } from './events/kallakriget.js';   // V5.8
+import { EVENTS as NYA_LAGAR_58 } from './events/nyalagar58.js';    // V5.8
 
 export const BASE_EVENTS = [
 
@@ -1057,7 +1059,7 @@ export const BASE_EVENTS = [
 
 export const EVENTS = [
   ...BASE_EVENTS, ...EKONOMI, ...HALSA, ...MILJO, ...RATT, ...POLITIK, ...IDEOLOGI,
-  ...NYA_IDEOLOGIER, ...MILITAR, ...VETENSKAP, ...SAMHALLE, ...OMVARLD,
+  ...NYA_IDEOLOGIER, ...MILITAR, ...VETENSKAP, ...SAMHALLE, ...OMVARLD, ...KALLA_KRIGET, ...NYA_LAGAR_58,
 ];
 
 // ---------- MOTOR ----------

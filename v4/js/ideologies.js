@@ -13,6 +13,7 @@
 
 import { LAWS } from './laws.js';
 import { LAW_EXTRAS } from './laws-extra.js';
+import { NEW_LAWS } from './laws-more.js';
 
 export const IDEOLOGY_COST = 150;   // Political power för ideologibyte
 export const DOCTRINE_COST = 50;    // Political power för doktrinbyte
@@ -351,6 +352,11 @@ export const LAW_AXIS = {
   policing:           { axis: 'auth', dir:  1 },
 };
 
+// V5.8: helt nya lagar (laws-more.js) bär sin egen axel och sina spärrar
+for (const [cat, L] of Object.entries(NEW_LAWS)) {
+  if (!LAW_AXIS[cat]) LAW_AXIS[cat] = { axis: L.axis, dir: L.dir };
+}
+
 // ---------- V5.7: spärrar och krav för nya lagar och alternativ ----------
 // De sex nya lagarnas ytterlägen spärras för ideologier som självklart skulle
 // förbjuda dem. Ett nytt alternativ i en befintlig lag (laws-extra.js) får
@@ -369,6 +375,9 @@ function lockFor(ideoId, cat, optId) {
   if (!ideo) return;
   const lk = ((ideo.locks ||= {})[cat] ||= []);
   if (!lk.includes(optId)) lk.push(optId);
+}
+for (const [cat, L] of Object.entries(NEW_LAWS)) {
+  for (const [ideoId, opts] of Object.entries(L.locks || {})) for (const o of opts) lockFor(ideoId, cat, o);
 }
 for (const [cat, byOpt] of Object.entries(NEW_LAW_LOCKS)) {
   for (const [optId, ideos] of Object.entries(byOpt)) for (const id of ideos) lockFor(id, cat, optId);

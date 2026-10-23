@@ -50,7 +50,8 @@ export const IDEO_FLAGS = {
 
 // Rikesflaggor för de historiska rikena (id matchar HISTORICAL_EMPIRES)
 export const EMPIRE_FLAGS = {
-  sovjet: { bg: '#cc0000', band: null, sym: '\u{262D}', symColor: '#ffd700', name: 'SOVJETUNIONENS FANA' },
+  // corner = symbolen sitter i övre vänstra hörnet, som på den riktiga fanan
+  sovjet: { bg: '#cc0000', band: null, sym: '\u{262D}', symColor: '#ffd700', corner: true, name: 'SOVJETUNIONENS FANA' },
   brittiska: { bg: '#012169', band: '#ffffff', sym: '\u{1F451}', symColor: '#ffd700', name: 'UNION JACK' },
   rom: { bg: '#7a1010', band: '#d4af37', sym: '\u{1F985}', symColor: '#ffd700', name: 'SPQR' },
   mongol: { bg: '#1560bd', band: '#ffffff', sym: '\u{1F3F9}', symColor: '#ffffff', name: 'DEN BLÅ HIMLENS FANA' },
@@ -60,6 +61,29 @@ export const EMPIRE_FLAGS = {
   kejsardomet: { bg: '#000000', band: '#d4af37', sym: '\u{1F985}', symColor: '#ffd700', name: 'KEJSARÖRNEN' },
   persien: { bg: '#0f7b4f', band: '#ffffff', sym: '\u{1F981}', symColor: '#ffd700', name: 'LEJONFANAN' },
   napoleon: { bg: '#002395', band: '#ffffff', sym: '\u{1F41D}', symColor: '#ffd700', name: 'KEJSARDÖMETS ÖRN' },
+  // V5.8: alla historiska riken har en egen fana som hissas när riket utropas
+  spanska: { bg: '#aa151b', stripes: ['#aa151b', '#f1bf00', '#aa151b'], sym: '\u{1F451}', name: 'BURGUNDERKORSETS FANA' },
+  portugisiska: { bg: '#046a38', band: '#da291c', sym: '\u{2693}', name: 'SJÖVÄLDETS FANA' },
+  nederlandska: { bg: '#e07020', stripes: ['#e07020', '#ffffff', '#21468b'], sym: '\u{1F6A2}', name: 'PRINSFLAGGAN' },
+  bysans: { bg: '#6a0dad', band: '#d4af37', sym: '\u{2626}\u{FE0F}', name: 'DUBBELÖRNENS FANA' },
+  farao: { bg: '#c9a227', band: '#1d4e89', sym: '\u{1F3FA}', name: 'FARAOS FANA' },
+  inka: { bg: '#e40303', stripes: ['#e40303', '#ff8c00', '#ffed00', '#008026', '#004dff', '#750787'], sym: '\u{2600}\u{FE0F}', name: 'SOLENS FANA' },
+  azteker: { bg: '#0e7a5f', band: '#c0392b', sym: '\u{1F985}', name: 'ÖRNENS OCH ORMENS FANA' },
+  babylon: { bg: '#1f4e9c', band: '#d4af37', sym: '\u{1F981}', name: 'ISHTARPORTENS FANA' },
+  arabhalvon: { bg: '#006c35', band: '#ffffff', sym: '\u{1F54C}', name: 'HALVÖNS FANA' },
+  maurya: { bg: '#ff9933', band: '#138808', sym: '\u{1F418}', name: 'ASHOKAS FANA' },
+  mittensrike: { bg: '#f2c300', band: null, sym: '\u{1F409}', name: 'DRAKFANAN' },
+  aksum: { bg: '#078930', stripes: ['#078930', '#fcdd09', '#da121a'], sym: '\u{1F451}', name: 'AKSUMS FANA' },
+  maliriket: { bg: '#d4a017', band: '#14b53a', sym: '\u{1FA99}', name: 'GULDFANAN' },
+  polsklit: { bg: '#dc143c', band: '#ffffff', sym: '\u{1F985}', name: 'SAMVÄLDETS FANA' },
+  nordsjo: { bg: '#e8e0c8', band: '#1d5f8a', sym: '\u{2694}\u{FE0F}', name: 'KORPFANAN' },
+  habsburg: { bg: '#000000', stripes: ['#000000', '#e8b923'], sym: '\u{1F985}', name: 'HABSBURGS FANA' },
+  storungern: { bg: '#ce2939', stripes: ['#ce2939', '#ffffff', '#477050'], sym: '\u{1F451}', name: 'STEFANSKRONANS FANA' },
+  kejsarjapan: { bg: '#ffffff', band: null, sym: '\u{1F534}', name: 'SOLFANAN' },
+  manifest: { bg: '#b22234', stripes: ['#b22234', '#ffffff', '#b22234', '#ffffff', '#b22234', '#ffffff', '#b22234'], sym: '\u{2B50}', corner: true, cornerBg: '#3c3b6e', name: 'STJÄRNBANERET' },
+  sydamunion: { bg: '#0a7d40', band: '#fedf00', sym: '\u{2600}\u{FE0F}', name: 'ENHETSFANAN' },
+  afrikaunion: { bg: '#007a4d', stripes: ['#007a4d', '#ffb612', '#000000'], sym: '\u{1F30D}', name: 'UNIONENS FANA' },
+  nusantara: { bg: '#ff0000', stripes: ['#ff0000', '#ffffff'], sym: '\u{1F30A}', name: 'NUSANTARAS FANA' },
 };
 
 // ---------- NATIONSFÄRGER ----------
@@ -144,6 +168,18 @@ export function drawFlag(ctx, flag, x, y, w, h) {
   ctx.fillStyle = '#00000055';
   ctx.fillRect(x, y, w, 1);
   ctx.fillRect(x, y + h - 1, w, 1);
+  if (flag.corner) {
+    // symbolen i övre vänstra hörnet (Sovjetunionen, Stjärnbaneret)
+    if (flag.cornerBg) { ctx.fillStyle = flag.cornerBg; ctx.fillRect(x, y, w * 0.42, h * 0.54); }
+    if (flag.sym) {
+      ctx.font = `${Math.round(h * 0.38)}px "Segoe UI Emoji", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = flag.symColor || '#ffffff';
+      ctx.fillText(flag.sym, x + w * 0.21, y + h * 0.28);
+    }
+    return;
+  }
   if (flag.sym) {
     ctx.font = `${Math.round(h * 0.62)}px "Segoe UI Emoji", sans-serif`;
     ctx.textAlign = 'center';
@@ -162,9 +198,15 @@ export function flagHtml(flag, w = 34, h = 22) {
     band = flag.stripes.map((c, i) => `<span style="position:absolute;left:0;right:0;`
       + `top:${(100 * i) / n}%;height:${100 / n}%;background:${c}"></span>`).join('');
   }
+  // corner: symbolen i övre vänstra hörnet i stället för mitten
+  const sym = flag.corner
+    ? (flag.cornerBg ? `<span style="position:absolute;left:0;top:0;width:42%;height:54%;background:${flag.cornerBg}"></span>` : '')
+      + `<span style="position:absolute;left:0;top:0;width:42%;height:56%;display:flex;align-items:center;justify-content:center;`
+      + `font-size:${Math.round(h * 0.36)}px;line-height:1;color:${flag.symColor || '#ffffff'}">${flag.sym || ''}</span>`
+    : `<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;`
+      + `font-size:${Math.round(h * 0.6)}px;line-height:1">${flag.sym || ''}</span>`;
   return `<span style="position:relative;display:inline-block;width:${w}px;height:${h}px;`
     + `background:${flag.bg};border:1px solid rgba(255,255,255,0.7);vertical-align:middle">`
     + band
-    + `<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;`
-    + `font-size:${Math.round(h * 0.6)}px;line-height:1">${flag.sym || ''}</span></span>`;
+    + sym + '</span>';
 }

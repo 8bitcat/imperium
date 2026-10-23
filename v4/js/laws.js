@@ -6,6 +6,7 @@
 // Kostnad att byta: LAW_STEP_COST × antal steg mellan nuvarande och nytt alternativ.
 
 import { LAW_EXTRAS } from './laws-extra.js';
+import { NEW_LAWS } from './laws-more.js';
 
 export const LAW_STEP_COST = 15; // Political power per steg
 
@@ -726,6 +727,14 @@ export const LAWS = {
     ],
   },
 };
+
+// V5.8: helt nya lagkategorier (laws-more.js) — de bär sin egen axel, sina
+// spärrar och sina statistikeffekter, som ideologies.js och statistics.js läser
+for (const [cat, L] of Object.entries(NEW_LAWS)) {
+  if (LAWS[cat]) continue;
+  LAWS[cat] = { name: L.name, icon: L.icon, options: L.options };
+  L.__merged = true;
+}
 
 // V5.7: nya alternativ i de befintliga lagarna (laws-extra.js) läggs in på sin
 // plats längs lagens axel — direkt efter det alternativ som `after` pekar ut.
