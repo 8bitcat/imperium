@@ -40,6 +40,12 @@ export const IDEO_FLAGS = {
   conservatism: { bg: '#123a5c', band: '#c9a227', sym: '\u{1F3DB}\u{FE0F}', symColor: '#ffffff', name: 'TRADITIONSFANAN' },
   populism: { bg: '#c85a00', band: '#ffffff', sym: '\u{1F4E2}', symColor: '#ffffff', name: 'FOLKRESNINGENS FANA' },
   anarchism: { bg: '#1a1a1a', band: '#c0392b', sym: '\u{24B6}', symColor: '#ffffff', name: 'SVARTRÖDA FANAN' },
+  // V5.6
+  greens: { bg: '#2e8b3e', band: '#f2d16b', sym: '\u{1F331}', symColor: '#ffffff', name: 'GRÖNA FANAN' },
+  libertarianism: { bg: '#f0c419', band: '#1a1a1a', sym: '\u{1F5FD}', symColor: '#1a1a1a', name: 'FRIHETSORMENS FANA' },
+  technocracy: { bg: '#1d3557', band: '#a8dadc', sym: '\u{2699}\u{FE0F}', symColor: '#ffffff', name: 'INGENJÖRSFANAN' },
+  christdem: { bg: '#f28c28', band: '#ffffff', sym: '\u{271D}\u{FE0F}', symColor: '#ffffff', name: 'KORSETS FANA' },
+  stratocracy: { bg: '#4b5320', band: '#c9a227', sym: '\u{1F396}\u{FE0F}', symColor: '#ffd700', name: 'FÄLTFANAN' },
 };
 
 // Rikesflaggor för de historiska rikena (id matchar HISTORICAL_EMPIRES)

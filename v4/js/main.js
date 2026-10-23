@@ -8,7 +8,7 @@ import { BattleA } from './battleA.js';
 import { BattleB } from './battleB.js';
 import { STATS, STAT_GROUPS, computeStats, statGoodness } from './stats.js';
 import { LAWS, defaultLaws, lawMods, lawChangeCost, lawOption } from './laws.js';
-import { IDEOLOGIES, countryIdeology, ideologyMods, lawLockedBy, enforceRequirements, IDEOLOGY_COST, DOCTRINE_COST, IDEOLOGY_TRACKS, trackOf, switchBlockedBy,
+import { IDEOLOGIES, countryIdeology, ideologyMods, lawLockedBy, enforceRequirements, IDEOLOGY_COST, DOCTRINE_COST, IDEOLOGY_TRACKS, trackOf, switchBlockedBy, branchesOf,
   ideologyHarmony, lawCostFactor, preferredIndex, ideologyDistance, tradeCostFactor, tradeBlockedBy, allyBlockedBy, blocBlockedBy, axesOf } from './ideologies.js';
 import { RESEARCH, TIER_COST, TIER_DAYS, researchMods, combatBonus, hasUnlock, logisticsRange, satCoverage, espionageTier } from './research.js';
 import { MODIFIERS, modifierMods, tickModifiers, tickTrend, grant as grantMod, revoke as revokeMod, activeList as modList } from './modifiers.js';
@@ -3705,19 +3705,15 @@ function renderIdeologyTab(body) {
     th.className = 'trackhead';
     th.textContent = `${track.icon} ${track.name}`;
     col.appendChild(th);
-    track.ids.forEach((iid, step) => {
+    // ett kort per ideologi; V5.6-grenarna ritas direkt under sin förälder
+    const addCard = (iid, branch) => {
       const ideo = IDEOLOGIES[iid];
       if (!ideo) return;
-      if (step > 0) {
-        const link = document.createElement('div');
-        link.className = 'tracklink';
-        link.textContent = '\u{2193}';
-        col.appendChild(link);
-      }
       const blocked = switchBlockedBy(s.nation.ideology, iid);
       const isCur = s.nation.ideology === iid;
       const card = document.createElement('div');
       card.className = 'ideocard' + (isCur ? ' cur' : blocked ? ' far' : ' reach');
+      if (branch) card.style.cssText = 'margin-left:12px;border-style:dashed';
       card.innerHTML = `<div class="iname">${ideo.icon} ${ideo.name.toUpperCase()}</div>`
         + `<div class="imods">${modSummary(ideo.mods, 3)}</div>`;
       card.addEventListener('mouseenter', () => {
@@ -3734,13 +3730,31 @@ function renderIdeologyTab(body) {
       });
       if (natIdeoPick === iid) card.style.borderColor = 'var(--amber)';
       col.appendChild(card);
+    };
+    track.ids.forEach((iid, step) => {
+      if (!IDEOLOGIES[iid]) return;
+      if (step > 0) {
+        const link = document.createElement('div');
+        link.className = 'tracklink';
+        link.textContent = '\u{2193}';
+        col.appendChild(link);
+      }
+      addCard(iid, false);
+      for (const b of branchesOf(iid)) {
+        const link = document.createElement('div');
+        link.className = 'tracklink';
+        link.style.cssText = 'text-align:left;margin-left:12px';
+        link.textContent = '\u{21B3} SIDOGREN';
+        col.appendChild(link);
+        addCard(b, true);
+      }
     });
     grid.appendChild(col);
   }
   body.appendChild(grid);
   const hint = document.createElement('div');
   hint.style.cssText = 'font-size:6px;color:var(--holo-dim);line-height:2;margin-top:6px';
-  hint.textContent = 'DU VANDRAR ETT STEG I TAGET I DITT LED. FÖR ATT BYTA LED MÅSTE DU FÖRST TA DIG UPP TILL LEDETS TOPP.';
+  hint.textContent = 'DU VANDRAR ETT STEG I TAGET I DITT LED. FÖR ATT BYTA LED MÅSTE DU FÖRST TA DIG UPP TILL LEDETS TOPP. SIDOGRENARNA NÅS BARA FRÅN IDEOLOGIN DE HÄNGER PÅ.';
   body.appendChild(hint);
 
   // bekräftelserutan längst ner
@@ -5762,6 +5776,8 @@ function restoreSession(snap, home) {
   const s = state.solo;
   if (!s || !snap || snap.home !== home) return false;
   s.nation = snap.nation;
+  // lagkategorier som tillkommit sedan partiet sparades börjar i startläget
+  if (s.nation) s.nation.laws = { ...defaultLaws(), ...(s.nation.laws || {}) };
   s.res = snap.res || { money: 500, man: 20, rp: 0, pp: 100 };
   s.extra = snap.extra || {};
   s.permMods = snap.permMods || {};
@@ -5929,6 +5945,8 @@ function resumeGame(g) {
       });
       state.world = g.world || {};
       state.history = g.history || [];
+      // V5.6: lagkategorier som tillkommit sedan partiet sparades börjar i startläget
+      if (s.nation) s.nation.laws = { ...defaultLaws(), ...(s.nation.laws || {}) };
       if (s.faction) applyFaction(FACTIONS[s.faction]);
       recomputeNation();
       $('#resbar').style.display = 'flex';
@@ -5936,7 +5954,8 @@ function resumeGame(g) {
       renderBuildCorner();
       updateArmyMarker();
       applyState();
-      toast(`\u{21BB} SPELET ÅTERUPPTAGET — DAG ${s.clock.day}, ${Object.keys(s.claims).length} LÄNDER`, 'amber', 8000);
+      const nOwned = Object.keys(s.claims).length;
+      toast(`\u{21BB} SPELET ÅTERUPPTAGET — DAG ${s.clock.day}, ${nOwned} ${nOwned === 1 ? 'LAND' : 'LÄNDER'}`, 'amber', 8000);
     };
     pending();
     return true;

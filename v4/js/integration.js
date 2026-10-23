@@ -9,6 +9,8 @@ export const IDEO_AXIS = {
   liberalism: 0, democracy: 0, populism: 0,
   conservatism: 1, monarchism: 1, theocracy: 2, nationalism: 2,
   imperialism: 2, fascism: 3, natsoc: 3,
+  // V5.6
+  greens: -1, technocracy: 0, libertarianism: 1, christdem: 1, stratocracy: 2,
 };
 
 // ---------- religioner ----------

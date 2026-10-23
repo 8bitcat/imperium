@@ -28,7 +28,15 @@ export const IDEOLOGY_TRACKS = [
   { name: 'AUKTORITÄRT', icon: '\u{1F451}', ids: ['monarchism', 'theocracy', 'fascism', 'natsoc'] },
 ];
 
+// V5.6: SIDOGRENAR. De nya ideologierna står inte i ett led — de hänger på en
+// befintlig ideologi (`branchOf`). Man når grenen bara från sin förälder och
+// går tillbaka samma väg. Inga gamla vägar mellan leden ändras.
 export function trackOf(id) {
+  const parent = IDEOLOGIES[id]?.branchOf;
+  if (parent) {
+    const p = trackOf(parent);
+    return p ? { ...p, branch: true } : null;
+  }
   for (let t = 0; t < IDEOLOGY_TRACKS.length; t++) {
     const i = IDEOLOGY_TRACKS[t].ids.indexOf(id);
     if (i >= 0) return { track: t, step: i };
@@ -36,9 +44,20 @@ export function trackOf(id) {
   return null;
 }
 
+// grenarna som hänger på en ideologi
+export function branchesOf(id) {
+  return Object.keys(IDEOLOGIES).filter((k) => IDEOLOGIES[k].branchOf === id);
+}
+
 // Får man byta från `from` till `to`? null = det går, annars skälet.
 export function switchBlockedBy(from, to) {
   if (from === to) return 'DETTA ÄR DIN NUVARANDE IDEOLOGI';
+  const pf = IDEOLOGIES[from]?.branchOf, pt = IDEOLOGIES[to]?.branchOf;
+  if (pf || pt) {
+    if (pt === from || pf === to) return null;
+    const nm = (id) => (IDEOLOGIES[id]?.name || '').toUpperCase();
+    return pt ? `NÅS BARA FRÅN ${nm(pt)}` : `GÅ FÖRST TILLBAKA TILL ${nm(pf)}`;
+  }
   const a = trackOf(from), b = trackOf(to);
   if (!a || !b) return null;
   if (a.track === b.track) {
@@ -55,7 +74,7 @@ export const IDEOLOGIES = {
     name: 'Liberalism', icon: '\u{1F54A}\u{FE0F}',
     axes: { econ: 40, auth: 20 },
     mods: { freedom: 15, gdp: 8, income: 5, statepower: -8, ideopower: -5 },
-    locks: { government: ['authoritarian', 'totalitarian'], elections: ['unfair', 'no'], press: ['propaganda'] },
+    locks: { government: ['authoritarian', 'junta', 'totalitarian'], elections: ['unfair', 'no'], press: ['propaganda'] },
     doctrines: {
       left: { name: 'Left wing', mods: { welfare: 8, qol: 5, income: -5 }, axes: { econ: -15 } },
       mixed: { name: 'Mixed', mods: { approval: 4 } },
@@ -68,7 +87,7 @@ export const IDEOLOGIES = {
     name: 'Socialdemokrati', icon: '\u{1F339}',
     axes: { econ: -35, auth: 30 },
     mods: { welfare: 30, qol: 22, approval: 20, freedom: 14, hdi: 15, stability: 12, unrest: -12, research: 6, income: -8, gdp: -2 },
-    locks: { government: ['totalitarian'], elections: ['unfair', 'no'], press: ['highstate', 'propaganda'], welfare: ['none', 'independent'] },
+    locks: { government: ['junta', 'totalitarian'], elections: ['unfair', 'no'], press: ['highstate', 'propaganda'], welfare: ['none', 'independent'] },
     doctrines: {
       reformist: { name: 'Reformistisk', mods: { gdp: 8, income: 6, research: 4 }, axes: { econ: 12 } },
       nordic: { name: 'Nordisk modell', mods: { welfare: 10, hdi: 8, corruption: -10, approval: 6 } },
@@ -81,7 +100,7 @@ export const IDEOLOGIES = {
     name: 'Conservatism', icon: '\u{1F3F0}',
     axes: { econ: 30, auth: 45 },
     mods: { stability: 26, integration: 18, safety: 14, ideopower: 14, approval: 8, gdp: 8, income: 6, unrest: -8, immigration: -5, freedom: -3 },
-    locks: { government: ['totalitarian'], culture: ['multi'] },
+    locks: { government: ['junta', 'totalitarian'], culture: ['multi'] },
     doctrines: {
       national: { name: 'National', mods: { integration: 8, statepower: 8, milpower: 6, immigration: -8 }, axes: { auth: 12 } },
       progressivism: { name: 'Progressivism', mods: { freedom: 8, research: 8, hdi: 5, stability: -3 }, axes: { auth: -12 } },
@@ -96,7 +115,7 @@ export const IDEOLOGIES = {
     name: 'Democracy', icon: '\u{1F5F3}\u{FE0F}',
     axes: { econ: 0, auth: 20 },
     mods: { freedom: 22, approval: 22, stability: 16, hdi: 12, research: 10, gdp: 10, corruption: -12, unrest: -10, statepower: -5, justtime: 8 },
-    locks: { government: ['authoritarian', 'totalitarian'], elections: ['hybrid', 'unfair', 'no'], press: ['highstate', 'propaganda'], civil_rights: ['verylimited', 'norights'] },
+    locks: { government: ['authoritarian', 'junta', 'totalitarian'], elections: ['hybrid', 'unfair', 'no'], press: ['highstate', 'propaganda'], civil_rights: ['verylimited', 'norights'] },
     doctrines: {
       farleft: { name: 'Far left', mods: { welfare: 14, qol: 6, income: -8, unrest: 3 }, axes: { econ: -40 } },
       left: { name: 'Left', mods: { welfare: 8, qol: 5, hdi: 4, income: -4 }, axes: { econ: -20 } },
@@ -124,7 +143,7 @@ export const IDEOLOGIES = {
     axes: { econ: -95, auth: 85 },
     mods: { welfare: 20, factory: 12, statepower: 15, ideopower: 15, gdp: -18, income: -10, freedom: -20, corruption: 8 },
     requires: { economic_system: ['central', 'planned'], welfare: ['extreme', 'huge', 'coverage'] },
-    locks: { elections: ['entirelyfree', 'free'], press: ['full', 'free'], taxes: ['t0', 't10'], government: ['directdemo', 'strongdemo'] },
+    locks: { elections: ['entirelyfree', 'free'], press: ['full', 'free', 'publicservice', 'oligarch'], taxes: ['t0', 't10'], government: ['directdemo', 'strongdemo', 'constmonarchy'] },
     doctrines: {
       marxism: { name: 'Marxism', mods: { welfare: 5, approval: 3 } },
       leninism: { name: 'Leninism', mods: { statepower: 8, polpower: 6, freedom: -5 }, axes: { auth: 8 } },
@@ -137,7 +156,7 @@ export const IDEOLOGIES = {
     axes: { econ: -50, auth: 0 },
     mods: { freedom: 30, statepower: -35, polpower: -20, stability: -18, unrest: 12, income: -12, milpower: -15 },
     requires: { government: ['directdemo', 'strongdemo', 'democracy'], civil_rights: ['extremelyhigh', 'veryhigh', 'high'] },
-    locks: { elections: ['unfair', 'no'], press: ['state', 'highstate', 'propaganda'], party_loyalty: ['high', 'maximum', 'onlyrep'] },
+    locks: { elections: ['unfair', 'no'], press: ['oligarch', 'state', 'highstate', 'propaganda'], party_loyalty: ['high', 'maximum', 'onlyrep'] },
     doctrines: {
       ancom: { name: 'Anarcho-communism', mods: { welfare: 10, gdp: -8 }, axes: { econ: -35 } },
       eco: { name: 'Eco-Anarchism', mods: { qol: 8, factory: -8 } },
@@ -160,7 +179,7 @@ export const IDEOLOGIES = {
     name: 'Nationalism', icon: '\u{1F6A9}',
     axes: { econ: 20, auth: 65 },
     mods: { ideopower: 15, integration: 10, milpower: 10, manpower: 5, immigration: -12, freedom: -8, justtime: -8 },
-    locks: { immigration: ['noborders', 'open'], culture: ['multi'], globalism: ['major', 'big'] },
+    locks: { immigration: ['noborders', 'open', 'humanitarian'], culture: ['multi'], globalism: ['major', 'big'] },
     doctrines: {
       ethno: { name: 'Ethno-Nationalism', mods: { integration: 8, immigration: -15, approval: -8, unrest: 8, freedom: -8 }, axes: { auth: 15 } },
       civic: { name: 'Civic-Nationalism', mods: { stability: 6, approval: 3 }, axes: { auth: -10 } },
@@ -173,7 +192,7 @@ export const IDEOLOGIES = {
     name: 'Fascism', icon: '\u{1F985}',
     axes: { econ: 25, auth: 90 },
     mods: { milpower: 34, statepower: 38, ideopower: 34, manpower: 20, readiness: 22, factory: 18, polpower: 14, stability: 10, freedom: -30, approval: -10, unrest: 8, corruption: 8, justtime: -26, gdp: -6 },
-    requires: { government: ['authoritarian', 'totalitarian'], press: ['state', 'highstate', 'propaganda'], party_loyalty: ['high', 'maximum', 'onlyrep'] },
+    requires: { government: ['authoritarian', 'junta', 'totalitarian'], press: ['state', 'highstate', 'propaganda'], party_loyalty: ['high', 'maximum', 'onlyrep'] },
     locks: { elections: ['entirelyfree', 'free', 'mostlyfree'], civil_rights: ['extremelyhigh', 'veryhigh', 'high'] },
     doctrines: {
       falangism: { name: 'Falangism', mods: { ideopower: 10, stability: 8, integration: 6 } },
@@ -187,7 +206,7 @@ export const IDEOLOGIES = {
     axes: { econ: 20, auth: 100 },
     mods: { milpower: 20, statepower: 25, ideopower: 25, manpower: 12, readiness: 12, freedom: -45, approval: -20, unrest: 20, corruption: 12, justtime: -20, gdp: -12, immigration: -30, hdi: -10 },
     requires: { government: ['totalitarian'], press: ['propaganda'], party_loyalty: ['onlyrep'], culture: ['mono'] },
-    locks: { elections: ['entirelyfree', 'free', 'mostlyfree', 'balanced'], civil_rights: ['extremelyhigh', 'veryhigh', 'high', 'balanced'], immigration: ['noborders', 'open', 'relaxed', 'balanced'] },
+    locks: { elections: ['entirelyfree', 'free', 'mostlyfree', 'balanced'], civil_rights: ['extremelyhigh', 'veryhigh', 'high', 'balanced'], immigration: ['noborders', 'open', 'humanitarian', 'relaxed', 'balanced'] },
     doctrines: {
       neo: { name: 'Neo', mods: { unrest: 5, approval: -5 } },
       classical: { name: 'Classical', mods: { milpower: 5, unrest: 5 } },
@@ -203,7 +222,7 @@ export const IDEOLOGIES = {
     axes: { econ: 0, auth: 80 },
     mods: { ideopower: 20, stability: 10, integration: 8, freedom: -18, research: -10, statepower: 10 },
     requires: { religion: ['statereligion'] },
-    locks: { elections: ['entirelyfree', 'free'], press: ['full', 'free'] },
+    locks: { elections: ['entirelyfree', 'free'], press: ['full', 'free', 'publicservice'] },
     doctrines: {
       islamic: { name: 'Islamic', mods: { stability: 4 } },
       christian: { name: 'Christian', mods: { approval: 4 } },
@@ -217,6 +236,64 @@ export const IDEOLOGIES = {
     doctrines: {
       constitutional: { name: 'Constitutional', mods: { freedom: 8, approval: 5 }, axes: { auth: -30 } },
       absolute: { name: 'Absolute', mods: { statepower: 18, polpower: 10, freedom: -18, approval: -8, corruption: 8 }, axes: { auth: 20 } },
+    },
+  },
+
+  // ---------- V5.6 VERKLIGHETEN: fem nya ideologier, alla som sidogrenar ----------
+  greens: {
+    name: 'Green politics', icon: '\u{1F331}', branchOf: 'socialdemocracy',
+    axes: { econ: -25, auth: 20 },
+    mods: { qol: 18, hdi: 10, research: 8, approval: 8, freedom: 8, stability: 4, factory: -14, income: -6, milpower: -6 },
+    locks: { energy: ['fossil'], environment: ['weak', 'none'], government: ['junta', 'totalitarian'] },
+    doctrines: {
+      realo: { name: 'Realo', mods: { gdp: 6, income: 4, factory: 4 }, axes: { econ: 15 } },
+      ecosocial: { name: 'Eko-socialism', mods: { welfare: 10, qol: 4, gdp: -6 }, axes: { econ: -25 } },
+      fundi: { name: 'Fundi', mods: { qol: 8, hdi: 4, factory: -8, approval: -3 }, axes: { auth: -10 } },
+    },
+  },
+  libertarianism: {
+    name: 'Libertarianism', icon: '\u{1F5FD}', branchOf: 'liberalism',
+    axes: { econ: 85, auth: 5 },
+    mods: { gdp: 18, freedom: 20, income: 6, research: 6, factory: 6, welfare: -20, statepower: -20, polpower: -6, safety: -4 },
+    locks: { taxes: ['t40', 't60'], welfare: ['extreme', 'huge'], economic_system: ['central', 'planned', 'thirdpos'],
+      government: ['authoritarian', 'junta', 'totalitarian'], surveillance: ['mass', 'total'], internet: ['censored', 'firewall'], ownership: ['nationalized'] },
+    doctrines: {
+      minarchist: { name: 'Minarkism', mods: { safety: 6, statepower: 4 } },
+      classical: { name: 'Klassisk', mods: { freedom: 6, approval: 3 } },
+      paleo: { name: 'Paleo', mods: { stability: 6, integration: 6, immigration: -8 }, axes: { auth: 20 } },
+    },
+  },
+  technocracy: {
+    name: 'Technocracy', icon: '\u{2699}\u{FE0F}', branchOf: 'democracy',
+    axes: { econ: 10, auth: 55 },
+    mods: { research: 22, gdp: 10, factory: 8, hdi: 6, corruption: -10, polpower: 6, freedom: -8, approval: -6 },
+    doctrines: {
+      expert: { name: 'Expertstyre', mods: { corruption: -6, stability: 4 } },
+      scientific: { name: 'Vetenskaplig', mods: { research: 10, hdi: 3, ideopower: -4 } },
+      corporate: { name: 'Företagsstyre', mods: { gdp: 8, income: 6, welfare: -6 }, axes: { econ: 25 } },
+    },
+  },
+  christdem: {
+    name: 'Christian democracy', icon: '\u{271D}\u{FE0F}', branchOf: 'conservatism',
+    axes: { econ: 5, auth: 40 },
+    mods: { stability: 16, welfare: 12, approval: 10, integration: 8, qol: 6, gdp: 4, freedom: -2, research: -2 },
+    locks: { religion: ['atheism'], drugs: ['legal'], government: ['junta', 'totalitarian'] },
+    doctrines: {
+      social: { name: 'Social', mods: { welfare: 8, qol: 4, income: -4 }, axes: { econ: -15 } },
+      conservative: { name: 'Konservativ', mods: { stability: 6, ideopower: 6, freedom: -3 }, axes: { auth: 10 } },
+      ecumenical: { name: 'Ekumenisk', mods: { integration: 8, approval: 3 } },
+    },
+  },
+  stratocracy: {
+    name: 'Military rule', icon: '\u{1F396}\u{FE0F}', branchOf: 'nationalism',
+    axes: { econ: 15, auth: 85 },
+    mods: { milpower: 30, readiness: 28, manpower: 15, statepower: 25, stability: 8, justtime: -20, freedom: -25, approval: -10, gdp: -8, research: -6, corruption: 10 },
+    requires: { government: ['authoritarian', 'junta'] },
+    locks: { elections: ['entirelyfree', 'free'], press: ['full', 'free', 'publicservice'] },
+    doctrines: {
+      junta: { name: 'Junta', mods: { stability: 6, polpower: 6 } },
+      caudillo: { name: 'Caudillo', mods: { approval: 6, ideopower: 8, corruption: 4 }, axes: { auth: 5 } },
+      praetorian: { name: 'Pretoriansk', mods: { milpower: 10, readiness: 6, approval: -4 }, axes: { auth: 10 } },
     },
   },
 };
@@ -250,6 +327,20 @@ export const LAW_AXIS = {
   globalism:          { axis: 'auth', dir:  1 },
   popgrowth:          { axis: 'auth', dir:  1 },
   workhours:          { axis: 'econ', dir:  1 },
+  // V5.6 VERKLIGHETEN
+  minimum_wage:       { axis: 'econ', dir:  1 },
+  pensions:           { axis: 'econ', dir:  1 },
+  environment:        { axis: 'econ', dir:  1 },
+  energy:             { axis: 'econ', dir:  1 },
+  surveillance:       { axis: 'auth', dir:  1 },
+  firearms:           { axis: 'auth', dir:  1 },
+  drugs:              { axis: 'auth', dir:  1 },
+  unions:             { axis: 'econ', dir:  1 },
+  ownership:          { axis: 'econ', dir:  1 },
+  monetary:           { axis: 'econ', dir:  1 },
+  internet:           { axis: 'auth', dir:  1 },
+  housing:            { axis: 'econ', dir:  1 },
+  equality:           { axis: 'auth', dir:  1 },
 };
 
 // Ideologins läge på axlarna, doktrinen inräknad.
@@ -411,7 +502,7 @@ export const COUNTRY_IDEOLOGY = {
   '840': ['liberalism', 'right'],             // USA
   '124': ['liberalism', 'left'],              // Kanada
   '826': ['conservatism', 'liberal'],         // Storbritannien
-  '276': ['conservatism', 'liberal'],         // Tyskland
+  '276': ['christdem', 'conservative'],       // Tyskland (CDU)
   '250': ['liberalism', 'mixed'],             // Frankrike
   '724': ['socialdemocracy', 'reformist'],    // Spanien
   '620': ['democracy', 'center'],             // Portugal
@@ -419,7 +510,7 @@ export const COUNTRY_IDEOLOGY = {
   '756': ['democracy', 'center'],             // Schweiz
   '528': ['liberalism', 'right'],             // Nederländerna
   '056': ['liberalism', 'mixed'],             // Belgien
-  '040': ['conservatism', 'liberal'],         // Österrike
+  '040': ['christdem', 'conservative'],       // Österrike (ÖVP)
   '616': ['conservatism', 'liberal'],         // Polen
   '203': ['liberalism', 'right'],             // Tjeckien
   '348': ['populism', 'right'],               // Ungern
@@ -461,7 +552,7 @@ export const COUNTRY_IDEOLOGY = {
   '012': ['nationalism', 'civic'],            // Algeriet
   '434': ['nationalism', 'civic'],            // Libyen
   '760': ['nationalism', 'civic'],            // Syrien
-  '729': ['nationalism', 'civic'],            // Sudan
+  '729': ['stratocracy', 'junta'],            // Sudan (militären styr)
   '368': ['democracy', 'center'],             // Irak
   '566': ['democracy', 'center'],             // Nigeria
   '710': ['socialdemocracy', 'radical'],      // Sydafrika
@@ -469,7 +560,7 @@ export const COUNTRY_IDEOLOGY = {
   '404': ['democracy', 'center'],             // Kenya
   '232': ['nationalism', 'civic'],            // Eritrea
   '076': ['democracy', 'left'],               // Brasilien
-  '032': ['liberalism', 'right'],             // Argentina
+  '032': ['libertarianism', 'classical'],     // Argentina (Milei)
   '152': ['democracy', 'left'],               // Chile
   '170': ['democracy', 'left'],               // Colombia
   '604': ['democracy', 'right'],              // Peru
@@ -479,6 +570,13 @@ export const COUNTRY_IDEOLOGY = {
   '398': ['nationalism', 'civic'],            // Kazakstan
   '795': ['nationalism', 'civic'],            // Turkmenistan
   '860': ['nationalism', 'civic'],            // Uzbekistan
+  // V5.6: länder där militären styr, plus Singapores expertstyre
+  '104': ['stratocracy', 'junta'],            // Myanmar
+  '466': ['stratocracy', 'junta'],            // Mali
+  '854': ['stratocracy', 'caudillo'],         // Burkina Faso
+  '562': ['stratocracy', 'junta'],            // Niger
+  '324': ['stratocracy', 'junta'],            // Guinea
+  '702': ['technocracy', 'expert'],           // Singapore
 };
 
 export function countryIdeology(countryId) {
