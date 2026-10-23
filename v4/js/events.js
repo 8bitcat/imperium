@@ -22,6 +22,9 @@ import { money, people } from './real.js';
 //   c.claims, c.puppets, c.allies
 //   c.res(branch)     forskningsnivå i en gren
 //   c.mod(id)         har landet en viss modifierare
+//   c.ind.infl …      V5.6: rikets verkliga statistik (statistics.js, t.ex.
+//                     infl, unemp, homicide, gdppc, life, co2). Kan vara tom
+//                     innan datat laddats — skriv alltid (c.ind.infl ?? 0).
 //
 // VALENS EFFEKTER:
 //   cost { money, pp, rp, man }   krävs och dras — går inte att välja utan
@@ -31,8 +34,24 @@ import { money, people } from './real.js';
 //   mod  'modifierare-id'         ger en modifierare
 //   unmod 'modifierare-id'        tar bort en modifierare
 //   rel  tal                      förändrar relationen till hela omvärlden
+//   law  ['kategori', 'alternativ'] byter en lag (inte om ideologin förbjuder den)
+//
+// V5.6: över 500 nya händelser ligger i events/<tema>.js och läggs till efter
+// de ursprungliga. Kontrollera nya med  node tools/check-events.mjs
 
-export const EVENTS = [
+import { EVENTS as EKONOMI } from './events/ekonomi.js';
+import { EVENTS as HALSA } from './events/halsa.js';
+import { EVENTS as MILJO } from './events/miljo.js';
+import { EVENTS as RATT } from './events/ratt.js';
+import { EVENTS as POLITIK } from './events/politik.js';
+import { EVENTS as IDEOLOGI } from './events/ideologi.js';
+import { EVENTS as NYA_IDEOLOGIER } from './events/nyaideologier.js';
+import { EVENTS as MILITAR } from './events/militar.js';
+import { EVENTS as VETENSKAP } from './events/vetenskap.js';
+import { EVENTS as SAMHALLE } from './events/samhalle.js';
+import { EVENTS as OMVARLD } from './events/omvarld.js';
+
+export const BASE_EVENTS = [
 
   // ================= KORRUPTION & SKANDAL =================
   {
@@ -1034,6 +1053,11 @@ export const EVENTS = [
       { text: 'ERBJUD DEM PLATSER I DIN REGERING', cost: { pp: 35 }, perm: { polpower: 12, corruption: 12, stability: 10, approval: -12 }, tip: 'Cyniskt, effektivt, genomskådat.' },
     ],
   },
+];
+
+export const EVENTS = [
+  ...BASE_EVENTS, ...EKONOMI, ...HALSA, ...MILJO, ...RATT, ...POLITIK, ...IDEOLOGI,
+  ...NYA_IDEOLOGIER, ...MILITAR, ...VETENSKAP, ...SAMHALLE, ...OMVARLD,
 ];
 
 // ---------- MOTOR ----------

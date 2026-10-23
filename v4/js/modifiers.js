@@ -297,10 +297,18 @@ export function modifierMods(store) {
   return sum;
 }
 
-export function grant(store, id, day) {
+// opts.hold = dagar som en TILLDELAD modifierare sitter kvar även om landets läge
+// inte längre motsvarar den. V5.6: händelser ger hold 90 — annars tog nästa
+// dagliga omprövning bort t.ex. POLISSTAT redan dagen efter att valet gjordes.
+export function grant(store, id, day, opts = {}) {
   const def = MODIFIERS[id];
-  if (!def || store[id]) return null;
+  if (!def) return null;
+  if (store[id]) {
+    if (opts.hold) store[id].holdUntil = Math.max(store[id].holdUntil || 0, day + opts.hold);
+    return null;
+  }
   store[id] = { id, since: day, until: def.kind === 'temp' ? day + (def.days || 60) : null };
+  if (opts.hold && def.kind === 'assigned') store[id].holdUntil = day + opts.hold;
   return def;
 }
 
@@ -323,7 +331,7 @@ export function tickModifiers(store, c, day) {
     let on = false;
     try { on = !!def.when(c); } catch (e) { on = false; }
     if (on && !store[id]) { grant(store, id, day); added.push({ id, ...def }); }
-    else if (!on && store[id]) { delete store[id]; removed.push({ id, ...def }); }
+    else if (!on && store[id] && !(store[id].holdUntil > day)) { delete store[id]; removed.push({ id, ...def }); }
   }
   for (const [id, m] of Object.entries(store)) {
     if (m.until != null && day >= m.until) { delete store[id]; expired.push({ id, ...MODIFIERS[id] }); }

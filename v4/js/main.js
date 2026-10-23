@@ -39,9 +39,9 @@ const SOLO_COLOR = '#ff4f4f';
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.5.0';
-export const VERSION_DATE = '2026-08-22';
-export const VERSION_NAME = 'OMVÄLVNINGEN';
+export const VERSION = '5.6.0';
+export const VERSION_DATE = '2026-10-23';
+export const VERSION_NAME = 'VERKLIGHETEN';
 
 const globe = new Globe($('#globe'));
 
@@ -2404,11 +2404,12 @@ function tickDay() {
   // Går rutan inte att se längre släpper vi flaggan.
   if (state.pendingEvent && !$('#eventovl').classList.contains('show')) state.pendingEvent = null;
 
-  // V5: händelser. En händelse ungefär varannan minut realtid (≈60 speldagar),
-  // men bara om något i landets läge faktiskt matchar en händelse.
+  // V5: händelser, men bara om något i landets läge faktiskt matchar en händelse.
+  // V5.6: med 600+ händelser kommer de lite tätare — var 20–55:e dag (≈1 minut
+  // realtid) i stället för var 30–90:e, så att variationen faktiskt syns.
   if (!state.pendingEvent && --s.nextEvent <= 0) {
     maybeFireEvent();
-    s.nextEvent = 30 + Math.floor(Math.random() * 60);
+    s.nextEvent = 20 + Math.floor(Math.random() * 35);
   }
 
   // försörjningskontroll varje dag
@@ -2449,6 +2450,8 @@ function eventCtx() {
     allies: (s.allies || []).length,
     res: (branch) => s.nation?.research?.[branch] || 0,
     mod: (id) => !!s.mods?.[id],
+    // V5.6: rikets verkliga statistik (statistics.js) — tom innan datat laddats
+    ind: myIndicators() || {},
   };
 }
 
@@ -2619,13 +2622,18 @@ function applyChoice(ch) {
   for (const [k, v] of Object.entries(ch.temp || {})) s.extra[k] = (s.extra[k] || 0) + v;
   for (const [k, v] of Object.entries(ch.perm || {})) (s.permMods ||= {})[k] = (s.permMods[k] || 0) + v;
   if (ch.mod) {
-    const def = grantMod(s.mods, ch.mod, s.clock.day);
+    // V5.6: en tilldelad modifierare från ett val sitter kvar i minst 90 dagar
+    const def = grantMod(s.mods, ch.mod, s.clock.day, { hold: 90 });
     if (def) announceMod({ id: ch.mod, ...def }, 'val');
   }
   if (ch.unmod) revokeMod(s.mods, ch.unmod);
   if (ch.law) {
     const [cat, opt] = ch.law;
-    if (LAWS[cat]?.options.some((o) => o.id === opt)) s.nation.laws[cat] = opt;
+    // V5.6: en händelse får inte ge en lag som din ideologi förbjuder
+    // (t.ex. militärjunta i en demokrati) — då står lagen kvar som den var
+    const locked = lawLockedBy(s.nation, cat, opt);
+    if (LAWS[cat]?.options.some((o) => o.id === opt) && !locked) s.nation.laws[cat] = opt;
+    else if (locked) toast(`\u{1F512} ${LAWS[cat].name.toUpperCase()}: ${locked.toUpperCase()} — LAGEN STÅR KVAR`, '', 5000);
   }
   if (ch.rel) for (const cid of Object.keys(s.rel || {})) relChange(cid, ch.rel);
   recomputeNation();

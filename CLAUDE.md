@@ -33,7 +33,7 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | Fil | Innehåll |
 |---|---|
 | `stats.js` | 22 nationsvärden + `computeStats`. Nya stat-nycklar MÅSTE finnas här, annars noll effekt utan fel |
-| `laws.js` · `ideologies.js` · `research.js` | lagar (23 kategorier) · ideologier/doktriner + axlar · 18 grenar × 9 nivåer |
+| `laws.js` · `ideologies.js` · `research.js` | lagar (36 kategorier) · 19 ideologier/doktriner + axlar + sidogrenar · 18 grenar × 9 nivåer |
 | `events.js` · `modifiers.js` · `development.js` | 87 händelser med villkor · 45 modifierare · stadsnivå/infrastruktur 0–100 |
 | `war.js` · `integration.js` · `stance.js` | casus belli/krav/historiska riken · integration av erövrat land · ländernas hållning |
 | `diplomacy.js` · `blocs.js` · `ministers.js` · `ranking.js` | relationer/sanktioner · block + fanor · kabinett · världsrankning |
@@ -41,8 +41,21 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | `battleA.js` · `units.js` | taktikstriden (Advance Wars-lik, används för ALLA krig) · enheter/sprites. `battleB.js` är oanvänd |
 | `globe.js` · `globe3d.js` | pixelglob (d3) · WebGL-planet. All ritning går via `_project`/`_front` så den funkar i båda |
 | `net.js` · `data.js` · `names.js` | PeerJS (värden äger världen) · kartdata · svenska landsnamn |
+| `real.js` | V5.6: allt som VISAS i riktiga tal — 1 💰 = 100 miljoner $, 1 🧍 = 1 000 människor, förband i soldater. Spelet räknar internt i gamla enheter |
+| `statistics.js` | V5.6: 73 verkliga mått per land (data/indicators.json) som nationsvärden + lagar (`LAW_EFFECTS`) flyttar; rikes-ihopräkning, rankningar |
+| `events/*.js` | V5.6: händelser per tema, ihopslagna i `events.js` |
 
 Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
+
+### Regler som gäller för nya saker
+- **Ny lagkategori:** alternativen i ordning pol→pol, exakt ett `default`, och en rad i
+  `LAW_AXIS` (ideologies.js) — annars har ideologierna ingen åsikt om den.
+- **Ny ideologi:** lägg den som sidogren (`branchOf`) om den inte självklart hör hemma
+  i ett led, och lägg till den i `IDEO_AXIS` (integration.js) och `IDEO_FLAGS` (blocs.js).
+- **Statistiken:** bara skillnaden mot landets STARTLÄGE flyttar måtten (det verkliga
+  datat har redan landets politik). Ny data: `node tools/build-indicators.mjs`.
+- **Ny händelse:** minst ett val utan kostnad (annars kan spelaren fastna i rutan),
+  och `node tools/check-events.mjs` ska ge 0 fel.
 
 ## Fällor som redan kostat tid
 
@@ -65,6 +78,7 @@ Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
 ```bash
 node tools/smoke.mjs          # lokal kod, startar egen server på 8481
 node tools/smoke.mjs --live   # mot 8bitcat.github.io efter push
+node tools/check-events.mjs   # händelserna i events/ (--alla tar med de 87 ursprungliga)
 ```
 
 Spelar ett soloparti (hemland → faktion → 120 dagar + AI → alla NATION-flikar →
