@@ -1853,21 +1853,33 @@ export class Globe {
       const terr = this.showTerrain ? this.terrainColors?.[c.id] : null;
       s.beginPath(); this.spath(c.feature);
       if (part) {
-        // DELVIS ÄGT: landet behåller sin egen färg, och bara den yta du
-        // faktiskt tog målas i din. Klippbanan är landet självt, så färgen
-        // aldrig svämmar över gränsen.
+        // DELVIS ÄGT: resten av landet är ett eget, självständigt land i sin
+        // egen färg. Den yta du tog fylls EXAKT som rikets övriga länder (samma
+        // nyans, samma terrängtint) och får rikets kantlinje. Klippbanan är
+        // landet självt, så färgen aldrig svämmar över gränsen.
         s.fillStyle = terr || LAND_SHADES[hashId(c.id) % LAND_SHADES.length];
         s.fill();
+        const color = part.color || (claim?.color ?? '#ffb02e');
+        const shapes = [
+          ...(part.polys || (part.poly ? [part.poly] : [])),
+          ...(part.discs || []).map((d) => d3.geoCircle().center(d.ll).radius(d.deg)()),
+        ];
         s.save();
         s.clip();
-        s.fillStyle = part.color || (claim?.color ?? '#ffb02e');
-        s.globalAlpha = 0.92;
-        if (part.poly) { s.beginPath(); this.spath(part.poly); s.fill(); }
-        for (const d of part.discs || []) {
-          const disc = d3.geoCircle().center(d.ll).radius(d.deg)();
-          s.beginPath(); this.spath(disc); s.fill();
+        // kantlinjen först och dubbelt så bred: fyllningen ovanpå täcker den
+        // inre halvan och alla bågar där bitarna överlappar, så bara den
+        // yttre gränsen mot resten av landet syns
+        s.strokeStyle = color; s.lineWidth = 2.2;
+        for (const g of shapes) { s.beginPath(); this.spath(g); s.stroke(); }
+        for (const g of shapes) {
+          s.beginPath(); this.spath(g);
+          if (terr) {
+            s.fillStyle = terr; s.fill();
+            s.globalAlpha = 0.32; s.fillStyle = color; s.fill(); s.globalAlpha = 1;
+          } else {
+            s.fillStyle = shade(color, 0.45); s.fill();
+          }
         }
-        s.globalAlpha = 1;
         s.restore();
         // konturen runt landet stannar i landets egen färg
         s.beginPath(); this.spath(c.feature);

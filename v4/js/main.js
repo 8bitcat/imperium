@@ -129,17 +129,36 @@ function aiClaimsInto(m, world) {
 }
 
 // Delvis erövrade länder: bara den yta du faktiskt tog målas i din färg.
-// poly = det du ritade med gränspennan, discs = området runt de städer du valde.
+// polys = det du ritat med gränspennan (en per krig), discs = området runt de
+// städer du valde. Resten av landet är fortfarande ett självständigt land.
 function partialsMap() {
   const s = state.solo;
   if (!s?.partial) return {};
   const out = {};
   for (const [cid, p] of Object.entries(s.partial)) {
     if (!s.claims[cid]) continue;
-    out[cid] = { poly: p.poly || null, discs: p.discs || [], color: SOLO_COLOR };
+    out[cid] = { polys: partPolys(p), discs: p.discs || [], color: SOLO_COLOR };
   }
   return out;
 }
+
+// äldre sparfiler har ett enda `poly`; nya kan ha flera ritade bitar
+function partPolys(p) { return p?.polys || (p?.poly ? [p.poly] : []); }
+
+// hur många av landets orter täcks av det du tagit (ritade gränser + stadsringar)?
+function partialCover(cid, polys, discs) {
+  const all = state.cities[cid] || [];
+  return { taken: all.filter((c) => inPart(polys, discs, c.ll)).length, of: all.length };
+}
+
+// ligger punkten i den del av landet du tagit?
+function inPart(polys, discs, ll) {
+  return polys.some((pg) => d3.geoContains(pg, ll))
+    || discs.some((d) => d3.geoDistance(d.ll, ll) <= (d.deg * Math.PI) / 180);
+}
+
+// är landet delat — en del är din, resten är fortfarande självständig?
+function isSplit(cid) { return !!(state.solo?.partial?.[cid] && state.solo.claims?.[cid]); }
 
 function claimsMap() {
   if (state.mode === 'solo') {
@@ -223,6 +242,7 @@ function updateLabelOverrides() {
     for (const cid of Object.keys(s.claims || {})) {
       if (cid === s.home) continue;
       if (s.claims[cid].puppet) continue;      // lydstater behåller sitt namn
+      if (isSplit(cid)) continue;              // delat land: resten är självständig och heter som förut
       const it = integOf(cid);
       map[cid] = !it || it.pct >= 100 ? homeName : `${homeName} ${Math.floor(Math.max(0, it.pct))}%`;
     }
@@ -339,6 +359,8 @@ function ownerInfo(cid) {
   const world = state.mode === 'tv' ? state.hostWorld : (s || state.aiWorldRemote || {});
   if (s?.claims?.[cid] && cid !== s.home) {
     const myName = (globe.getCountry(s.home)?.name || 'DITT RIKE').toUpperCase();
+    // delat land: det är fortfarande sig självt, du äger bara en bit av det
+    if (isSplit(cid)) return { kind: 'split', title: orig, orig, ownerName: myName, mine: true };
     return s.claims[cid].puppet
       ? { kind: 'puppet', title: orig, orig, ownerName: myName, mine: true }
       : { kind: 'annexed', title: myName, orig, ownerName: myName, mine: true };
@@ -367,13 +389,15 @@ function refreshInfoPanel() {
     ? `${own.title}<br><small style="font-size:6px;color:var(--holo-dim);letter-spacing:1px">\u{1F3F4} ANNEKTERADE ${own.orig}</small>`
     : own.kind === 'puppet'
     ? `${own.title}<br><small style="font-size:6px;color:var(--amber);letter-spacing:1px">\u{1F517} LYDSTAT UNDER ${own.ownerName}</small>`
+    : own.kind === 'split'
+    ? `${own.title}<br><small style="font-size:6px;color:var(--amber);letter-spacing:1px">\u{2702}\u{FE0F} DELVIS ERÖVRAT AV ${own.ownerName}</small>`
     : own.title;
 
   const flag = $('#fflag');
   // V5: har du hissat en egen fana visas den över dina länder
   // egen fana över dina länder — eller lydstatens nya fana i dess egna färger
   const sf = state.solo?.stateFlags?.[c.id];
-  const ownFlag = sf ? ideoFlag(c.id, sf.id) : (state.solo?.claims[c.id] && myFlag());
+  const ownFlag = sf ? ideoFlag(c.id, sf.id) : (state.solo?.claims[c.id] && !isSplit(c.id) && myFlag());
   const fw = $('#fownflag');
   fw.innerHTML = ownFlag ? flagHtml(ownFlag, 34, 22) : '';
   fw.style.display = ownFlag ? 'block' : 'none';
@@ -439,7 +463,7 @@ function refreshInfoPanel() {
   const mineInc = state.solo?.claims[c.id];
   const itg = integOf(c.id);
   const factor = itg ? phaseOf(itg.pct).income : 1;
-  $('#finc').innerHTML = (part ? `<b style="color:var(--amber)">DELVIS ANNEKTERAT:</b> ${part.taken}/${part.of} STÄDER<br>` : '')
+  $('#finc').innerHTML = (part ? `<b style="color:var(--amber)">DIN DEL:</b> ${part.taken}/${part.of} ORTER (${Math.round(part.share * 100)}%) — RESTEN ÄR SJÄLVSTÄNDIG<br>` : '')
     + `<b>INKOMST:</b> ${mineInc ? '' : '+'}${Math.round(inc * (mineInc ? factor : 1))} \u{1F4B0}/DAG`
     + (mineInc ? (factor < 1 ? ` <span style="color:var(--red)">(AV ${inc} — EJ INTEGRERAT)</span>` : '')
       : ' <span style="color:var(--holo-dim)">VID ERÖVRING</span>');
@@ -483,7 +507,9 @@ function refreshInfoPanel() {
 
   if (state.mode === 'solo' || (state.mode === 'player' && state.solo)) {
     const s = state.solo;
-    if (s.claims[c.id]) {
+    // ett delat land visas som ett eget land (resten är självständig) — utom
+    // när din bit gör uppror, då gäller upprorskontrollerna först
+    if (s.claims[c.id] && (!isSplit(c.id) || integOf(c.id)?.revolt)) {
       $('#istatus').textContent = s.claims[c.id].puppet ? 'DIN LYDSTAT' : 'DITT TERRITORIUM';
       $('#istatus').style.color = SOLO_COLOR;
       show(nationBtn, !!s.nation);
@@ -519,11 +545,25 @@ function refreshInfoPanel() {
         : own.kind === 'puppet' ? ` • LYDSTAT UNDER ${own.ownerName}` : '';
       const threat = (world.aiWars || []).find((w) => w.target === c.id) || (world.moving || []).find((m) => m.target === c.id);
       if (threat) conqTxt += ` • \u{26A0}\u{FE0F} HOTAS AV ${cname(threat.att)}`;
+      // delat land: din bit sköts härifrån också, resten är ett eget land
+      const split = isSplit(c.id);
+      if (split) {
+        show(nationBtn, !!s.nation);
+        if (s.army?.units.length && s.army.at !== c.id && !state.battle) {
+          $('#movebtn').innerHTML = `\u{1F6A9} FLYTTA ARMÉN TILL DIN DEL${s.garrisons?.[c.id]?.length ? ' (SLÅ IHOP MED GARNISONEN)' : ''}`;
+          show($('#movebtn'), true);
+        }
+        renderFactIntegration(c);
+        renderFactBuild(c);
+      }
+      const setStatus = (text, color) => {
+        $('#istatus').innerHTML = (split ? `<span style="color:${SOLO_COLOR}">\u{2702}\u{FE0F} EN DEL ÄR DIN — RESTEN ÄR SJÄLVSTÄNDIG</span><br>` : '') + text;
+        $('#istatus').style.color = color;
+      };
       const war = s.wars[c.id];
       if (!war) {
         const truce = truceLeft(c.id);
-        $('#istatus').textContent = `FÖRSVAR: ${defN} ENHETER${conqTxt}`;
-        $('#istatus').style.color = '';
+        setStatus(`FÖRSVAR: ${defN} ENHETER${conqTxt}`, '');
         if (truce) {
           $('#istatus').innerHTML += `<br><span style="color:var(--holo)">\u{1F54A}\u{FE0F} VAPENVILA — ${Math.ceil(truce)} DAGAR KVAR</span>`;
         } else if (isAlly(c.id)) {
@@ -534,13 +574,11 @@ function refreshInfoPanel() {
         renderFactDiplomacy(c);
         renderFactTrade(c);
       } else if (war.status === 'justifying') {
-        $('#istatus').textContent = `RÄTTFÄRDIGAR KRIG (${CASUS_BELLI[war.cb].name.toUpperCase()}) — ${war.days} DAGAR KVAR${conqTxt}`;
-        $('#istatus').style.color = 'var(--amber)';
+        setStatus(`RÄTTFÄRDIGAR KRIG (${CASUS_BELLI[war.cb].name.toUpperCase()}) — ${war.days} DAGAR KVAR${conqTxt}`, 'var(--amber)');
         show(wpBtn, true);
         renderFactTrade(c, true); // aktiva avtal ska kunna sägas upp även under krig
       } else {
-        $('#istatus').textContent = `KRIG RÄTTFÄRDIGAT: ${CASUS_BELLI[war.cb].name.toUpperCase()} — REDO ATT ANFALLA${conqTxt}`;
-        $('#istatus').style.color = 'var(--red)';
+        setStatus(`KRIG RÄTTFÄRDIGAT: ${CASUS_BELLI[war.cb].name.toUpperCase()} — REDO ATT ANFALLA${conqTxt}`, 'var(--red)');
         if (s.army?.units.length && !state.battle) show(attackBtn, true);
         if (!state.battle && hasUnlock(s.nation, 'nuke')) show($('#nukebtn'), true);
         show(wpBtn, true);
@@ -610,7 +648,7 @@ function renderFactDiplomacy(c) {
   const s = state.solo;
   const el = $('#fdiplo');
   el.innerHTML = '';
-  if (!s?.nation || s.claims[c.id]) { show(el, false); return; }
+  if (!s?.nation || (s.claims[c.id] && !isSplit(c.id))) { show(el, false); return; }
   const rel = Math.round(relOf(c.id));
   const lab = relLabel(rel);
   const ally = isAlly(c.id);
@@ -878,7 +916,10 @@ function renderCityPanel(cid) {
   const body = $('#cpbody');
   body.innerHTML = '';
   const cities = state.cities[cid] || [];
-  const idx = cities.map((city, i) => ({ city, i }));
+  // delat land: du bygger bara i städerna i din del — resten är ett annat land
+  const part = isSplit(cid) ? s.partial[cid] : null;
+  const idx = cities.map((city, i) => ({ city, i }))
+    .filter(({ city }) => !part || inPart(partPolys(part), part.discs || [], city.ll));
   // huvudstaden ALLTID överst — den har gratis-kasernen och får aldrig sorteras bort
   idx.sort((a, b) => (b.city.c ? 1 : 0) - (a.city.c ? 1 : 0)
     || (a.city.tier ?? 2) - (b.city.tier ?? 2)
@@ -1874,6 +1915,7 @@ function revolt(cid) {
     delete s.claims[cid];
     delete s.integ[cid];
     delete s.wars[cid];
+    delete s.partial?.[cid];
     for (const k of Object.keys(s.cityB || {})) if (k.startsWith(cid + ':')) delete s.cityB[k];
     if (s.garrisons) delete s.garrisons[cid];
     s.trade = (s.trade || []).filter((d) => d.cid !== cid);
@@ -2936,7 +2978,7 @@ function updateCountryArmyMarkers() {
   const homeLL = !tv && state.solo?.home ? capitalLL(state.solo.home) : null;
   const list = [];
   for (const cid of world.known) {
-    if (state.solo?.claims[cid]) continue;
+    if (state.solo?.claims[cid] && !isSplit(cid)) continue;   // ett delat lands rest har kvar sin armé
     const c = globe.getCountry(cid);
     if (!c) continue;
     const ll = capitalLL(cid);
@@ -4409,35 +4451,36 @@ $('#demConfirm').addEventListener('click', () => {
         got.push(`AVTRÄTT TILL ${cname(ally)} MOT ${pay} \u{1F4B0}`);
         logEvent(`\u{1F91D} DU AVTRÄDDE ${cname(target.id)} TILL ${cname(ally)} MOT ${pay} \u{1F4B0}`, { mine: true });
       } else {
+        // Delerövring har riktig geometri: kartan färgar bara den yta du tog,
+        // och resten av landet förblir ett självständigt land som du kan gå i
+        // krig mot igen. Varje nytt krig lägger till en bit; täcker bitarna
+        // alla orter blir hela landet ditt.
+        const prev = s.partial?.[target.id] || null;
         s.claims[target.id] = { color: SOLO_COLOR, playerName: 'DU' };
-        startIntegration(target.id);
-        // BUG-FIX: förut sattes claims och landet blev ditt i sin HELHET även
-        // när du bara valt några städer — "delvis" påverkade bara inkomsten.
-        // Nu får delerövringen riktig geometri: kartan färgar bara den yta du
-        // tog, resten av landet är kvar hos dem.
+        startIntegration(target.id);   // gör inget om din bit redan integreras
         const poly = demandState.poly;
-        if (poly) {
-          const inside = (state.cities[target.id] || []).filter((c) => d3.geoContains(poly, c.ll));
-          const share = Math.max(0.1, Math.min(1, inside.length / Math.max(1, cities.length)));
-          (s.partial ||= {})[target.id] = {
-            share, poly, taken: inside.length, of: cities.length, drawn: true,
-          };
-          const it = s.integ?.[target.id];
-          if (it) it.pct = Math.max(0, it.pct - Math.round((1 - share) * 25));
-          got.push(`EGEN GRÄNS RITAD — ${inside.length} AV ${cities.length} STÄDER (${Math.round(share * 100)}% AV LANDET)`);
-        } else if (taken && pickable > 1 && taken.length < pickable) {
-          const share = Math.max(0.15, taken.length / pickable);
+        const pickedSome = !poly && taken && pickable > 1 && taken.length < pickable;
+        if (poly || pickedSome) {
           const deg = cityDiscDeg(target.id);
-          (s.partial ||= {})[target.id] = {
-            share, taken: taken.length, of: pickable,
-            discs: taken.map((i) => cities[i]).filter(Boolean).map((c) => ({ ll: c.ll, deg })),
-          };
-          const it = s.integ?.[target.id];
-          if (it) it.pct = Math.max(0, it.pct - Math.round((1 - share) * 25));
-          got.push(`${taken.length} AV ${pickable} STÄDER ANNEKTERADE (${Math.round(share * 100)}% AV LANDET)`);
+          const polys = [...partPolys(prev), ...(poly ? [poly] : [])];
+          const discs = [...(prev?.discs || []),
+            ...(pickedSome ? taken.map((i) => cities[i]).filter(Boolean).map((c) => ({ ll: c.ll, deg })) : [])];
+          const cov = partialCover(target.id, polys, discs);
+          const share = Math.max(0.1, Math.min(1, cov.taken / Math.max(1, cov.of)));
+          if (cov.of && cov.taken >= cov.of) {
+            delete s.partial[target.id];
+            got.push('HELA LANDET ÄR NU DITT');
+          } else {
+            (s.partial ||= {})[target.id] = { share, polys, discs, taken: cov.taken, of: cov.of, drawn: !!poly || !!prev?.drawn };
+            const it = s.integ?.[target.id];
+            if (it && prev) it.pct = Math.max(0, it.pct * (prev.share / share));   // den nya biten är orolig
+            else if (it) it.pct = Math.max(0, it.pct - Math.round((1 - share) * 25));
+            got.push(`${prev ? 'MER AV LANDET TAGET' : poly ? 'EGEN GRÄNS RITAD' : 'STÄDER ANNEKTERADE'} — ${cov.taken} AV ${cov.of} ORTER (${Math.round(share * 100)}% AV LANDET)`);
+            got.push(`RESTEN AV ${cname(target.id)} FÖRBLIR SJÄLVSTÄNDIG`);
+          }
         } else {
           delete s.partial?.[target.id];
-          got.push('ANNEKTERAT');
+          got.push(prev ? 'RESTEN ANNEKTERAD — HELA LANDET ÄR NU DITT' : 'ANNEKTERAT');
         }
       }
     }
