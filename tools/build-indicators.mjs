@@ -1,6 +1,8 @@
 // indicators.json: numeriskt ISO-id -> { nyckel: värde } — verkliga utgångsvärden
 // för V5.6:s statistik (BNP per capita, HDI, medellivslängd, arbetslöshet …).
 // V5.8: 91 nya mått (köpkraft, arbete, energi, jordbruk, vaccin, hotade arter …).
+// V5.10: demografi — försörjningskvoter, tonårsfödslar, vuxendödlighet, städer
+// och befolkningspyramiden (andel i varje femårsgrupp, per kön).
 // Källor: World Bank WDI (senaste icke-tomma värdet per land), World Bank
 // Worldwide Governance Indicators, FN:s Human Development Report (HDI).
 // Körs bara när källdata ska uppdateras:  node tools/build-indicators.mjs
@@ -82,6 +84,14 @@ const WB = [
   ['freshwater', 'ER.H2O.INTR.PC'], ['marine', 'ER.MRN.PTMR.ZS'], ['thrmammals', 'EN.MAM.THRD.NO'],
   ['thrbirds', 'EN.BIR.THRD.NO'], ['thrfish', 'EN.FSH.THRD.NO'], ['thrplants', 'EN.HPT.THRD.NO'],
   ['armsimp', 'MS.MIL.MPRT.KD'],
+  // V5.10: demografi och familj
+  ['olddep', 'SP.POP.DPND.OL'], ['youngdep', 'SP.POP.DPND.YG'], ['adofert', 'SP.ADO.TFRT'],
+  ['contracept', 'SP.DYN.CONU.ZS', 2, '2000:2025'], ['adultmortm', 'SP.DYN.AMRT.MA'], ['adultmortf', 'SP.DYN.AMRT.FE'],
+  ['sexratio', 'SP.POP.BRTH.MF'], ['largestcity', 'EN.URB.LCTY.UR.ZS'], ['megacity', 'EN.URB.MCTY.TL.ZS'],
+  // befolkningspyramiden: procent av landets män (pm…) resp. kvinnor (pf…) i
+  // varje femårsgrupp, 0–4 … 75–79 och 80+
+  ...['0004', '0509', '1014', '1519', '2024', '2529', '3034', '3539', '4044', '4549', '5054', '5559', '6064',
+    '6569', '7074', '7579', '80UP'].flatMap((g) => [['pm' + g.toLowerCase(), `SP.POP.${g}.MA.5Y`], ['pf' + g.toLowerCase(), `SP.POP.${g}.FE.5Y`]]),
 ];
 
 // Bara vissa nycklar:  node tools/build-indicators.mjs gdppcppp savings …

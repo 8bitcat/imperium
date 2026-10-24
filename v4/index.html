@@ -659,9 +659,25 @@
   .gtoggle { cursor: pointer; user-select: none; }
   .gtoggle::before { content: '▾ '; }
   .natgroup.shut .gtoggle::before { content: '▸ '; }
-  .natgroup.shut .indgrid { display: none; }
+  .natgroup.shut .indgrid, .natgroup.shut .pyr { display: none; }
   .natgroup.shut { margin-bottom: 6px; }
   .gtitle .gcount { color: var(--holo-dim); letter-spacing: 0; }
+  /* V5.10: befolkningspyramiden i DEMOGRAFI & FAMILJ */
+  .pyr { margin: 2px 0 14px; padding: 8px; border: 1px solid rgba(57,215,255,0.18); background: rgba(4,12,20,0.55); }
+  .pyr .ptitle2 { font-size: 7px; color: var(--amber); margin-bottom: 6px; }
+  .pyr .plegend { display: flex; justify-content: space-between; gap: 6px; font-size: 6px; margin-bottom: 6px; color: var(--holo); }
+  .pyr .plegend .lm { color: #6fc8ff; }
+  .pyr .plegend .lf { color: #ff9cc2; }
+  .pyr .pwas { color: var(--holo-dim); }
+  .pyr .prow { display: grid; grid-template-columns: 1fr 42px 1fr; align-items: center; height: 10px; margin: 1px 0; }
+  .pyr .pm, .pyr .pf { position: relative; height: 100%; }
+  .pyr .pm i, .pyr .pm b { position: absolute; right: 0; top: 0; bottom: 0; }
+  .pyr .pf i, .pyr .pf b { position: absolute; left: 0; top: 0; bottom: 0; }
+  .pyr .pm i { background: linear-gradient(270deg, #6fc8ff, #2f7fb8); }
+  .pyr .pf i { background: linear-gradient(90deg, #ff9cc2, #b8507a); }
+  .pyr .pm b, .pyr .pf b { border: 1px dashed rgba(255,176,46,0.85); box-sizing: border-box; }
+  .pyr .pg { font-size: 6px; text-align: center; color: var(--holo-dim); }
+  .pyr .pnote { font-size: 5px; color: var(--holo-dim); margin-top: 6px; text-align: center; }
   .statrow {
     display: grid; grid-template-columns: minmax(130px, 1fr) minmax(90px, 160px) 52px;
     gap: 10px; align-items: center; margin: 5px 0; font-size: 8px;

@@ -3,6 +3,9 @@
 // energi, jordbruk, vaccin, hotade arter …) och 30 nya brott, som liksom de
 // gamla brotten är uppskattade ur verkliga mått (mord, rättsstat, korruption,
 // välstånd, inkomstskillnader, städer) och märks med ~.
+// V5.10: DEMOGRAFI & FAMILJ — 22 nya mått (åldrar, försörjning, tonårsfödslar,
+// vuxendödlighet, hushåll, städer, framtida befolkning) och befolkningspyramiden
+// (realmPyramid), som rör sig med andelen barn och pensionärer.
 //
 // Varje mått utgår från landets VERKLIGA värde (data/indicators.json, byggt av
 // tools/build-indicators.mjs ur Världsbanken och FN:s HDR) och flyttas av de
@@ -25,6 +28,7 @@ export const IND_GROUPS = [
   { id: 'hal', name: 'VÄLFÄRD & HÄLSA', icon: '\u{1F3E5}' },
   { id: 'jor', name: 'JORDBRUK & MAT', icon: '\u{1F33E}' },
   { id: 'bef', name: 'BEFOLKNING', icon: '\u{1F465}' },
+  { id: 'dem', name: 'DEMOGRAFI & FAMILJ', icon: '\u{1F46A}' },
   { id: 'kun', name: 'KUNSKAP & TEKNIK', icon: '\u{1F4DA}' },
   { id: 'sam', name: 'SAMHÄLLE & RÄTT', icon: '\u{2696}\u{FE0F}' },
   { id: 'brt', name: 'BROTT & SÄKERHET', icon: '\u{1F6A8}' },
@@ -136,12 +140,6 @@ export const INDICATORS = [
     fx: { hdi: -6, welfare: 2, ideopower: 1, stability: 1 }, desc: 'Födda per 1 000 invånare och år' },
   { id: 'death', name: 'Dödstal', group: 'bef', fmt: 'per1000', better: 'low', mode: 'add', min: 2, max: 20,
     fx: { qol: -2, welfare: -1.5, safety: -0.5 }, desc: 'Döda per 1 000 invånare och år' },
-  { id: 'fert', name: 'Barn per kvinna', group: 'bef', fmt: 'num2', better: null, mode: 'add', min: 0.8, max: 7.5,
-    fx: { hdi: -0.8, welfare: 0.3, ideopower: 0.15 }, desc: 'Hur många barn en kvinna föder i genomsnitt' },
-  { id: 'kids', name: 'Andel barn (0–14)', group: 'bef', fmt: 'pct', better: null, mode: 'add', min: 8, max: 55,
-    fx: { hdi: -4 }, desc: 'Andel av befolkningen som är barn' },
-  { id: 'old', name: 'Andel över 65', group: 'bef', fmt: 'pct', better: null, mode: 'add', min: 1, max: 35,
-    fx: { hdi: 4, welfare: 1 }, desc: 'Andel av befolkningen som är pensionärer' },
   { id: 'urban', name: 'Andel i städer', group: 'bef', fmt: 'pct', better: null, mode: 'add', min: 10, max: 100,
     fx: { factory: 6, gdp: 4 }, desc: 'Andel som bor i städer' },
   { id: 'netmig', name: 'Nettoinvandring per år', group: 'bef', fmt: 'scount', better: null, agg: 'sum', desc: 'Invandrare minus utvandrare på ett år' },
@@ -151,6 +149,67 @@ export const INDICATORS = [
     desc: 'Födda minus döda plus nettoinvandring — så mycket växer eller krymper befolkningen' },
   { id: 'area', name: 'Yta', group: 'bef', fmt: 'km2', better: 'high', agg: 'sum', desc: 'Rikets landyta' },
   { id: 'density', name: 'Befolkningstäthet', group: 'bef', fmt: 'perkm2', better: null, agg: 'derived', desc: 'Invånare per kvadratkilometer' },
+
+  // ---------- V5.10: DEMOGRAFI & FAMILJ ----------
+  // Åldrarna (medianålder, unga vuxna, över 80, antal barn/vuxna/pensionärer)
+  // räknas ur befolkningspyramiden (realmPyramid), som följer andelen barn och
+  // pensionärer — så siffrorna stämmer med diagrammet.
+  { id: 'medianage', name: 'Medianålder', group: 'dem', fmt: 'years', better: null, agg: 'derived',
+    desc: 'Hälften av invånarna är yngre än så här och hälften är äldre' },
+  { id: 'fert', name: 'Barn per kvinna', group: 'dem', fmt: 'num2', better: null, mode: 'add', min: 0.8, max: 7.5,
+    fx: { hdi: -0.8, welfare: 0.3, ideopower: 0.15 }, desc: 'Hur många barn en kvinna föder i genomsnitt' },
+  { id: 'kids', name: 'Andel barn (0–14)', group: 'dem', fmt: 'pct', better: null, mode: 'add', min: 8, max: 55,
+    fx: { hdi: -4 }, desc: 'Andel av befolkningen som är barn' },
+  { id: 'youth', name: 'Unga vuxna (15–24)', group: 'dem', fmt: 'pct', better: null, agg: 'derived',
+    desc: 'Andel av befolkningen som är tonåringar och unga vuxna' },
+  { id: 'old', name: 'Andel över 65', group: 'dem', fmt: 'pct', better: null, mode: 'add', min: 1, max: 35,
+    fx: { hdi: 4, welfare: 1 }, desc: 'Andel av befolkningen som är pensionärer' },
+  { id: 'oldest', name: 'Andel över 80', group: 'dem', fmt: 'pct', better: null, agg: 'derived',
+    desc: 'Andel av befolkningen som är 80 år eller äldre' },
+  { id: 'kidsn', name: 'Barn (0–14)', group: 'dem', fmt: 'count', better: null, agg: 'derived',
+    desc: 'Hur många barn som bor i riket' },
+  { id: 'workage', name: 'I arbetsför ålder (15–64)', group: 'dem', fmt: 'count', better: 'high', agg: 'derived',
+    desc: 'Hur många som är i den ålder då man brukar plugga vidare eller jobba' },
+  { id: 'oldn', name: 'Pensionärer (65+)', group: 'dem', fmt: 'count', better: null, agg: 'derived',
+    desc: 'Hur många som är 65 år eller äldre' },
+  { id: 'dependency', name: 'Försörjningsbörda', group: 'dem', fmt: 'per100', better: null, mode: 'add', min: 10, max: 130,
+    desc: 'Barn och pensionärer per 100 personer i arbetsför ålder' },
+  { id: 'youngdep', name: 'Barn per 100 i arbetsför ålder', group: 'dem', fmt: 'per100', better: null, mode: 'add', min: 3, max: 130,
+    desc: 'Hur många barn (0–14) det finns för varje 100 personer som är 15–64 år' },
+  { id: 'olddep', name: 'Pensionärer per 100 i arbetsför ålder', group: 'dem', fmt: 'per100', better: null, mode: 'add', min: 0.5, max: 90,
+    desc: 'Hur många pensionärer (65+) det finns för varje 100 personer som är 15–64 år' },
+  { id: 'female', name: 'Andel kvinnor', group: 'dem', fmt: 'pct', better: null, mode: 'add', min: 25, max: 60,
+    desc: 'Hur stor del av befolkningen som är kvinnor' },
+  { id: 'sexratio', name: 'Pojkar per 100 flickor', group: 'dem', fmt: 'ratio100', better: null, mode: 'add', min: 0.95, max: 1.3,
+    desc: 'Hur många pojkar som föds för varje 100 flickor — av naturen blir det ungefär 105' },
+  { id: 'adofert', name: 'Tonårsmammor', group: 'dem', fmt: 'per1000', better: 'low', mode: 'mul',
+    fx: { hdi: -0.4, welfare: -0.2 }, desc: 'Barn som föds av flickor som är 15–19 år, per 1 000 flickor och år' },
+  { id: 'contracept', name: 'Preventivmedel', group: 'dem', fmt: 'pct', better: null, mode: 'add', min: 2, max: 92,
+    fx: { hdi: 8, freedom: 4 }, desc: 'Andel par (kvinnor 15–49) som använder skydd för att själva välja när de får barn' },
+  { id: 'adultmortm', name: 'Vuxendödlighet män', group: 'dem', fmt: 'per1000', better: 'low', mode: 'mul',
+    fx: { qol: -0.2, welfare: -0.15, hdi: -0.2, safety: -0.2, unrest: 0.15 }, desc: 'Av 1 000 män som fyller 15 — så många dör innan de fyller 60' },
+  { id: 'adultmortf', name: 'Vuxendödlighet kvinnor', group: 'dem', fmt: 'per1000', better: 'low', mode: 'mul',
+    fx: { qol: -0.2, welfare: -0.2, hdi: -0.25, safety: -0.05 }, desc: 'Av 1 000 kvinnor som fyller 15 — så många dör innan de fyller 60' },
+  { id: 'hhsize', name: 'Hushållsstorlek', group: 'dem', fmt: 'persons', better: null, mode: 'mul', agg: 'derived',
+    fx: { gdp: -0.06, welfare: -0.05 }, desc: 'Hur många som bor i samma hem i genomsnitt' },
+  { id: 'households', name: 'Hushåll', group: 'dem', fmt: 'count', better: null, agg: 'sum',
+    desc: 'Hur många hem (hushåll) det finns i riket' },
+  { id: 'birthreg', name: 'Registrerade födslar', group: 'dem', fmt: 'pct', better: 'high', mode: 'add', min: 1, max: 100,
+    fx: { statepower: 6, hdi: 5, welfare: 3 }, desc: 'Andel barn vars födsel skrivs in hos myndigheterna' },
+  { id: 'pop25', name: 'Befolkning om 25 år', group: 'dem', fmt: 'count', better: null, agg: 'derived',
+    desc: 'Så många bor i riket om 25 år om befolkningen fortsätter att växa eller krympa som nu' },
+  { id: 'doubling', name: 'Fördubblingstid', group: 'dem', fmt: 'dbl', better: null, agg: 'derived',
+    desc: 'Hur länge det dröjer innan befolkningen är dubbelt så stor — eller bara hälften så stor om den krymper' },
+  { id: 'urbanpop', name: 'Stadsbor', group: 'dem', fmt: 'count', better: null, agg: 'sum',
+    desc: 'Hur många som bor i städer' },
+  { id: 'ruralpop', name: 'Landsbygdsbor', group: 'dem', fmt: 'count', better: null, agg: 'sum',
+    desc: 'Hur många som bor på landet' },
+  { id: 'bigcity', name: 'Största staden', group: 'dem', fmt: 'count', better: null, agg: 'max',
+    desc: 'Hur många som bor i rikets största stad' },
+  { id: 'largestcity', name: 'Största stadens andel', group: 'dem', fmt: 'pct', better: null, mode: 'add', min: 1, max: 100,
+    fx: { statepower: 3 }, desc: 'Andel av stadsborna som bor i landets största stad' },
+  { id: 'megacity', name: 'Bor i miljonstäder', group: 'dem', fmt: 'pct', better: null, mode: 'mul', max: 100,
+    desc: 'Andel av invånarna som bor i en stad med över en miljon människor' },
 
   // ---------- KUNSKAP & TEKNIK ----------
   { id: 'literacy', name: 'Läskunnighet', group: 'kun', fmt: 'pct', better: 'high', mode: 'add', min: 10, max: 100,
@@ -359,12 +418,8 @@ export const INDICATORS = [
     fx: { welfare: -0.4, gdp: -0.3, hdi: -0.2 }, desc: 'Andel barn under fem som är för korta för sin ålder av för lite mat' },
 
   // ---------- BEFOLKNING ----------
-  { id: 'female', name: 'Andel kvinnor', group: 'bef', fmt: 'pct', better: null, mode: 'add', min: 25, max: 60,
-    desc: 'Hur stor del av befolkningen som är kvinnor' },
   { id: 'urbgrowth', name: 'Städernas tillväxt', group: 'bef', fmt: 'pct', better: null, mode: 'add', min: -5, max: 8,
     fx: { factory: 1, gdp: 0.5, immigration: 1 }, desc: 'Hur snabbt befolkningen i städerna växer per år' },
-  { id: 'dependency', name: 'Försörjningsbörda', group: 'bef', fmt: 'per100', better: null, mode: 'add', min: 10, max: 130,
-    desc: 'Barn och pensionärer per 100 personer i arbetsför ålder' },
   { id: 'migrants', name: 'Födda utomlands', group: 'bef', fmt: 'pct', better: null, mode: 'add', min: 0, max: 90,
     fx: { immigration: 4 }, desc: 'Andel av invånarna som är födda i ett annat land' },
 
@@ -395,8 +450,6 @@ export const INDICATORS = [
     desc: 'Andel av alla inkomster som går till de fattigaste 20 procenten' },
   { id: 'womenmin', name: 'Kvinnor i regeringen', group: 'sam', fmt: 'pct', better: 'high', mode: 'add', min: 0, max: 75,
     fx: { freedom: 8 }, desc: 'Andel av ministrarna som är kvinnor' },
-  { id: 'birthreg', name: 'Registrerade födslar', group: 'sam', fmt: 'pct', better: 'high', mode: 'add', min: 1, max: 100,
-    fx: { statepower: 6, hdi: 5, welfare: 3 }, desc: 'Andel barn vars födsel skrivs in hos myndigheterna' },
 
   // ---------- BROTT & SÄKERHET (uppskattade, se setIndicatorData) ----------
   { id: 'assault', name: 'Misshandel', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
@@ -845,6 +898,86 @@ for (const [cat, opts] of Object.entries(LAW_EFFECTS_58)) {
   for (const [opt, fx] of Object.entries(opts)) addLawFx(cat, opt, fx);
 }
 
+// V5.10: lagarna och demografin. Andelen barn (kids) och pensionärer (old) styr
+// befolkningspyramiden — och med den medianåldern, försörjningskvoterna och
+// hushållens storlek — så familjepolitik, vård och invandring syns i diagrammet.
+const LAW_EFFECTS_510 = {
+  popgrowth: {
+    none: { kids: ['+', -2.5], adofert: ['*', 0.8], contracept: ['+', 8], sexratio: ['+', 0.05] },
+    discouraged: { kids: ['+', -1.2], adofert: ['*', 0.9], contracept: ['+', 4], sexratio: ['+', 0.015] },
+    planning: { kids: ['+', -0.8], adofert: ['*', 0.75], contracept: ['+', 12] },
+    encouraged: { kids: ['+', 1.2], adofert: ['*', 1.05], contracept: ['+', -3] },
+    childtax: { kids: ['+', 1.5], adofert: ['*', 1.1], contracept: ['+', -6] },
+    mandatory: { kids: ['+', 3.5], adofert: ['*', 1.35], contracept: ['+', -20] },
+  },
+  childcare: {
+    free: { kids: ['+', 0.6] }, subsidized: { kids: ['+', 0.3] }, familycash: { kids: ['+', 0.4], hhsize: ['*', 1.02] },
+    private: { kids: ['+', -0.4] }, none: { kids: ['+', -0.6], hhsize: ['*', 1.03] },
+  },
+  parental_leave: {
+    generous: { kids: ['+', 0.8] }, long: { kids: ['+', 0.5] }, paid: { kids: ['+', 0.2] },
+    unpaid: { kids: ['+', -0.2] }, none: { kids: ['+', -0.5] },
+  },
+  equality: {
+    full: { adofert: ['*', 0.85], contracept: ['+', 5] }, parental: { adofert: ['*', 0.9], contracept: ['+', 3], kids: ['+', 0.3] },
+    strong: { adofert: ['*', 0.92], contracept: ['+', 3] }, homemaker: { kids: ['+', 0.5], hhsize: ['*', 1.02] },
+    traditional: { kids: ['+', 1.5], adofert: ['*', 1.25], contracept: ['+', -8], sexratio: ['+', 0.02], hhsize: ['*', 1.05] },
+    restricted: { kids: ['+', 3.5], adofert: ['*', 1.7], contracept: ['+', -20], sexratio: ['+', 0.04], hhsize: ['*', 1.1] },
+  },
+  religion: {
+    atheism: { contracept: ['+', 2] },
+    statereligion: { kids: ['+', 0.5], adofert: ['*', 1.08], contracept: ['+', -4], hhsize: ['*', 1.02] },
+    religiouslaw: { kids: ['+', 1.5], adofert: ['*', 1.2], contracept: ['+', -10], hhsize: ['*', 1.05] },
+  },
+  education: {
+    nonecomp: { adofert: ['*', 1.4], contracept: ['+', -5] }, freewill: { adofert: ['*', 1.15] },
+    free: { adofert: ['*', 0.9] }, strict: { adofert: ['*', 0.92] }, verystrict: { adofert: ['*', 0.9] },
+  },
+  healthcare: {
+    fullyfree: { old: ['+', 0.6], adultmortm: ['*', 0.93], adultmortf: ['*', 0.93], contracept: ['+', 4] },
+    free: { old: ['+', 0.3], adultmortm: ['*', 0.96], adultmortf: ['*', 0.96], contracept: ['+', 2] },
+    socialins: { adultmortm: ['*', 0.98], adultmortf: ['*', 0.98] },
+    savings: { adultmortm: ['*', 1.02], adultmortf: ['*', 1.02] },
+    mostlyunfree: { old: ['+', -0.4], adultmortm: ['*', 1.06], adultmortf: ['*', 1.06], contracept: ['+', -3] },
+    unfree: { old: ['+', -0.8], adultmortm: ['*', 1.12], adultmortf: ['*', 1.12], contracept: ['+', -5] },
+  },
+  healthcare_quality: {
+    minimal: { old: ['+', -1.5], adultmortm: ['*', 1.3], adultmortf: ['*', 1.3] },
+    low: { old: ['+', -0.6], adultmortm: ['*', 1.1], adultmortf: ['*', 1.1] },
+    digital: { adultmortm: ['*', 0.98], adultmortf: ['*', 0.98] },
+    modern: { old: ['+', 0.5], adultmortm: ['*', 0.93], adultmortf: ['*', 0.93] },
+    extra: { old: ['+', 1], adultmortm: ['*', 0.88], adultmortf: ['*', 0.88] },
+  },
+  // invandrare är oftast unga vuxna — färre pensionärer i andel
+  immigration: {
+    noborders: { old: ['+', -1.2] }, open: { old: ['+', -0.8] }, humanitarian: { old: ['+', -0.6], kids: ['+', 0.3] },
+    freemove: { old: ['+', -0.5] }, relaxed: { old: ['+', -0.3] },
+    restricted: { old: ['+', 0.3] }, closed: { old: ['+', 0.5] }, deportation: { old: ['+', 1], kids: ['+', -0.3] },
+  },
+  // med egen pension bor de äldre oftare själva — utan bor de hos sina barn
+  pensions: {
+    early: { hhsize: ['*', 0.97] }, generous: { hhsize: ['*', 0.97] }, private: { hhsize: ['*', 1.02] }, none: { hhsize: ['*', 1.06] },
+  },
+  housing: {
+    public: { hhsize: ['*', 0.95] }, rentcontrol: { hhsize: ['*', 0.98] }, coop: { hhsize: ['*', 0.98] },
+    market: { hhsize: ['*', 1.02] }, deregulated: { hhsize: ['*', 1.05] },
+  },
+  alcohol_policy: {
+    free: { adultmortm: ['*', 1.05], adultmortf: ['*', 1.02] }, monopoly: { adultmortm: ['*', 0.97] },
+    restricted: { adultmortm: ['*', 0.96] }, prohibition: { adultmortm: ['*', 0.95] },
+  },
+  tobacco: {
+    free: { adultmortm: ['*', 1.05], adultmortf: ['*', 1.03] }, tough: { adultmortm: ['*', 0.98], adultmortf: ['*', 0.98] },
+    smokefree: { adultmortm: ['*', 0.96], adultmortf: ['*', 0.97] }, banned: { adultmortm: ['*', 0.93], adultmortf: ['*', 0.95] },
+  },
+  firearms: { bearing: { adultmortm: ['*', 1.04] }, free: { adultmortm: ['*', 1.03] } },
+  workhours: { maximum: { adultmortm: ['*', 1.05], adultmortf: ['*', 1.04] } },
+};
+for (const [cat, opts] of Object.entries(LAW_EFFECTS_510)) {
+  if (!LAWS[cat]) continue;   // lagar som inte finns (än) hoppas över
+  for (const [opt, fx] of Object.entries(opts)) addLawFx(cat, opt, fx);
+}
+
 // V5.8: helt nya lagar (laws-more.js) har sina effekter med sig
 for (const [cat, L] of Object.entries(NEW_LAWS)) {
   for (const [opt, fx] of Object.entries(L.effects || {})) addLawFx(cat, opt, fx);
@@ -863,7 +996,7 @@ const DEFAULT_LAW = Object.fromEntries(Object.entries(LAWS).map(([cat, L]) =>
 const dec = (v, n) => (Math.round(v * 10 ** n) / 10 ** n).toFixed(n).replace('.', ',');
 export function fmtInd(id, v) {
   if (v == null || !Number.isFinite(v)) return '–';
-  switch (IND[id]?.fmt) {
+  switch ((IND[id] || IND[RANK_ALIAS[id]?.of])?.fmt) {
     case 'usd': case 'usdbig': return dollars(v);
     case 'pct': return `${dec(v, 1)} %`;
     case 'pctgdp': return `${dec(v, 1)} % AV BNP`;
@@ -904,6 +1037,15 @@ export function fmtInd(id, v) {
     case 'm3': return `${bigNumber(v)} M3`;
     case 'score5': return `${dec(v, 1)} / 5`;
     case 'species': return `${dec(v, 0)} ${Math.round(v) === 1 ? 'ART' : 'ARTER'}`;
+    // V5.10
+    case 'ratio100': return `${dec(v * 100, 1)} / 100`;
+    case 'persons': return `${dec(v, 1)} PERSONER`;
+    case 'dbl': {   // värdet är tillväxten i % per år — visas som fördubblings- eller halveringstid
+      const g = Math.max(-50, v) / 100;
+      const y = Math.abs(g) > 1e-9 ? Math.LN2 / Math.abs(Math.log(1 + g)) : Infinity;
+      if (y > 999) return 'STÅR NÄSTAN STILLA';
+      return `${g > 0 ? 'FÖRDUBBLAS' : 'HALVERAS'} PÅ ${dec(y, 0)} ÅR`;
+    }
     default: return dec(v, 1);
   }
 }
@@ -933,6 +1075,9 @@ const RAW_KEYS_58 = ['gdppcppp', 'savings', 'consumption', 'invest', 'industry',
   'pupilteacher', 'secondary', 'preschool', 'youthlit', 'outofschool', 'bachelor', 'servers', 'ictgoods', 'hci',
   'top10', 'bottom20', 'womenmin', 'co2total', 'methane', 'waterstress', 'freshwater', 'marine',
   'thrmammals', 'thrbirds', 'thrfish', 'thrplants', 'armsimp'];
+// V5.10: demografin (uppskattas som V5.8-måtten, med medianen)
+const RAW_KEYS_510 = ['olddep', 'youngdep', 'adofert', 'contracept', 'adultmortm', 'adultmortf', 'sexratio',
+  'largestcity', 'megacity'];
 // räknas per invånare — uppskattas som andel och skalas sedan med folkmängden
 const PER_CAPITA_SUMS = { tourists: 1, airpax: 1, patents: 1, netmig: 1, articles: 1, armsexp: 1, labor: 1,
   tourrcpt: 1, listed: 1, cerealprod: 1, fishcatch: 1, aquaculture: 1, outofschool: 1, co2total: 1, methane: 1,
@@ -941,7 +1086,9 @@ const PER_CAPITA_SUMS = { tourists: 1, airpax: 1, patents: 1, netmig: 1, article
 // givarland som inte får bistånd, ingen järnväg, eller — i ett fattigare land —
 // ingen börs. true = säkert noll, en funktion = noll bara om villkoret gäller
 // (märks då som uppskattat), annars vanlig uppskattning.
-const ZERO_IF_MISSING = { malaria: true, aid: true, rail: true, listed: (b) => b.gdppc < 12000 };
+// 'wb' = noll om Världsbanken har landet men inte måttet (V5.10: ett land utan
+// miljonstad saknas i listan) — ett land som helt saknas där uppskattas i stället.
+const ZERO_IF_MISSING = { malaria: true, aid: true, rail: true, listed: (b) => b.gdppc < 12000, megacity: 'wb' };
 // järnvägsnät som Världsbanken saknar (CIA World Factbook, avrundat — märks ~)
 const RAIL_KM = { '484': 20800, '036': 33000, '170': 2100, '024': 2900, '068': 4000, '516': 2600, '324': 1100,
   '400': 500, '430': 430, '768': 570, '418': 420, '728': 250, '232': 300 };
@@ -951,6 +1098,18 @@ const NO_IMPUTE = { marine: 1, ports: 1, energyimp: 1 };
 const CRIME_KEYS = ['homicide', 'assault', 'threats', 'robbery', 'burglary', 'theft', 'cartheft', 'vandalism',
   'kidnapping', 'extortion', 'fraud', 'gangs'];
 let CRIME_MED = {};
+
+// V5.10: befolkningspyramiden — Världsbankens andel av männen (pm…) resp.
+// kvinnorna (pf…) i varje femårsgrupp. Grupp 0–2 är barn (0–14), 13–16 är 65+.
+export const PYRAMID_GROUPS = ['0–4', '5–9', '10–14', '15–19', '20–24', '25–29', '30–34', '35–39', '40–44',
+  '45–49', '50–54', '55–59', '60–64', '65–69', '70–74', '75–79', '80+'];
+const PYR_KEYS = ['0004', '0509', '1014', '1519', '2024', '2529', '3034', '3539', '4044', '4549', '5054', '5559',
+  '6064', '6569', '7074', '7579', '80up'];
+const PYR_RAW = new Set(PYR_KEYS.flatMap((g) => ['pm' + g, 'pf' + g]));
+const PYR_KIDS = 3, PYR_OLD = 13;
+// måtten som räknas ur pyramiden — uppskattade när landets pyramid är det
+const PYR_DERIVED = ['medianage', 'youth', 'oldest', 'kidsn', 'workage', 'oldn'];
+let PYR = {};           // cid -> { m, f: [17] (summerar till 100), km, kf, om, of: andel barn/65+ per kön }
 
 // Länder Världsbanken saknar helt (inte medlemmar m.m.) — verkliga värden från
 // nationell statistik, avrundade. Resten fylls av uppskattningen nedan.
@@ -965,7 +1124,11 @@ export function setIndicatorData(raw, facts) {
   const popOf = (cid) => facts?.[cid]?.p || OVERRIDES[cid]?.pop || 0;
   for (const cid of Object.keys(facts || {})) {
     if (!popOf(cid)) continue;
-    BASE[cid] = { ...(raw[cid] || {}), ...(OVERRIDES[cid] || {}) };
+    // V5.10: pyramidens 34 andelar hålls för sig (PYR nedan) — inte i BASE, som
+    // countryIndicators läser för hela världen
+    const own = {};
+    for (const k in raw[cid] || {}) if (!PYR_RAW.has(k)) own[k] = raw[cid][k];
+    BASE[cid] = { ...own, ...(OVERRIDES[cid] || {}) };
   }
   const ids = Object.keys(BASE);
   // land utan BNP per capita: grannarna i HDI, annars världsmedianen
@@ -977,8 +1140,8 @@ export function setIndicatorData(raw, facts) {
     BASE[cid].gdppc = median(gdps);
   }
   const lg = (cid) => Math.log(Math.max(100, BASE[cid].gdppc));
-  const robust = new Set(RAW_KEYS_58);
-  for (const key of [...RAW_KEYS, ...RAW_KEYS_58]) {
+  const robust = new Set([...RAW_KEYS_58, ...RAW_KEYS_510]);
+  for (const key of [...RAW_KEYS, ...RAW_KEYS_58, ...RAW_KEYS_510]) {
     if (NO_IMPUTE[key]) continue;
     let missing = ids.filter((c) => !Number.isFinite(BASE[c][key]));
     if (!missing.length) continue;
@@ -988,10 +1151,10 @@ export function setIndicatorData(raw, facts) {
     const zero = ZERO_IF_MISSING[key];
     if (zero) {
       for (const cid of missing) {
-        if (zero !== true && !zero(BASE[cid])) continue;
+        if (zero === 'wb' ? !raw[cid] : zero !== true && !zero(BASE[cid])) continue;
         const known = key === 'rail' ? RAIL_KM[cid] : undefined;
         BASE[cid][key] = known ?? 0;
-        if (known || zero !== true) (EST[cid] ||= new Set()).add(key);
+        if (known || (zero !== true && zero !== 'wb')) (EST[cid] ||= new Set()).add(key);
       }
       missing = missing.filter((c) => !Number.isFinite(BASE[c][key]));
       if (!missing.length) continue;
@@ -1097,6 +1260,40 @@ export function setIndicatorData(raw, facts) {
     // räknas fram ur andra mått — uppskattat om källan är det
     if (EST[cid]?.has('gdppcppp')) EST[cid].add('gdpppp');
     (EST[cid] ||= new Set()).add('crimeidx');
+    // V5.10: hushållens storlek finns inte för hela världen — uppskattas som
+    // vuxna per hem (fler i fattiga länder och på landsbygden) plus deras barn
+    if (!Number.isFinite(b.hhsize)) {
+      const poor = clampV(Math.log(60000 / P) / Math.log(60), 0, 1);
+      b.hhsize = (1.7 + 1.2 * poor + 0.5 * (1 - Ur / 100)) * 100 / Math.max(40, 100 - (b.kids ?? 25));
+    }
+    for (const k of ['hhsize', 'households', 'pop25', 'doubling']) EST[cid].add(k);
+    if (EST[cid].has('urban')) for (const k of ['urbanpop', 'ruralpop', 'bigcity']) EST[cid].add(k);
+    if (EST[cid].has('largestcity')) EST[cid].add('bigcity');
+  }
+  // V5.10: befolkningspyramiden. Ett land som saknar den får medelformen hos de
+  // 8 länder som ligger närmast i BNP per capita (märks som uppskattad).
+  PYR = {};
+  const sum = (a, from = 0, to = a.length) => { let s = 0; for (let i = from; i < to; i++) s += a[i]; return s; };
+  const haveP = [];
+  for (const cid of ids) {
+    const r = raw[cid] || {};
+    const m = PYR_KEYS.map((g) => r['pm' + g]), f = PYR_KEYS.map((g) => r['pf' + g]);
+    if (m.every((x) => x >= 0) && f.every((x) => x >= 0) && sum(m) > 0 && sum(f) > 0) { PYR[cid] = { m, f }; haveP.push(cid); }
+  }
+  for (const cid of ids) {
+    if (PYR[cid] || !haveP.length) continue;
+    const l = lg(cid);
+    const near = haveP.map((c) => ({ c, d: Math.abs(lg(c) - l) })).sort((p, q) => p.d - q.d).slice(0, 8);
+    const avg = (sex) => PYR_KEYS.map((_, i) => near.reduce((s, x) => s + PYR[x.c][sex][i], 0) / near.length);
+    PYR[cid] = { m: avg('m'), f: avg('f') };
+    for (const k of PYR_DERIVED) (EST[cid] ||= new Set()).add(k);
+  }
+  for (const p of Object.values(PYR)) {
+    const sm = sum(p.m), sf = sum(p.f);
+    p.m = p.m.map((x) => x * 100 / sm);
+    p.f = p.f.map((x) => x * 100 / sf);
+    p.km = sum(p.m, 0, PYR_KIDS); p.om = sum(p.m, PYR_OLD);
+    p.kf = sum(p.f, 0, PYR_KIDS); p.of = sum(p.f, PYR_OLD);
   }
   // Brottslighet jämförs med medianlandet i världen
   CRIME_MED = {};
@@ -1138,13 +1335,18 @@ function minus(T, T0) {
 
 // V5.8: måtten med mode och deras fx som listor, så att de inte packas upp
 // på nytt för varje land varje gång (countryIndicators körs för hela världen)
+// V5.10: fx som två raka listor (nycklar + vikter) — snabbare att loopa, samma summa i samma ordning
 const MODE_LIST = INDICATORS.filter((d) => d.mode)
-  .map((d) => ({ id: d.id, mul: d.mode === 'mul', fx: Object.entries(d.fx || {}), min: d.min, max: d.max }));
-const lawFxCache = new Map();
+  .map((d) => ({ id: d.id, mul: d.mode === 'mul', fk: Object.keys(d.fx || {}), fw: Object.values(d.fx || {}), min: d.min, max: d.max }));
+// V5.10: hur varje mått räknas ihop över ett rike (0 = summa, 1 = störst, 2 = vägt efter BNP, 3 = efter befolkning)
+const AGG_LIST = INDICATORS.filter((d) => d.agg !== 'derived')
+  .map((d) => ({ id: d.id, how: d.agg === 'sum' ? 0 : d.agg === 'max' ? 1 : d.agg === 'gdp' ? 2 : 3 }));
+const lawFxCache = new Map();   // V5.10: lag → (alternativ → lista), utan att bygga en sträng per uppslag
 function lawFxOf(cat, opt) {
-  const key = `${cat}|${opt}`;
-  let list = lawFxCache.get(key);
-  if (!list) { list = Object.entries(LAW_EFFECTS[cat]?.[opt] || {}); lawFxCache.set(key, list); }
+  let byOpt = lawFxCache.get(cat);
+  if (!byOpt) lawFxCache.set(cat, (byOpt = new Map()));
+  let list = byOpt.get(opt);
+  if (!list) { list = Object.entries(LAW_EFFECTS[cat]?.[opt] || {}); byOpt.set(opt, list); }
   return list;
 }
 
@@ -1185,6 +1387,21 @@ function followers(v, b, pop) {
   // fler barn och pensionärer → tyngre försörjningsbörda
   const dep = (k, o) => (k + o) / Math.max(1, 100 - k - o);
   if (Number.isFinite(v.kids) && Number.isFinite(v.old)) set('dependency', v.dependency * dep(v.kids, v.old) / dep(b0('kids'), b0('old')));
+  // V5.10: … liksom barn- och äldreförsörjningen var för sig, och fler barn gör
+  // hemmen större. Miljonstäderna växer med städerna.
+  if (Number.isFinite(v.kids) && Number.isFinite(v.old)) {
+    const w0 = Math.max(1, 100 - b0('kids') - b0('old')), w1 = Math.max(1, 100 - v.kids - v.old);
+    set('youngdep', v.youngdep * (v.kids / w1) / (b0('kids') / w0));
+    set('olddep', v.olddep * (v.old / w1) / (b0('old') / w0));
+    set('hhsize', v.hhsize * Math.max(40, 100 - b0('kids')) / Math.max(40, 100 - v.kids));
+  }
+  set('megacity', v.megacity * ratio('urban'));
+  if (Number.isFinite(v.urban)) {
+    v.urbanpop = pop * v.urban / 100;
+    v.ruralpop = pop - v.urbanpop;
+    if (Number.isFinite(v.largestcity)) v.bigcity = v.urbanpop * v.largestcity / 100;
+  }
+  if (v.hhsize > 0) v.households = pop / v.hhsize;
   // inkomstskillnaderna följer Gini
   const dg = (v.gini ?? b0('gini')) - b0('gini');
   set('top10', v.top10 + dg * 0.45);
@@ -1208,7 +1425,8 @@ export function countryIndicators(cid, T, T0 = null, laws = null) {
     const base = b[d.id];
     if (!Number.isFinite(base)) continue;
     let e = 0;
-    for (const [k, w] of d.fx) e += w * (D[k] || 0);
+    const fk = d.fk, fw = d.fw;
+    for (let i = 0; i < fk.length; i++) e += fw[i] * (D[fk[i]] || 0);
     e /= 100;
     v[d.id] = d.mul ? clampV(base * Math.max(0.05, 1 + e), d.min, d.max) : clampV(base + e, d.min, d.max);
   }
@@ -1245,6 +1463,79 @@ export function countryIndicators(cid, T, T0 = null, laws = null) {
   return v;
 }
 
+// ---------- V5.10: befolkningspyramiden ----------
+// Varje land bidrar med sin LEVANDE befolkning (gånger andelen av landet riket
+// äger), delad på män och kvinnor efter Andel kvinnor och fördelad efter landets
+// verkliga pyramid. Politiken flyttar den: barngrupperna skalas med hur mycket
+// Andel barn ändrats mot startläget, 65+ med Andel över 65, och grupperna däremellan
+// tar upp resten — så att summan alltid är befolkningen och andelarna i
+// diagrammet är desamma som i statistiken. I startläget är det landets verkliga pyramid.
+function pyramidSex(out, shape, K, O, kR, oR, n) {
+  let k = K * kR, o = O * oR;
+  if (k + o > 92) { const s = 92 / (k + o); k *= s; o *= s; }
+  const fk = K > 0 ? k / K : 0, fo = O > 0 ? o / O : 0;
+  const fm = (100 - k - o) / Math.max(1e-9, 100 - K - O);
+  const u = n / 100;
+  for (let g = 0; g < 17; g++) out[g] += shape[g] * (g < PYR_KIDS ? fk : g >= PYR_OLD ? fo : fm) * u;
+}
+
+// list = [{ cid, v (countryIndicators), w (andel) }] → antal män/kvinnor per femårsgrupp
+function pyramidOf(list) {
+  const male = new Array(17).fill(0), female = new Array(17).fill(0);
+  let any = false, est = false;
+  for (const { cid, v, w } of list) {
+    const P = PYR[cid], b = BASE[cid];
+    const n = (v?.pop || 0) * w;
+    if (!P || !(n > 0)) continue;
+    any = true;
+    if (EST[cid]?.has('medianage')) est = true;
+    // hur långt barnen och pensionärerna flyttats från startläget (1 = oförändrat)
+    const rel = (id) => {
+      const d = IND[id], z = clampV(b[id], d.min, d.max);
+      return z > 0 && v[id] > 0 ? v[id] / z : 1;
+    };
+    const kR = rel('kids'), oR = rel('old');
+    const fem = clampV(Number.isFinite(v.female) ? v.female : 50, 25, 75) / 100;
+    pyramidSex(male, P.m, P.km, P.om, kR, oR, n * (1 - fem));
+    pyramidSex(female, P.f, P.kf, P.of, kR, oR, n * fem);
+  }
+  return any ? { male, female, est } : null;
+}
+
+// medianålder (linjärt inom femårsgruppen) och åldersmåtten ur en pyramid
+function pyramidStats(male, female) {
+  const t = male.map((x, g) => x + female[g]);
+  let total = 0;
+  for (const x of t) total += x;
+  let cum = 0, medianage = 0;
+  for (let g = 0; g < 17; g++) {
+    if (t[g] > 0 && cum + t[g] >= total / 2) { medianage = 5 * g + (g === 16 ? 20 : 5) * (total / 2 - cum) / t[g]; break; }
+    cum += t[g];
+  }
+  let kidsn = 0, oldn = 0;
+  for (let g = 0; g < PYR_KIDS; g++) kidsn += t[g];
+  for (let g = PYR_OLD; g < 17; g++) oldn += t[g];
+  const pct = (x) => (total > 0 ? 100 * x / total : 0);
+  return { total, medianage, kidsn, oldn, workage: total - kidsn - oldn, youth: pct(t[3] + t[4]), oldest: pct(t[16]) };
+}
+
+// Rikets befolkningspyramid (ritas i STATISTIK). Samma indata som realmIndicators;
+// T = null betyder startläget (landens verkliga pyramider, ingen ändrad politik).
+// → { groups, male[17], female[17], total, medianAge, estimated } i antal människor,
+// eller null om inget land i riket har data.
+export function realmPyramid(parts, T, t0Of = null, laws = null) {
+  const list = [];
+  for (const { cid, share = 1 } of parts || []) {
+    const T0 = t0Of?.(cid) || null;
+    const v = countryIndicators(cid, T ?? T0, T0, laws);
+    if (v) list.push({ cid, v, w: share });
+  }
+  const p = pyramidOf(list);
+  if (!p) return null;
+  const s = pyramidStats(p.male, p.female);
+  return { groups: PYRAMID_GROUPS, male: p.male, female: p.female, total: s.total, medianAge: s.medianage, estimated: p.est };
+}
+
 // ---------- ett rike: [{cid, share}] + nationsvärden → alla mått ----------
 // extra = { soldiers, reserve } från spelet (arméerna finns inte i datat)
 // t0Of(cid) = landets startläge (se minus ovan)
@@ -1255,25 +1546,25 @@ export function realmIndicators(parts, T, extra = {}, t0Of = null, laws = null, 
   for (const { cid, share = 1 } of parts) {
     const T0 = t0Of?.(cid) || null;
     const v = noPolicy ? countryIndicators(cid, T0, T0, null) : countryIndicators(cid, T, T0, laws);
-    if (v) per.push({ v, w: share });
+    if (v) per.push({ cid, v, w: share });
   }
   if (!per.length) return null;
   const out = {};
   let pop = 0, gdp = 0;
   for (const { v, w } of per) { pop += v.pop * w; gdp += v.gdp * w; }
-  for (const d of INDICATORS) {
-    if (d.agg === 'derived') continue;
+  for (const { id, how } of AGG_LIST) {
     let num = 0, den = 0;
     for (const { v, w } of per) {
-      if (!Number.isFinite(v[d.id])) continue;
-      if (d.agg === 'sum') { num += v[d.id] * w; den = 1; }
-      else if (d.agg === 'max') { num = Math.max(num, v[d.id]); den = 1; }   // V5.8: t.ex. hotade arter
+      const x = v[id];
+      if (!Number.isFinite(x)) continue;
+      if (how === 0) { num += x * w; den = 1; }
+      else if (how === 1) { num = Math.max(num, x); den = 1; }   // V5.8: t.ex. hotade arter
       else {
-        const weight = d.agg === 'gdp' ? v.gdp * w : v.pop * w;
-        num += v[d.id] * weight; den += weight;
+        const weight = how === 2 ? v.gdp * w : v.pop * w;
+        num += x * weight; den += weight;
       }
     }
-    if (den) out[d.id] = num / den;
+    if (den) out[id] = num / den;
   }
   out.pop = pop;
   out.gdp = gdp;
@@ -1283,6 +1574,16 @@ export function realmIndicators(parts, T, extra = {}, t0Of = null, laws = null, 
   out.taxrev = gdp * (out.tax || 0) / 100;
   out.milbudget = gdp * (out.milx || 0) / 100;
   out.tradebal = (out.exports || 0) - (out.imports || 0);
+  // V5.10: åldrarna ur befolkningspyramiden, hushållen, och befolkningen framåt
+  const pyr = pyramidOf(per);
+  if (pyr) {
+    const ps = pyramidStats(pyr.male, pyr.female);
+    for (const k of PYR_DERIVED) out[k] = ps[k];
+  }
+  if (out.households > 0) out.hhsize = pop / out.households;
+  const growth = pop > 0 ? (out.popchange || 0) / pop : 0;
+  out.doubling = 100 * growth;
+  out.pop25 = pop * Math.max(0, 1 + growth) ** 25;
   let hdiW = 0, hdiN = 0;
   for (const { v, w } of per) { hdiN += v.hdi * v.pop * w; hdiW += v.pop * w; }
   out.hdi = hdiW ? hdiN / hdiW : 0;
@@ -1310,6 +1611,7 @@ function noticeable(fmt, a, b) {
     case 'spct': return d;              // V5.8
     case 'score5': return d / 0.125;
     case 'index': return d / 2.5;
+    case 'dbl': return d * 0.5;         // V5.10: tillväxt i % — halv vikt, Befolkningstillväxt visar samma sak
     default: return (d / Math.max(Math.abs(a), 1e-9)) * 10;
   }
 }
@@ -1360,12 +1662,23 @@ export const RANKINGS = [
   { id: 'matmort', name: 'LÄGST MÖDRADÖDLIGHET' },
   { id: 'lpi', name: 'BÄST LOGISTIK' },
   { id: 'cerealprod', name: 'STÖRST SKÖRD' },
+  // V5.10
+  { id: 'medianage', name: 'ÄLDST BEFOLKNING' },
+  { id: 'youngest', name: 'YNGST BEFOLKNING' },
+  { id: 'fert', name: 'FLEST BARN PER KVINNA' },
+  { id: 'bigcity', name: 'STÖRST STAD' },
+  { id: 'pop25', name: 'STÖRST OM 25 ÅR' },
 ];
+
+// V5.10: rankningar som läser ett annat mått åt andra hållet (yngst = lägst medianålder)
+const RANK_ALIAS = { youngest: { of: 'medianage', better: 'low' } };
 
 // rows = [{ key, name, mine, ind }] → sorterade efter måttet (bäst först)
 export function rankBy(rows, id) {
-  const low = IND[id]?.better === 'low';
-  return rows.filter((r) => Number.isFinite(r.ind?.[id]))
-    .sort((a, b) => (low ? a.ind[id] - b.ind[id] : b.ind[id] - a.ind[id]))
-    .map((r, i) => ({ ...r, place: i + 1, value: r.ind[id] }));
+  const alias = RANK_ALIAS[id];
+  const key = alias ? alias.of : id;
+  const low = (alias ? alias.better : IND[id]?.better) === 'low';
+  return rows.filter((r) => Number.isFinite(r.ind?.[key]))
+    .sort((a, b) => (low ? a.ind[key] - b.ind[key] : b.ind[key] - a.ind[key]))
+    .map((r, i) => ({ ...r, place: i + 1, value: r.ind[key] }));
 }

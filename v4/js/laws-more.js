@@ -162,4 +162,239 @@ export const NEW_LAWS = {
       free: { hitech: ['+', 5], patents: ['*', 1.2], unemp: ['+', 1], cybercrime: ['*', 1.2] },
     },
   },
+
+  // ---------- V5.9: åtta nya lagar (Henrys önskemål), flera om befolkningen ----------
+
+  // Vänster → höger: från lång ledighet som staten betalar till ingen ledighet alls.
+  parental_leave: {
+    name: 'Parental leave', icon: '\u{1F37C}', axis: 'econ', dir: 1,
+    options: [
+      { id: 'generous', name: 'Very long paid leave', mods: { welfare: 12, qol: 8, approval: 7, manpower: 3, income: -12, gdp: -4, factory: -2 },
+        desc: 'Föräldrarna får dela på nästan två års ledighet med nästan full lön, och jobbet väntar på dem när de kommer tillbaka. Familjerna får gott om tid med sina små barn och fler vågar skaffa barn. Det kostar staten väldigt mycket, och den som är borta länge från jobbet kan halka efter.' },
+      { id: 'long', name: 'Long paid leave', mods: { welfare: 8, qol: 5, approval: 4, manpower: 2, income: -7, gdp: -1 },
+        desc: 'Ungefär ett år ledigt med en stor del av lönen, som i de nordiska länderna. Både mammor och pappor hinner vara hemma, och mammorna kommer tillbaka till sina jobb efteråt. Staten betalar en hel del för det.' },
+      { id: 'paid', name: 'Paid leave', mods: { welfare: 4, qol: 3, approval: 2, income: -3 },
+        desc: 'Ett halvår ledigt med lön från staten när ett barn föds. Familjerna får en lugn start och fler mammor går tillbaka till jobbet efteråt. Ett steg åt det generösa hållet som kostar lite pengar.' },
+      { id: 'standard', name: 'Standard', default: true, mods: {},
+        desc: 'Några månaders betald ledighet för mamman och några veckor för pappan, ungefär som i de flesta länder. Varken bonus eller straff. Utgångsläget.' },
+      { id: 'unpaid', name: 'Unpaid leave only', mods: { gdp: 2, income: 3, welfare: -4, qol: -3, approval: -2 },
+        desc: 'Föräldrar har rätt att vara lediga och få tillbaka sitt jobb, men ingen betalar någon lön under tiden. Staten och företagen sparar pengar. Många har inte råd att vara hemma och går tillbaka till jobbet efter bara några veckor.' },
+      { id: 'none', name: 'No parental leave', mods: { gdp: 4, income: 5, factory: 3, welfare: -8, qol: -6, approval: -6, unrest: 2, manpower: -2 },
+        desc: 'Den som får barn har ingen rätt att vara ledig, och den som stannar hemma kan bli av med jobbet. Företagen slipper all kostnad och frånvaro. Många väntar med att skaffa barn, och mammor som vill vara hemma måste ofta sluta arbeta.' },
+    ],
+    locks: {
+      communism: ['unpaid', 'none'], socialism: ['none'], socialdemocracy: ['none'], greens: ['none'], christdem: ['none'],
+      libertarianism: ['generous'],
+    },
+    effects: {
+      generous: { fert: ['+', 0.2], birth: ['+', 1.2], femlabor: ['+', -2], infmort: ['*', 0.95] },
+      long: { fert: ['+', 0.12], birth: ['+', 0.7], femlabor: ['+', 3], infmort: ['*', 0.97] },
+      paid: { fert: ['+', 0.05], birth: ['+', 0.3], femlabor: ['+', 2] },
+      unpaid: { fert: ['+', -0.05], birth: ['+', -0.3], femlabor: ['+', -2] },
+      none: { fert: ['+', -0.12], birth: ['+', -0.7], femlabor: ['+', -5], infmort: ['*', 1.04] },
+    },
+  },
+
+  // Vänster → höger: från tidig pension till ingen pensionsålder alls.
+  retirement_age: {
+    name: 'Retirement age', icon: '\u{1F9D3}', axis: 'econ', dir: 1,
+    options: [
+      { id: 'age55', name: 'Retire at 55', mods: { welfare: 12, qol: 8, approval: 10, unrest: -3, income: -14, gdp: -7, factory: -6 },
+        desc: 'Alla får gå i pension med full pension redan vid 55 års ålder. Folk får många friska år med barnbarn och fritid och älskar dig för det. Men allt färre arbetar för att försörja allt fler pensionärer, och statskassan och fabrikerna saknar erfaret folk.' },
+      { id: 'age60', name: 'Retire at 60', mods: { welfare: 8, qol: 5, approval: 6, income: -9, gdp: -4, factory: -3 },
+        desc: 'Pensionen börjar vid 60 års ålder. De äldre får gott om tid att vila efter ett långt arbetsliv. Arbetskraften krymper och pensionerna blir en stor post i statens budget.' },
+      { id: 'age62', name: 'Retire at 62', mods: { welfare: 3, qol: 2, approval: 3, income: -4, gdp: -2 },
+        desc: 'Pensionen börjar vid 62 års ålder, lite tidigare än i de flesta länder. Folk uppskattar några extra år som pensionärer. Det kostar statskassan en del.' },
+      { id: 'age65', name: 'Retire at 65', default: true, mods: {},
+        desc: 'Pensionen börjar vid 65 års ålder, ungefär som i de flesta länder. Varken bonus eller straff. Utgångsläget.' },
+      { id: 'age67', name: 'Retire at 67', mods: { income: 4, gdp: 2, factory: 2, approval: -3, qol: -2 },
+        desc: 'Pensionen börjar vid 67 års ålder, eftersom folk lever längre än förr. Fler arbetar och betalar skatt, och pensionspengarna räcker längre. Många som har tunga jobb tycker att det är för sent.' },
+      { id: 'age70', name: 'Retire at 70', mods: { income: 8, gdp: 4, factory: 4, approval: -7, qol: -5, unrest: 3 },
+        desc: 'Pensionen börjar först vid 70 års ålder. Landet har många erfarna arbetare och statskassan sparar stora summor. Den som sliter med kroppen orkar inte så länge, och folket är missnöjt.' },
+      { id: 'none', name: 'No retirement age', mods: { income: 12, gdp: 5, factory: 5, welfare: -10, qol: -8, approval: -10, unrest: 6 },
+        desc: 'Det finns ingen pensionsålder alls: man arbetar så länge man orkar och får sedan klara sig på sina besparingar eller sin familj. Arbetskraften blir stor och staten slipper nästan alla pensionskostnader. Gamla som inte längre orkar arbeta hamnar lätt i fattigdom.' },
+    ],
+    locks: { communism: ['age70', 'none'], socialism: ['none'], socialdemocracy: ['none'], greens: ['none'], libertarianism: ['age55'] },
+    effects: {
+      age55: { lfpr: ['+', -5], labor: ['*', 0.88], dependency: ['+', 9], debt: ['+', 15] },
+      age60: { lfpr: ['+', -3], labor: ['*', 0.93], dependency: ['+', 5], debt: ['+', 8] },
+      age62: { lfpr: ['+', -1.2], labor: ['*', 0.97], dependency: ['+', 2], debt: ['+', 3] },
+      age67: { lfpr: ['+', 1.2], labor: ['*', 1.03], dependency: ['+', -2], debt: ['+', -3] },
+      age70: { lfpr: ['+', 3], labor: ['*', 1.07], dependency: ['+', -5], debt: ['+', -6] },
+      none: { lfpr: ['+', 5], labor: ['*', 1.12], dependency: ['+', -8], debt: ['+', -10], poverty: ['*', 1.15] },
+    },
+  },
+
+  // Fri → styrd: från rösträtt vid 16 till att bara de som staten godkänt får rösta.
+  voting_age: {
+    name: 'Voting age', icon: '\u{270B}', axis: 'auth', dir: 1,
+    options: [
+      { id: 'age16', name: 'Vote at 16', mods: { freedom: 7, approval: 4, statepower: -3, stability: -2 },
+        desc: 'Alla som fyllt 16 år får rösta i alla val, som i Österrike och Brasilien. Unga får vara med och bestämma om sin egen framtid, och skolan och klimatet hamnar högre upp i debatten. Vissa tycker att 16-åringar är för unga, och valen blir lite mer oförutsägbara.' },
+      { id: 'local16', name: 'Local vote at 16', mods: { freedom: 4, approval: 2, stability: -1 },
+        desc: 'Den som fyllt 16 får rösta i valen till kommunen, men inte till riksdagen. Unga får öva på demokrati nära sin egen vardag. De stora besluten om landet får de ändå inte vara med och fatta.' },
+      { id: 'age18', name: 'Vote at 18', default: true, mods: {},
+        desc: 'Alla medborgare som fyllt 18 år får rösta, som i nästan alla länder. Varken bonus eller straff. Utgångsläget.' },
+      { id: 'age21', name: 'Vote at 21', mods: { stability: 3, statepower: 2, freedom: -4, approval: -3 },
+        desc: 'Man får rösta först när man fyllt 21, som i många länder förr i tiden. Väljarna har lite mer livserfarenhet och valen blir stabilare. De unga får inte vara med och bestämma, fast de redan arbetar, betalar skatt och kan kallas in till armén.' },
+      { id: 'age25', name: 'Vote at 25', mods: { stability: 4, statepower: 5, freedom: -8, approval: -6, unrest: 3 },
+        desc: 'Bara den som fyllt 25 år får rösta. Ledningen behöver sällan bry sig om vad de unga tycker, och politiken blir lugn och förutsägbar. En stor del av de vuxna står utanför, och många unga känner att landet inte är deras.' },
+      { id: 'approved', name: 'Approved voters only', mods: { statepower: 10, ideopower: 5, freedom: -15, approval: -10, unrest: 6, corruption: 4 },
+        desc: 'Bara de som staten har godkänt som lojala får rösta, till exempel medlemmar i det styrande partiet, soldater och tjänstemän. Ledningen vet alltid hur valet ska sluta och staten blir mycket stark. De flesta vuxna har ingen röst alls, och missnöjet samlas tyst under ytan.' },
+    ],
+    locks: {
+      democracy: ['approved'], liberalism: ['approved'], libertarianism: ['approved'], christdem: ['approved'],
+      socialdemocracy: ['age25', 'approved'], greens: ['age25', 'approved'], anarchism: ['age25', 'approved'],
+      fascism: ['age16'], natsoc: ['age16'], theocracy: ['age16'],
+    },
+    effects: {
+      age16: { voice: ['+', 0.15] }, local16: { voice: ['+', 0.07] },
+      age21: { voice: ['+', -0.1] }, age25: { voice: ['+', -0.25] },
+      approved: { voice: ['+', -0.7] },
+    },
+  },
+
+  // Fri → styrd: från fri försäljning till totalförbud.
+  tobacco: {
+    name: 'Tobacco', icon: '\u{1F6AD}', axis: 'auth', dir: 1,
+    options: [
+      { id: 'free', name: 'Free sale', mods: { freedom: 6, income: 3, approval: 3, qol: -5, hdi: -3 },
+        desc: 'Cigaretter och snus säljs överallt, till alla åldrar, och man får röka var man vill. Folk uppskattar friheten och tobaksbolagen betalar skatt. Fler börjar röka redan som barn, och lungcancer och hjärtsjukdomar blir vanliga.' },
+      { id: 'light', name: 'Few rules', mods: { freedom: 3, income: 2, qol: -2, hdi: -1 },
+        desc: 'Det finns en åldersgräns, men reklam för tobak är tillåten och man får röka på restauranger. Ett fritt och enkelt system. Lite fler röker än med hårdare regler.' },
+      { id: 'regulated', name: 'Regulated', default: true, mods: {},
+        desc: 'Åldersgräns på 18 år, varningstexter på paketen och rökförbud inomhus, som i de flesta länder. Varken bonus eller straff. Utgångsläget.' },
+      { id: 'tough', name: 'High taxes and plain packs', mods: { income: 4, qol: 3, hdi: 2, freedom: -2, approval: -2 },
+        desc: 'Tobaken beskattas hårt, säljs i fula och likadana paket och får inte synas i butikerna. Färre börjar röka och folkhälsan blir bättre. Rökarna klagar på priserna och en del köper smuggelcigaretter.' },
+      { id: 'smokefree', name: 'Smoke-free generation', mods: { qol: 5, hdi: 3, freedom: -5, approval: -3, corruption: 2, income: -2 },
+        desc: 'Den som är född efter ett visst år får aldrig någonsin köpa tobak, så varje ny generation växer upp helt rökfri. Om några årtionden röker nästan ingen och folk lever längre. Många tycker att det är förmynderi, och tobak börjar säljas svart.' },
+      { id: 'banned', name: 'Total ban', mods: { qol: 4, hdi: 2, freedom: -10, approval: -8, corruption: 8, income: -5, unrest: 4 },
+        desc: 'All tobak är förbjuden att sälja, köpa och röka. Rökningen minskar kraftigt och sjukhusen får färre lungsjuka. En svart marknad växer fram, polisen mutas och folk är arga över att staten bestämmer så mycket.' },
+    ],
+    locks: { liberalism: ['banned'], libertarianism: ['smokefree', 'banned'], anarchism: ['smokefree', 'banned'] },
+    effects: {
+      free: { smoking: ['*', 1.3], life: ['+', -0.8], ncd: ['+', 1.5], death: ['+', 0.3] },
+      light: { smoking: ['*', 1.12], life: ['+', -0.3], ncd: ['+', 0.6], death: ['+', 0.1] },
+      tough: { smoking: ['*', 0.85], life: ['+', 0.4], ncd: ['+', -0.8], death: ['+', -0.1], smuggling: ['*', 1.05] },
+      smokefree: { smoking: ['*', 0.65], life: ['+', 0.8], ncd: ['+', -1.5], death: ['+', -0.2], smuggling: ['*', 1.15] },
+      banned: { smoking: ['*', 0.45], life: ['+', 1], ncd: ['+', -2], death: ['+', -0.3], smuggling: ['*', 1.5], gangs: ['*', 1.1], bribery: ['+', 1.5] },
+    },
+  },
+
+  // Fri → styrd: från inga vacciner alls till vaccinationstvång med böter.
+  vaccination: {
+    name: 'Vaccination', icon: '\u{1F489}', axis: 'auth', dir: 1,
+    options: [
+      { id: 'noprogram', name: 'No vaccine program', mods: { freedom: 3, income: 4, hdi: -6, qol: -5, approval: -3, manpower: -2 },
+        desc: 'Staten erbjuder inga vacciner alls, och den som vill skydda sina barn får ordna och betala det själv. Statskassan sparar pengar och ingen behöver ta ställning. Mässling, kikhosta och andra gamla sjukdomar kommer tillbaka, och fler små barn blir svårt sjuka.' },
+      { id: 'voluntary', name: 'Voluntary, no campaigns', mods: { freedom: 3, hdi: -2, qol: -2 },
+        desc: 'Vaccinerna är gratis, men staten gör ingen reklam för dem och skolan frågar aldrig. Familjerna bestämmer helt själva. Fler glömmer bort eller struntar i vaccinerna, och utbrott av mässling blir vanligare.' },
+      { id: 'recommended', name: 'Free and recommended', default: true, mods: {},
+        desc: 'Barnen erbjuds gratis vacciner på barnavårdscentralen och vården rekommenderar starkt att alla tar dem, som i Sverige. Varken bonus eller straff. Utgångsläget.' },
+      { id: 'campaigns', name: 'Vaccination campaigns', mods: { hdi: 3, qol: 2, approval: 1, income: -3 },
+        desc: 'Sjuksköterskor vaccinerar barnen i skolan, påminner familjer som missat en dos och åker ut till byar långt bort. Nästan alla barn blir skyddade och färre blir sjuka. Kampanjerna kostar pengar.' },
+      { id: 'school', name: 'Required for school', mods: { hdi: 4, qol: 3, statepower: 3, freedom: -4, approval: -2 },
+        desc: 'Barn måste vara vaccinerade för att få gå i förskolan och skolan, som i Frankrike och Italien. Nästan alla vaccinerar sig och utbrotten blir sällsynta. Familjer som inte vill känner sig tvingade.' },
+      { id: 'mandatory', name: 'Mandatory with fines', mods: { hdi: 5, qol: 3, statepower: 6, freedom: -8, approval: -4, unrest: 3 },
+        desc: 'Alla måste ta de vacciner staten bestämmer, och den som vägrar får böter. Sjukdomarna försvinner nästan helt och sjukhusen får det lugnare. Många tycker att staten går för långt när den bestämmer över människors kroppar, och en del protesterar.' },
+    ],
+    locks: {
+      libertarianism: ['mandatory'], liberalism: ['mandatory'], anarchism: ['school', 'mandatory'],
+      communism: ['noprogram'], socialism: ['noprogram'], socialdemocracy: ['noprogram'], technocracy: ['noprogram', 'voluntary'],
+    },
+    effects: {
+      noprogram: { measles: ['+', -20], dpt: ['+', -20], u5mort: ['*', 1.3], infmort: ['*', 1.15], life: ['+', -1.5] },
+      voluntary: { measles: ['+', -6], dpt: ['+', -5], u5mort: ['*', 1.08], life: ['+', -0.3] },
+      campaigns: { measles: ['+', 4], dpt: ['+', 4], u5mort: ['*', 0.95], infmort: ['*', 0.97], life: ['+', 0.3] },
+      school: { measles: ['+', 7], dpt: ['+', 7], u5mort: ['*', 0.92], infmort: ['*', 0.95], life: ['+', 0.5] },
+      mandatory: { measles: ['+', 9], dpt: ['+', 9], u5mort: ['*', 0.9], infmort: ['*', 0.94], life: ['+', 0.6] },
+    },
+  },
+
+  // Vänster → höger: från mycket hög arvsskatt till skattefria familjestiftelser.
+  inheritance_tax: {
+    name: 'Inheritance tax', icon: '\u{1F4DC}', axis: 'econ', dir: 1,
+    options: [
+      { id: 'veryhigh', name: 'Very high', mods: { income: 7, welfare: 5, gdp: -6, approval: -3, corruption: 3 },
+        desc: 'Staten tar mer än hälften av alla stora arv, så att ingen kan ärva sig rik. Förmögenheterna sprids ut och statskassan får mer pengar. Många rika flyttar sina pengar utomlands, och familjeföretag måste ibland säljas för att betala skatten.' },
+      { id: 'high', name: 'High', mods: { income: 4, welfare: 3, gdp: -3, approval: -2 },
+        desc: 'En hög skatt på stora arv, medan vanliga arv efter föräldrarna nästan klarar sig. Klyftorna mellan rika och fattiga minskar. Rika familjer anlitar skatteexperter för att slippa betala.' },
+      { id: 'raised', name: 'Above average', mods: { income: 2, gdp: -1, approval: -1 },
+        desc: 'Arvsskatten är lite högre än i de flesta länder och gäller fler arv. Ett litet tillskott till statskassan. Den som ärver ett hus eller en gård märker det.' },
+      { id: 'standard', name: 'Standard', default: true, mods: {},
+        desc: 'En måttlig skatt på riktigt stora arv, medan vanliga arv är skattefria, som i många länder. Varken bonus eller straff. Utgångsläget.' },
+      { id: 'none', name: 'No inheritance tax', mods: { gdp: 3, approval: 2, income: -3, welfare: -1 },
+        desc: 'Ingen betalar skatt på det de ärver, som i Sverige sedan 2005. Familjeföretag och gårdar kan gå vidare till barnen och många tycker att det är rättvist. Staten går miste om lite pengar, och den som föds i en rik familj får ett försprång.' },
+      { id: 'trusts', name: 'Tax-free family trusts', mods: { gdp: 5, factory: 2, income: -5, welfare: -3, approval: -3, corruption: 5 },
+        desc: 'Ingen arvsskatt, och rika familjer får dessutom lägga sina förmögenheter i stiftelser som aldrig beskattas. Stora förmögenheter och investerare söker sig till landet. Samma familjer blir rikare för varje generation, och en del av pengarna kommer från tvivelaktiga affärer.' },
+    ],
+    locks: {
+      communism: ['none', 'trusts'], socialism: ['trusts'], socialdemocracy: ['trusts'],
+      libertarianism: ['veryhigh', 'high'], monarchism: ['veryhigh'],
+    },
+    effects: {
+      veryhigh: { gini: ['+', -2.5], tax: ['+', 1], taxevasion: ['+', 2] },
+      high: { gini: ['+', -1.2], tax: ['+', 0.5], taxevasion: ['+', 1] },
+      raised: { gini: ['+', -0.5], tax: ['+', 0.2] },
+      none: { gini: ['+', 1], tax: ['+', -0.2] },
+      trusts: { gini: ['+', 2.5], tax: ['+', -0.4], moneylaundering: ['+', 0.6], fdi: ['+', 0.5] },
+    },
+  },
+
+  // Vänster → höger: från bara statliga skolor till skolor som familjerna betalar.
+  school_choice: {
+    name: 'School choice', icon: '\u{1F3EB}', axis: 'econ', dir: 1,
+    options: [
+      { id: 'stateonly', name: 'State schools only', mods: { integration: 6, welfare: 4, statepower: 4, freedom: -7, research: -3, gdp: -2 },
+        desc: 'Privata skolor är förbjudna och alla barn går i statens skola där de bor. Rika och fattiga barn går i samma klasser och lär känna varandra. Den som har en dålig skola kan inte byta, och nya idéer om undervisning får svårt att prövas.' },
+      { id: 'assigned', name: 'Neighborhood schools', mods: { integration: 4, welfare: 2, freedom: -3, research: -1 },
+        desc: 'Alla barn går i den kommunala skolan närmast hemmet, och privata skolor får inga pengar från staten. Skolan blir en mötesplats för alla i området. Familjerna kan inte välja, och i fattiga områden blir skolorna sämre.' },
+      { id: 'nonprofit', name: 'No profit in schools', mods: { welfare: 2, approval: 2, corruption: -2, gdp: -1 },
+        desc: 'Familjerna får välja skola och fristående skolor får pengar från staten, men ingen får tjäna pengar på att driva en skola. Alla skolpengar går till eleverna. Färre nya skolor startas än om företag fick vara med.' },
+      { id: 'mixed', name: 'Mixed', default: true, mods: {},
+        desc: 'Kommunala och fristående skolor finns sida vid sida, och familjerna får söka till en annan skola än den närmaste. Varken bonus eller straff. Utgångsläget.' },
+      { id: 'vouchers', name: 'School vouchers', mods: { freedom: 5, research: 3, gdp: 2, integration: -4, welfare: -2, corruption: 2 },
+        desc: 'Varje elev får en skolpeng som följer med till den skola familjen väljer, även skolor som drivs av företag. Skolorna tävlar om eleverna och nya idéer prövas. Barn med föräldrar som väljer aktivt hamnar i samma skolor, och vissa företag sparar på lärarna för att tjäna mer.' },
+      { id: 'feepaying', name: 'Fee-paying schools', mods: { gdp: 4, income: 6, research: 2, welfare: -10, hdi: -6, qol: -4, integration: -6, approval: -5 },
+        desc: 'Staten driver inga skolor alls, och alla skolor är företag där familjerna betalar avgift. De bästa skolorna blir mycket bra och staten sparar stora summor. Barn i fattiga familjer får gå i billiga, dåliga skolor eller ingen skola alls.' },
+    ],
+    locks: {
+      libertarianism: ['stateonly', 'assigned'], communism: ['vouchers', 'feepaying'],
+      socialism: ['feepaying'], socialdemocracy: ['feepaying'], greens: ['feepaying'],
+    },
+    effects: {
+      stateonly: { gini: ['+', -1] },
+      assigned: { gini: ['+', -0.5] },
+      nonprofit: { pupilteacher: ['*', 0.97] },
+      vouchers: { gini: ['+', 0.8], pupilteacher: ['*', 1.05] },
+      feepaying: { gini: ['+', 3], secondary: ['+', -8], outofschool: ['*', 1.6], youthlit: ['+', -3], schoolyears: ['+', -0.6] },
+    },
+  },
+
+  // Vänster → höger: från djurens rättigheter i lag till inget djurskydd alls.
+  animal_welfare: {
+    name: 'Animal welfare', icon: '\u{1F43E}', axis: 'econ', dir: 1,
+    options: [
+      { id: 'animalrights', name: 'Animal rights', mods: { qol: 6, approval: 2, factory: -6, gdp: -4, research: -3 },
+        desc: 'Djur har egna rättigheter i lagen. Pälsfarmer, burhöns, djurförsök och vilda djur på cirkus är förbjudna, och skyddet kontrolleras noga. Djuren mår bra och naturen gynnas. Kött, ägg och mediciner blir dyrare och en del forskning flyttar utomlands.' },
+      { id: 'strong', name: 'Strong protection', mods: { qol: 4, approval: 3, factory: -3, gdp: -2 },
+        desc: 'Korna ska få gå ute på sommaren, grisar och höns ska ha plats att röra sig och pälsfarmer är förbjudna. Djuren har det bra och folk är stolta över maten. Bönderna får högre kostnader och maten blir lite dyrare.' },
+      { id: 'improved', name: 'Above average', mods: { qol: 2, approval: 1, gdp: -1 },
+        desc: 'Lite strängare djurskyddsregler än i de flesta länder och fler kontroller på gårdarna. Djuren får det bättre. Bönderna får lite mer pappersarbete.' },
+      { id: 'standard', name: 'Standard', default: true, mods: {},
+        desc: 'Det är förbjudet att plåga djur, och lantbruksdjur ska ha mat, vatten och tak över huvudet, som i de flesta länder. Varken bonus eller straff. Utgångsläget.' },
+      { id: 'weak', name: 'Weak protection', mods: { gdp: 3, factory: 3, qol: -3, approval: -2 },
+        desc: 'Djurskyddsreglerna är få och kontrolleras sällan. Fabriksjordbruken producerar billigt kött och billiga ägg. Djuren står trångt, och vilda djur jagas och säljs utan att någon bryr sig.' },
+      { id: 'none', name: 'No protection', mods: { gdp: 5, factory: 5, income: 2, qol: -6, approval: -5, corruption: 2 },
+        desc: 'Djur räknas bara som saker som ägaren får göra vad den vill med. Industrin och jordbruket tjänar pengar utan krångliga regler. Djuren far illa, sällsynta arter jagas tills de nästan är borta och många skäms över sitt land.' },
+    ],
+    locks: { greens: ['weak', 'none'], socialdemocracy: ['none'], libertarianism: ['animalrights'] },
+    effects: {
+      animalrights: { poaching: ['+', -12], thrmammals: ['*', 0.85], thrbirds: ['*', 0.85], methane: ['*', 0.9], fishcatch: ['*', 0.85] },
+      strong: { poaching: ['+', -6], thrmammals: ['*', 0.92], thrbirds: ['*', 0.92], methane: ['*', 0.96] },
+      improved: { poaching: ['+', -3] },
+      weak: { poaching: ['+', 6], thrmammals: ['*', 1.08], thrbirds: ['*', 1.08] },
+      none: { poaching: ['+', 12], thrmammals: ['*', 1.18], thrbirds: ['*', 1.18], methane: ['*', 1.05], fishcatch: ['*', 1.1] },
+    },
+  },
 };

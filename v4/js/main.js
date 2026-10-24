@@ -27,7 +27,7 @@ import { relLabel, naturalRelation, REL_EVENTS, sanctionFor, ALLY_MIN_REL, TRUCE
 import { scoreCountry, medalFor } from './ranking.js';
 import { money, people, soldiersOf, soldiersText, PEOPLE_PER_MAN } from './real.js';
 import { INDICATORS, IND, IND_GROUPS, RANKINGS, fmtInd, setIndicatorData, hasIndicatorData, isEstimated,
-  baseOf as baseOfInd, countryIndicators, realmIndicators, biggestChanges, rankBy } from './statistics.js';
+  baseOf as baseOfInd, countryIndicators, realmIndicators, biggestChanges, rankBy, realmPyramid } from './statistics.js';
 import { POSTS, MINISTER_COST, makeCandidate, clashOf, cabinetMods, loyaltyLevel,
   levelOf, levelMult, xpToNext, LEVEL_TITLES, MAX_LEVEL } from './ministers.js';
 import { BLOC_RULES, BLOC_FOUND_COST, BLOC_INVITE_COST, BLOC_NAMES, canJoinBloc,
@@ -56,9 +56,9 @@ function puppetColor() { const c = soloColor(); return lumOf(c) > 200 ? mixHex(c
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.9.0';
+export const VERSION = '5.10.0';
 export const VERSION_DATE = '2026-10-24';
-export const VERSION_NAME = 'KOMPISRUMMET';
+export const VERSION_NAME = 'BEFOLKNINGEN';
 
 const globe = new Globe($('#globe'));
 
@@ -3950,7 +3950,35 @@ function modSummary(mods, max = 4) {
 // V5.8: 224 mått — en sökruta och hopfällbara grupper gör fliken överblickbar.
 // Ekonomi och brott är utfällda från start; en sökning visar träffar i alla grupper.
 let statQuery = '';
-const statShut = new Set(IND_GROUPS.map((g) => g.id).filter((id) => id !== 'eko' && id !== 'brt'));
+const statShut = new Set(IND_GROUPS.map((g) => g.id).filter((id) => id !== 'eko' && id !== 'brt' && id !== 'dem'));
+const PYRAMID_GROUP = IND_GROUPS.some((x) => x.id === 'dem') ? 'dem' : 'bef';
+
+// V5.10: befolkningspyramiden — män till vänster, kvinnor till höger, äldst överst.
+// Staplarna visar dit din politik leder; den streckade ramen är hur det såg ut från start.
+function pyramidHtml(now, start) {
+  if (!now?.male?.length) return '';
+  const max = Math.max(...now.male, ...now.female, ...(start ? [...start.male, ...start.female] : [])) || 1;
+  const pct = (v) => (100 * v / max).toFixed(1) + '%';
+  const rows = [];
+  for (let i = now.groups.length - 1; i >= 0; i--) {
+    const m = now.male[i], f = now.female[i];
+    const tip = `${now.groups[i]} ÅR: ${people(m / PEOPLE_PER_MAN)} MÄN, ${people(f / PEOPLE_PER_MAN)} KVINNOR`;
+    rows.push(`<div class="prow" title="${tip}">`
+      + `<span class="pm"><i style="width:${pct(m)}"></i>${start ? `<b style="width:${pct(start.male[i])}"></b>` : ''}</span>`
+      + `<span class="pg">${now.groups[i]}</span>`
+      + `<span class="pf"><i style="width:${pct(f)}"></i>${start ? `<b style="width:${pct(start.female[i])}"></b>` : ''}</span></div>`);
+  }
+  const sum = (a) => a.reduce((x, y) => x + y, 0);
+  const median = Number.isFinite(now.medianAge) ? now.medianAge.toFixed(1).replace('.', ',') : '–';
+  const was = start && Number.isFinite(start.medianAge) && Math.abs(start.medianAge - now.medianAge) >= 0.1
+    ? ` <span class="pwas">(FRÅN START ${start.medianAge.toFixed(1).replace('.', ',')})</span>` : '';
+  return `<div class="pyr"><div class="ptitle2">\u{1F4CA} BEFOLKNINGSPYRAMID${now.estimated ? ' <span class="est">~</span>' : ''}</div>`
+    + `<div class="plegend"><span class="lm">\u{2642} MÄN ${people(sum(now.male) / PEOPLE_PER_MAN)}</span>`
+    + `<span>MEDIANÅLDER ${median} ÅR${was}</span>`
+    + `<span class="lf">KVINNOR ${people(sum(now.female) / PEOPLE_PER_MAN)} \u{2640}</span></div>`
+    + rows.join('')
+    + `<div class="pnote">STAPLARNA = DIT DIN POLITIK LEDER · STRECKAT = SOM DET VAR FRÅN START</div></div>`;
+}
 
 function applyStatFilter(body) {
   const q = statQuery.trim().toUpperCase();
@@ -3961,7 +3989,11 @@ function applyStatFilter(body) {
       row.style.display = ok ? '' : 'none';
       if (ok) hits++;
     }
-    grp.style.display = q && !hits ? 'none' : '';
+    // pyramiden syns när man söker på något som har med befolkningen att göra
+    const pyr = grp.querySelector('.pyr');
+    const pyrHit = /PYRAMID|ÅLDER|BEFOLKNING|DEMOGRAFI|MÄN|KVINNOR/.test(q);
+    if (pyr) pyr.style.display = q && !pyrHit ? 'none' : '';
+    grp.style.display = q && !hits && !(pyr && pyrHit) ? 'none' : '';
     grp.classList.toggle('shut', !q && statShut.has(grp.dataset.g));
   }
   const all = body.querySelector('#statall');
@@ -4011,6 +4043,15 @@ function renderStatsTab(body) {
       if (statShut.has(g.id)) statShut.delete(g.id); else statShut.add(g.id);
       applyStatFilter(body);
     });
+    // V5.10: befolkningspyramiden överst i demografigruppen
+    if (g.id === PYRAMID_GROUP) {
+      const s = state.solo;
+      const box = document.createElement('div');
+      box.innerHTML = pyramidHtml(
+        realmPyramid(parts, statTotals(s.stats), baselineTotalsOf, s.nation?.laws),
+        realmPyramid(parts, null, baselineTotalsOf, null));
+      if (box.firstElementChild) grp.appendChild(box.firstElementChild);
+    }
     const grid = document.createElement('div');
     grid.className = 'indgrid';
     for (const d of list) {

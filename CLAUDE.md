@@ -33,7 +33,7 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | Fil | Innehåll |
 |---|---|
 | `stats.js` | 22 nationsvärden + `computeStats`. Nya stat-nycklar MÅSTE finnas här, annars noll effekt utan fel |
-| `laws.js` · `ideologies.js` · `research.js` | lagar (48 kategorier, 347 alternativ) · 19 ideologier/doktriner + axlar + sidogrenar · 18 grenar × 9 nivåer |
+| `laws.js` · `ideologies.js` · `research.js` | lagar (56 kategorier, 396 alternativ) · 19 ideologier/doktriner + axlar + sidogrenar · 18 grenar × 9 nivåer |
 | `laws-extra.js` | V5.7: nya alternativ i befintliga lagar (`after`-position, `locks`, `effects`), splitsas in i LAWS vid laddning |
 | `laws-more.js` | V5.8: helt nya lagkategorier som bär sin egen `axis`/`dir`, `locks` och `effects` — läses av laws.js, ideologies.js och statistics.js |
 | `events.js` · `modifiers.js` · `development.js` | 699 händelser med villkor · 45 modifierare · stadsnivå/infrastruktur 0–100 |
@@ -45,7 +45,7 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | `globe.js` · `globe3d.js` | pixelglob (d3) · WebGL-planet. All ritning går via `_project`/`_front` så den funkar i båda |
 | `net.js` · `data.js` · `names.js` | PeerJS (värden äger världen) · kartdata · svenska landsnamn |
 | `real.js` | V5.6: allt som VISAS i riktiga tal — 1 💰 = 100 miljoner $, 1 🧍 = 1 000 människor, förband i soldater. Spelet räknar internt i gamla enheter |
-| `statistics.js` | 224 verkliga mått i 13 grupper per land (data/indicators.json; brott är modeller, märkta ~) som nationsvärden + lagar (`LAW_EFFECTS`) flyttar; rikes-ihopräkning, rankningar |
+| `statistics.js` | 246 verkliga mått i 14 grupper per land (data/indicators.json; brott är modeller, märkta ~) som nationsvärden + lagar (`LAW_EFFECTS`) flyttar; rikes-ihopräkning, rankningar, befolkningspyramid (`realmPyramid`, Världsbankens 5-årsgrupper per kön; `T = null` = startläget) |
 | `events/*.js` | V5.6: händelser per tema, ihopslagna i `events.js` |
 
 **Befolkningen lever (V5.7):** `state.facts[cid].p` ändras var 10:e dag (`tickPopulation`,
