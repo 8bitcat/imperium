@@ -772,10 +772,18 @@ export function lawMods(laws) {
   return sum;
 }
 
+// V5.11: lagar med många val blir inte dyrare att gå igenom — ett helt varv
+// från ände till ände kostar som mest som i en lag med sju val (6 steg × 15).
+export const LAW_FULL_STEPS = 6;
+export function lawStepCost(cat) {
+  const n = LAWS[cat]?.options.length || 2;
+  return LAW_STEP_COST * Math.min(1, LAW_FULL_STEPS / Math.max(1, n - 1));
+}
+
 export function lawChangeCost(cat, fromId, toId) {
   const opts = LAWS[cat]?.options || [];
   const a = opts.findIndex((o) => o.id === fromId);
   const b = opts.findIndex((o) => o.id === toId);
   if (a < 0 || b < 0) return 999;
-  return Math.abs(a - b) * LAW_STEP_COST;
+  return Math.round(Math.abs(a - b) * lawStepCost(cat));
 }

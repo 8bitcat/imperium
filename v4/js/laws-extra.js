@@ -3,6 +3,8 @@
 //   { kategori: [ { after: 'befintligt-id' | '^', option: {id, name, mods, desc},
 //                   locks?: [ideologier som förbjuder det], effects?: {mått: [op, n]} } ] }
 // locks läggs in i ideologiernas spärrar (ideologies.js), effects i LAW_EFFECTS (statistics.js).
+import { EXTRAS_511 } from './laws-511.js';
+
 export const LAW_EXTRAS = {
   military_service: [
     { after: 'mixed', option: { id: 'militia', name: 'Citizen militia', mods: { manpower: 12, readiness: 9, milpower: 6, integration: 4, income: -4, factory: -3 },
@@ -279,3 +281,7 @@ export const LAW_EXTRAS = {
       effects: { internet: ['*', 0.1], voice: ['+', -0.9] } },
   ],
 };
+
+// V5.11: tre nya val i varje lag (laws-511.js) — samma format, läggs till sist
+// i varje lags lista så att deras `after` kan peka på alternativen ovan
+for (const [cat, list] of Object.entries(EXTRAS_511)) (LAW_EXTRAS[cat] ||= []).push(...list);

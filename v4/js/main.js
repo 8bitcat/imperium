@@ -56,9 +56,9 @@ function puppetColor() { const c = soloColor(); return lumOf(c) > 200 ? mixHex(c
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.10.0';
-export const VERSION_DATE = '2026-10-24';
-export const VERSION_NAME = 'BEFOLKNINGEN';
+export const VERSION = '5.11.0';
+export const VERSION_DATE = '2026-10-30';
+export const VERSION_NAME = 'LAGARNAS MAKT';
 
 const globe = new Globe($('#globe'));
 
@@ -4277,7 +4277,7 @@ function renderLawsTab(body) {
     : h >= 45 ? 'DET SKAVER I RÖRELSEN'
     : h >= 25 ? 'DIN EGEN RÖRELSE KÄNNER INTE IGEN SIG'
     : 'IDEOLOGIN ÄR EN TOM FASAD';
-  body.innerHTML = `<div style="font-size:7px;color:var(--holo-dim);margin-bottom:6px">BYTE KOSTAR 15 \u{2696}\u{FE0F} PER STEG • DU HAR <span style="color:var(--amber)">${s.res.pp} \u{2696}\u{FE0F}</span> • L\u{00C5}STA ALTERNATIV BLOCKERAS AV DIN IDEOLOGI</div>
+  body.innerHTML = `<div style="font-size:7px;color:var(--holo-dim);margin-bottom:6px">BYTE KOSTAR UPP TILL 15 \u{2696}\u{FE0F} PER STEG (HELA LAGEN HÖGST 90) • DU HAR <span style="color:var(--amber)">${s.res.pp} \u{2696}\u{FE0F}</span> • L\u{00C5}STA ALTERNATIV BLOCKERAS AV DIN IDEOLOGI</div>
     <div style="font-size:7px;color:var(--holo-dim);line-height:1.9;margin-bottom:10px;border-left:2px solid ${hCol};padding-left:6px">
       \u{1F9ED} IDEOLOGISK HARMONI: <span style="color:${hCol}">${h}% — ${hTxt}</span><br>
       <span style="font-size:6px">${ideoName} HAR EN \u{00C5}SIKT OM VARJE LAG. \u{2605} = PARTIETS LINJE (HALVA PRISET). MOT LINJEN KOSTAR DUBBELT.</span>

@@ -33,9 +33,10 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | Fil | Innehåll |
 |---|---|
 | `stats.js` | 22 nationsvärden + `computeStats`. Nya stat-nycklar MÅSTE finnas här, annars noll effekt utan fel |
-| `laws.js` · `ideologies.js` · `research.js` | lagar (56 kategorier, 396 alternativ) · 19 ideologier/doktriner + axlar + sidogrenar · 18 grenar × 9 nivåer |
+| `laws.js` · `ideologies.js` · `research.js` | lagar (60 kategorier, 596 alternativ) · 19 ideologier/doktriner + axlar + sidogrenar · 18 grenar × 9 nivåer |
 | `laws-extra.js` | V5.7: nya alternativ i befintliga lagar (`after`-position, `locks`, `effects`), splitsas in i LAWS vid laddning |
 | `laws-more.js` | V5.8: helt nya lagkategorier som bär sin egen `axis`/`dir`, `locks` och `effects` — läses av laws.js, ideologies.js och statistics.js |
+| `laws-511.js` + `laws511/part1–6.js` | V5.11 LAGARNAS MAKT: tre nya val i varje lag (`EXTRAS` → laws-extra.js), fyra nya lagar (`NEW` → laws-more.js) och en stark statistikuppsättning för VARJE alternativ (`FX` → statistics.js, läggs sist och vinner per mått) |
 | `events.js` · `modifiers.js` · `development.js` | 699 händelser med villkor · 45 modifierare · stadsnivå/infrastruktur 0–100 |
 | `war.js` · `integration.js` · `stance.js` | casus belli/krav/historiska riken (32 st — ALLA `lands` krävs för utrop, `need` sätts vid laddning) · integration av erövrat land · ländernas hållning |
 | `geopolitics.js` | V5.8: VÄRLDSLÄGET — kalla krig (spänning 0–100, incidenter, kris → ibland varmt krig), val i demokratier, revolutioner/kupper som river upp lagarna. Ren logik; main.js kopplar in den via `geoApi(ctx)` i `aiWorldTick` |
@@ -69,6 +70,10 @@ Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
 ### Regler som gäller för nya saker
 - **Ny lagkategori:** alternativen i ordning pol→pol, exakt ett `default`, och en rad i
   `LAW_AXIS` (ideologies.js) — annars har ideologierna ingen åsikt om den.
+- **Varje alternativ utom default ska ha minst 5 statistikeffekter** (V5.11) — Henry vill att
+  lagarna syns i STATISTIK. Ett helt varv i en lag kostar högst 90 ⚖️ (`lawStepCost`), hur många
+  val lagen än har. Nytt val bredvid ett som en ideologi KRÄVER kan tappa kravet (grannregeln i
+  ideologies.js) — jämför `requires` före/efter.
 - **Ny ideologi:** lägg den som sidogren (`branchOf`) om den inte självklart hör hemma
   i ett led, och lägg till den i `IDEO_AXIS` (integration.js) och `IDEO_FLAGS` (blocs.js).
 - **Statistiken:** bara skillnaden mot landets STARTLÄGE flyttar måtten (det verkliga

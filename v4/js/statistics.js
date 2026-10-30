@@ -21,6 +21,7 @@ import { dollars, bigNumber } from './real.js';
 import { LAWS } from './laws.js';
 import { LAW_EXTRAS } from './laws-extra.js';
 import { NEW_LAWS } from './laws-more.js';
+import { FX_511 } from './laws-511.js';
 
 export const IND_GROUPS = [
   { id: 'eko', name: 'EKONOMI', icon: '\u{1F4B0}' },
@@ -986,6 +987,13 @@ for (const [cat, L] of Object.entries(NEW_LAWS)) {
 // V5.7: nya lagalternativ (laws-extra.js) kan ha egna direkta effekter
 for (const [cat, list] of Object.entries(LAW_EXTRAS)) {
   for (const e of list) if (e.effects) addLawFx(cat, e.option.id, e.effects);
+}
+
+// V5.11: LAGARNAS MAKT — varje alternativ i varje lag har en egen, stark
+// uppsättning (laws-511.js). Läggs sist så att de ersätter äldre värden per mått.
+for (const [cat, opts] of Object.entries(FX_511)) {
+  if (!LAWS[cat]) continue;
+  for (const [opt, fx] of Object.entries(opts)) addLawFx(cat, opt, fx);
 }
 
 // startläget per lagkategori (det verkliga datat har redan landets politik)

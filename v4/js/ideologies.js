@@ -223,7 +223,7 @@ export const IDEOLOGIES = {
     name: 'Theocracy', icon: '\u{1F64F}',
     axes: { econ: 0, auth: 80 },
     mods: { ideopower: 20, stability: 10, integration: 8, freedom: -18, research: -10, statepower: 10 },
-    requires: { religion: ['statereligion'] },
+    requires: { religion: ['statereligion', 'religiouslaw', 'clergyrule'] },   // V5.11: + prästerskapets styre
     locks: { elections: ['entirelyfree', 'free'], press: ['full', 'free', 'publicservice'] },
     doctrines: {
       islamic: { name: 'Islamic', mods: { stability: 4 } },
@@ -423,7 +423,15 @@ export function preferredIndex(nation, cat) {
   // normalisera axeln till 0..1
   let t = map.axis === 'econ' ? (a.econ + 100) / 200 : a.auth / 100;
   if (map.dir < 0) t = 1 - t;
-  return Math.round(t * (opts.length - 1));
+  const i = Math.round(t * (opts.length - 1));
+  // V5.11: partiets linje är aldrig ett alternativ ideologin själv spärrar —
+  // då blir det närmaste tillåtna grannen
+  const locked = IDEOLOGIES[nation?.ideology]?.locks?.[cat];
+  if (!locked?.includes(opts[i].id)) return i;
+  for (let d = 1; d < opts.length; d++) {
+    for (const j of [i - d, i + d]) if (j >= 0 && j < opts.length && !locked.includes(opts[j].id)) return j;
+  }
+  return i;
 }
 
 // Hur långt från ideologins önskade läge ligger den valda lagen? 0 = precis rätt.

@@ -5,6 +5,8 @@
 //                 locks?: { ideologi: [alternativ] },
 //                 effects?: { alternativ: { mått: [op, n] } } } }
 // laws.js lägger in dem i LAWS, ideologies.js i LAW_AXIS + spärrar, statistics.js i LAW_EFFECTS.
+import { NEW_511 } from './laws-511.js';
+
 export const NEW_LAWS = {
   // Fri → styrd: från att allt får sägas till att all kritik är ett brott.
   speech: {
@@ -398,3 +400,6 @@ export const NEW_LAWS = {
     },
   },
 };
+
+// V5.11: fyra nya lagar (laws-511.js) i samma format
+Object.assign(NEW_LAWS, NEW_511);
