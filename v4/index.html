@@ -366,6 +366,10 @@
   .ftext { font-size: 7px; color: var(--holo-dim); line-height: 2; margin: 4px 0; }
   .ftext b { color: var(--amber); font-weight: normal; }
   .fpick { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+  /* V5.13: BANKEN */
+  .bankhead { display: flex; gap: 12px; align-items: center; font-size: 7px; line-height: 2; color: var(--holo-dim); margin: 6px 0; }
+  .bankhead b { color: var(--amber); font-weight: normal; font-size: 11px; }
+  .brating { --rc: #4ae37a; flex: none; min-width: 58px; text-align: center; padding: 8px 6px; font-size: 14px; color: var(--rc); border: 2px solid var(--rc); }
   .chaosm { display: inline-block; width: 120px; height: 8px; vertical-align: middle; margin: 0 6px; background: rgba(255,107,94,0.15); }
   .chaosm i { display: block; height: 100%; }
   .tbar { display: inline-block; width: 70px; height: 6px; margin: 0 4px; vertical-align: middle; background: rgba(57,215,255,0.15); }
@@ -1045,6 +1049,7 @@
     <div id="nattabs">
       <button class="nattab on" data-tab="oversikt">ÖVERSIKT</button>
       <button class="nattab" data-tab="landet">LANDET</button>
+      <button class="nattab" data-tab="banken">BANKEN</button>
       <button class="nattab" data-tab="statistik">STATISTIK</button>
       <button class="nattab" data-tab="lagar">LAGAR</button>
       <button class="nattab" data-tab="ideologi">IDEOLOGI</button>

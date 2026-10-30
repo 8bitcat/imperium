@@ -29,6 +29,8 @@ import { money, people, soldiersOf, soldiersText, PEOPLE_PER_MAN } from './real.
 import { INDICATORS, IND, IND_GROUPS, RANKINGS, fmtInd, setIndicatorData, hasIndicatorData, isEstimated,
   baseOf as baseOfInd, countryIndicators, realmIndicators, biggestChanges, rankBy, realmPyramid, setFaith } from './statistics.js';
 import { PASS_COVERS, PASS_EMBLEMS, passportHtml, defaultIdent } from './passport.js';
+import { BANK_MONTH, MONTHS_PER_YEAR, RATINGS, PLAN_YEARS, DEFAULT_PLAN, MISS_LIMIT, DEFAULT_DAYS, CRISIS_DAYS, LOAN_SHARE,
+  ratingOf, annuity, creditRoom, crisisMods } from './bank.js';
 import { FAITHS, FAITH_KEYS, faithKind, convertRate, sharesOf, compositionOf, majorityFaith, mismatch, chaosOf, chaosLabel, chaosMods } from './faith.js';
 import { POSTS, MINISTER_COST, makeCandidate, clashOf, cabinetMods, loyaltyLevel,
   levelOf, levelMult, xpToNext, LEVEL_TITLES, MAX_LEVEL } from './ministers.js';
@@ -58,9 +60,9 @@ function puppetColor() { const c = soloColor(); return lumOf(c) > 200 ? mixHex(c
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.12.0';
+export const VERSION = '5.13.0';
 export const VERSION_DATE = '2026-10-30';
-export const VERSION_NAME = 'TRON OCH NAMNET';
+export const VERSION_NAME = 'BANKEN';
 
 const globe = new Globe($('#globe'));
 
@@ -1405,6 +1407,7 @@ function recomputeNation() {
     development: devSrc,
     extra: mergeMods(mergeMods(mergeMods(mergeMods(s.extra, s.permMods), s.factionMods), s.leaderMods), cabinetMods(s.nation)),
     faith: chaosMods(s.faith?.chaos || 0),   // V5.12: religiöst kaos
+    bank: crisisMods(s.bank?.crisis || 0),   // V5.13: statsbankruttens kris
   };
   s.stats = computeStats(s.nation, s.nationSources);
   syncFaith();
@@ -1837,7 +1840,7 @@ function myIndicators(target = false) {
   if (!s?.stats || !hasIndicatorData()) return null;
   const parts = myRealmParts();
   const extra = { soldiers: mySoldiers(), reserve: (s.res?.man || 0) * PEOPLE_PER_MAN };
-  const goal = realmIndicators(parts, statTotals(s.stats), extra, baselineTotalsOf, s.nation?.laws);
+  const goal = applyBankToIndicators(realmIndicators(parts, statTotals(s.stats), extra, baselineTotalsOf, s.nation?.laws));
   if (target || !goal || !s.indLag) return goal;
   const plain = realmIndicators(parts, null, extra, baselineTotalsOf, null, true);
   const now = {};
@@ -1845,7 +1848,7 @@ function myIndicators(target = false) {
     const lag = s.indLag[id];
     now[id] = lag == null || !Number.isFinite(plain?.[id]) ? g : plain[id] + lag;
   }
-  return now;
+  return applyBankToIndicators(now);   // V5.13: skulden glider inte — den är bankens
 }
 
 function tickIndLag() {
@@ -1855,6 +1858,8 @@ function tickIndLag() {
   const goal = realmIndicators(parts, statTotals(s.stats), {}, baselineTotalsOf, s.nation?.laws);
   const plain = realmIndicators(parts, null, {}, baselineTotalsOf, null, true);
   if (!goal || !plain) return;
+  // V5.13: lagarnas och nationsvärdenas skuldeffekt blir bankens månadsunderskott
+  s.debtPolicy = Number.isFinite(goal.debt) && Number.isFinite(plain.debt) ? goal.debt - plain.debt : 0;
   s.indLag ||= {};
   for (const id of Object.keys(goal)) {
     if (!Number.isFinite(goal[id]) || !Number.isFinite(plain[id])) continue;
@@ -2747,6 +2752,7 @@ function tickDay() {
   }
   tickIntegration();
   tickFaith();   // V5.12
+  tickBank();    // V5.13: statsskulden betalas av varje månad
   tickDiplomacy();
   tickBlocApplications();
   tickMinisters();
@@ -4265,11 +4271,17 @@ function indicatorPreview(deltaMods, laws2 = null) {
   for (const [k, v] of Object.entries(deltaMods || {})) T2[k] = Math.max(-100, Math.min(100, (T2[k] || 0) + v));
   const parts = myRealmParts();
   const laws = s.nation?.laws || null;
-  const ch = biggestChanges(realmIndicators(parts, T, {}, baselineTotalsOf, laws),
-    realmIndicators(parts, T2, {}, baselineTotalsOf, laws2 || laws), 4);
-  if (!ch.length) return '';
+  const a = realmIndicators(parts, T, {}, baselineTotalsOf, laws);
+  const b = realmIndicators(parts, T2, {}, baselineTotalsOf, laws2 || laws);
+  // V5.13: skulden flyttas inte direkt — politiken blir ett under- eller överskott hos banken
+  const dd = (b?.debt ?? 0) - (a?.debt ?? 0);
+  const budget = Math.abs(dd) >= 0.5
+    ? `<span class="${dd > 0 ? 'dn' : 'dp'}">\u{1F3E6} ${dd > 0 ? 'STATEN LÅNAR' : 'ÖVERSKOTT BETALAR AV'} ${fmtNum(Math.abs(dd) / 10)} % AV BNP MER PER ÅR</span>` : '';
+  const ch = biggestChanges(a, b, 6).filter((c) => c.id !== 'debt' && c.id !== 'interestpay').slice(0, 4);
+  if (!ch.length) return budget ? '<br>' + budget : '';
   return '<br>\u{1F4CA} ' + ch.map((c) => `<span class="${c.good == null ? 'dc' : c.good ? 'dp' : 'dn'}">`
-    + `${c.name.toUpperCase()} ${fmtInd(c.id, c.from)} \u{2192} ${fmtInd(c.id, c.to)}</span>`).join(' &nbsp;\u{00B7}&nbsp; ');
+    + `${c.name.toUpperCase()} ${fmtInd(c.id, c.from)} \u{2192} ${fmtInd(c.id, c.to)}</span>`).join(' &nbsp;\u{00B7}&nbsp; ')
+    + (budget ? ' &nbsp;\u{00B7}&nbsp; ' + budget : '');
 }
 
 function renderNationTab() {
@@ -4280,6 +4292,7 @@ function renderNationTab() {
   recomputeNation();
   if (natTab === 'statistik') return renderStatsTab(body);
   if (natTab === 'landet') return renderLandTab(body);   // V5.12
+  if (natTab === 'banken') return renderBankTab(body);   // V5.13
   if (natTab === 'lagar') return renderLawsTab(body);
   if (natTab === 'ideologi') return renderIdeologyTab(body);
   if (natTab === "forskning") return renderResearchTab(body);
@@ -4672,6 +4685,273 @@ function renderLandTab(body) {
     g2.appendChild(go);
   }
   body.appendChild(g2);
+}
+
+// ---------- V5.13: BANKEN — statsskulden betalas av varje månad ----------
+// Skulden är pengar (state.solo.bank.debt i 💰) och visas i % av BNP. BNP i
+// spelets pengar = fyra spelår av rikets grundinkomst (ungefär verklig skala för
+// ett rikt land: Sverige ~690 MDR $). Banken sätter betyget (bank.js) och därmed
+// ränta, längsta plan och hur mycket mer den lånar ut.
+const fmtNum = (v) => String(Math.round(v * 10) / 10).replace('.', ',');
+
+function bankY() {
+  let daily = 10;
+  for (const { cid, share } of myRealmParts()) daily += countryIncomeOf(state.facts[cid]?.p, cid) * share;
+  return 4 * 120 * daily;
+}
+
+function bankState() {
+  const s = state.solo;
+  if (s.bank) return s.bank;
+  // startskulden = rikets verkliga statsskuld (Världsbanken/IMF) i procent av BNP
+  const plain = hasIndicatorData() ? realmIndicators(myRealmParts(), null, {}, baselineTotalsOf, null, true) : null;
+  const pct = Number.isFinite(plain?.debt) ? plain.debt : 50;
+  s.bank = { debt: Math.round(pct / 100 * bankY()), plan: null, months: 0, missed: 0, defaultUntil: 0, crisis: 0, log: [], start: pct };
+  const R = bankRating();
+  s.bank.plan = Math.min(DEFAULT_PLAN, RATINGS[R.idx].term);
+  s.bank.months = s.bank.plan * MONTHS_PER_YEAR;
+  return s.bank;
+}
+
+const debtPct = () => 100 * (state.solo.bank?.debt || 0) / Math.max(1, bankY());
+
+// skuldbromsen (lagen Debt brake): de två stramaste valen ger banken förtroende, det sista tar bort det
+function brakeNotch() {
+  const opts = LAWS.debt_brake?.options;
+  const cur = state.solo?.nation?.laws?.debt_brake;
+  if (!opts || !cur) return 0;
+  const i = opts.findIndex((o) => o.id === cur);
+  return i >= 0 && i <= 1 ? 1 : i === opts.length - 1 ? -1 : 0;
+}
+
+function bankRating() {
+  const s = state.solo;
+  const st = s.stats || {};
+  return ratingOf({
+    pct: 100 * (s.bank?.debt || 0) / Math.max(1, bankY()),
+    tier: WEALTH_TIER[s.home] || 1,
+    stability: st.stability?.total, unrest: st.unrest?.total, corruption: st.corruption?.total,
+    missed: s.bank?.missed || 0,
+    defaulted: (s.bank?.defaultUntil || 0) > (s.clock?.day || 0),
+    atWar: Object.values(s.wars || {}).some((w) => w.status === 'ready') || !!state.battle,
+    brake: brakeNotch(),
+  });
+}
+
+// det banken kräver nästa månad: { pay, interest, rate }
+function bankBill() {
+  const b = state.solo.bank;
+  const R = RATINGS[bankRating().idx];
+  const months = Math.min(b.months > 0 ? b.months : b.plan * MONTHS_PER_YEAR, R.term * MONTHS_PER_YEAR);
+  const pay = b.debt > 0 ? Math.max(1, Math.round(annuity(b.debt, R.rate, months))) : 0;
+  return { pay, interest: b.debt * R.rate / 100 / MONTHS_PER_YEAR, rate: R.rate, months };
+}
+
+// statistiken: Statsskuld och Räntekostnader är bankens verkliga siffror
+function applyBankToIndicators(out) {
+  const s = state.solo;
+  if (!out || !s?.bank) return out;
+  out.debt = debtPct();
+  const R = RATINGS[bankRating().idx];
+  out.interestpay = Math.min(100, 100 * (s.bank.debt * R.rate / 100) / Math.max(1, bankY() / 4));
+  return out;
+}
+
+function tickBank() {
+  const s = state.solo;
+  if (!s?.nation || !hasIndicatorData()) return;
+  const b = bankState();
+  if (b.crisis > 0) b.crisis--;
+  if (s.clock.day % BANK_MONTH !== 0) return;
+  const Y = bankY();
+  // din politik: lagarnas skuldeffekt blir ett underskott (eller överskott) som
+  // sprids ut över tio spelår — generösa pensioner måste lånas till varje månad
+  const flow = (s.debtPolicy || 0) / 40 / 100 * Y;
+  const wasZero = !(b.debt > 0);
+  b.debt = Math.max(0, b.debt + flow);
+  if (b.debt < 1) { b.debt = 0; return; }
+  if (wasZero) { b.plan = Math.min(DEFAULT_PLAN, RATINGS[bankRating().idx].term); b.months = b.plan * MONTHS_PER_YEAR; }
+  const R = RATINGS[bankRating().idx];
+  if (!(b.months > 0)) {   // planen är slut men skulden finns kvar — banken lägger en ny
+    b.plan = Math.min(DEFAULT_PLAN, R.term);
+    b.months = b.plan * MONTHS_PER_YEAR;
+    toast(`\u{1F3E6} BANKEN LÄGGER EN NY AVBETALNINGSPLAN PÅ ${b.plan} ÅR`, 'amber', 6000);
+  }
+  if (b.months > R.term * MONTHS_PER_YEAR) {
+    b.months = R.term * MONTHS_PER_YEAR;
+    b.plan = R.term;
+    toast(`\u{1F3E6} BANKEN KORTAR PLANEN TILL ${R.term} ÅR — BETYGET ÄR NU ${R.id}`, 'red', 7000);
+  }
+  const { pay, interest } = bankBill();
+  const before = debtPct();
+  if (s.res.money >= pay) {
+    s.res.money -= pay;
+    b.debt = Math.max(0, b.debt + interest - pay);
+    b.missed = 0;
+    b.log.unshift({ day: s.clock.day, pay, paid: pay, pct: debtPct() });
+    toast(`\u{1F3E6} AVBETALNING ${money(pay)} — STATSSKULDEN ${fmtInd('debt', debtPct())}`, '', 4000);
+  } else {
+    // pengarna räcker inte: allt som finns går till banken, resten läggs på skulden med straffavgift
+    const paid = Math.max(0, Math.floor(s.res.money));
+    s.res.money -= paid;
+    b.debt = b.debt + interest - paid + (pay - paid) * 0.1;
+    b.missed = (b.missed || 0) + 1;
+    b.log.unshift({ day: s.clock.day, pay, paid, pct: debtPct() });
+    toast(`\u{1F6A8} STATSKASSAN RÄCKTE INTE TILL BANKEN — ${b.missed}/${MISS_LIMIT} MISSADE BETALNINGAR`, 'red', 9000);
+    logEvent(`\u{1F6A8} MISSAD AVBETALNING: BETALADE ${money(paid)} AV ${money(pay)}`, { mine: true });
+    if (b.missed >= MISS_LIMIT) stateBankrupt();
+  }
+  b.log.length = Math.min(b.log.length, 8);
+  b.months--;
+  if (b.debt < 1) {
+    b.debt = 0;
+    toast(`\u{1F389} STATSSKULDEN ÄR AVBETALD! (VAR ${fmtInd('debt', before)})`, 'amber', 10000);
+    logEvent('\u{1F389} STATSSKULDEN ÄR AVBETALD', { mine: true });
+    globe.addFireworks(capitalLL(s.home), 7000);
+  }
+  renderResbar();
+}
+
+// tre missade månader i rad: staten går i konkurs
+function stateBankrupt() {
+  const s = state.solo;
+  const b = s.bank;
+  b.debt = Math.round(b.debt * 0.5);   // långivarna får nöja sig med hälften
+  b.missed = 0;
+  b.defaultUntil = s.clock.day + DEFAULT_DAYS;
+  b.crisis = CRISIS_DAYS;
+  b.plan = RATINGS[RATINGS.length - 1].term;
+  b.months = b.plan * MONTHS_PER_YEAR;
+  toast('\u{1F4A5} STATSBANKRUTT! BANKEN STRYKER HALVA SKULDEN — MEN LANDET HAMNAR I KRIS OCH FÅR INGA NYA LÅN', 'red', 14000);
+  logEvent('\u{1F4A5} STATSBANKRUTT — HALVA SKULDEN STRUKEN, BETYGET D I ETT ÅR', { mine: true, war: true });
+  recomputeNation();
+}
+
+function bankPayExtra(share) {
+  const s = state.solo;
+  const b = bankState();
+  const amt = Math.min(Math.floor(s.res.money), Math.ceil(b.debt * share));
+  if (!(amt > 0)) { warn('INGA PENGAR ATT BETALA MED'); return; }
+  s.res.money -= amt;
+  b.debt = Math.max(0, b.debt - amt);
+  if (b.debt < 1) b.debt = 0;
+  toast(b.debt ? `\u{1F3E6} EXTRA AVBETALNING ${money(amt)} — SKULDEN ${fmtInd('debt', debtPct())}` : '\u{1F389} STATSSKULDEN ÄR AVBETALD!', 'amber', 6000);
+  if (!b.debt) { logEvent('\u{1F389} STATSSKULDEN ÄR AVBETALD', { mine: true }); globe.addFireworks(capitalLL(s.home), 7000); }
+  renderResbar(); renderNationTab();
+}
+
+function bankBorrow() {
+  const s = state.solo;
+  const b = bankState();
+  const R = bankRating();
+  const amt = Math.round(LOAN_SHARE * bankY());
+  if (R.idx >= RATINGS.length - 1 || creditRoom(b.debt, bankY(), WEALTH_TIER[s.home] || 1, R.idx) < amt) {
+    warn(`BANKEN LÅNAR INTE UT MER MED BETYGET ${RATINGS[R.idx].id}`);
+    return;
+  }
+  if (!(b.debt > 0)) { b.plan = Math.min(DEFAULT_PLAN, RATINGS[R.idx].term); b.months = b.plan * MONTHS_PER_YEAR; }
+  b.debt += amt;
+  s.res.money += amt;
+  toast(`\u{1F3E6} DU LÅNADE ${money(amt)} — SKULDEN ÄR NU ${fmtInd('debt', debtPct())}`, 'amber', 6000);
+  logEvent(`\u{1F3E6} LÅN PÅ ${money(amt)} — STATSSKULDEN ${fmtInd('debt', debtPct())}`, { mine: true });
+  renderResbar(); renderNationTab();
+}
+
+function bankSetPlan(years) {
+  const b = bankState();
+  if (years > RATINGS[bankRating().idx].term) return;
+  b.plan = years;
+  b.months = years * MONTHS_PER_YEAR;
+  toast(`\u{1F3E6} NY AVBETALNINGSPLAN: ${years} ÅR — ${money(bankBill().pay)} I MÅNADEN`, 'amber', 5000);
+  renderNationTab();
+}
+
+function renderBankTab(body) {
+  const s = state.solo;
+  body.innerHTML = '';
+  if (!hasIndicatorData()) { body.textContent = 'BANKEN ÖPPNAR NÄR STATISTIKEN HAR LADDATS'; return; }
+  const b = bankState();
+  const R = bankRating();
+  const rt = RATINGS[R.idx];
+  const bill = bankBill();
+  const pct = debtPct();
+  const day = s.clock?.day || 1;
+  const nextIn = BANK_MONTH - (day % BANK_MONTH);
+  const g = document.createElement('div');
+  g.className = 'natgroup';
+  const yearsLeft = b.debt > 0 ? Math.ceil(bill.months / MONTHS_PER_YEAR) : 0;
+  const flowYear = (s.debtPolicy || 0) / 10;
+  const flowTxt = Math.abs(flowYear) < 0.05 ? 'DIN POLITIK GÅR JÄMNT UPP — INGEN NY SKULD'
+    : flowYear > 0 ? `<span style="color:var(--red)">DIN POLITIK KOSTAR MER ÄN DEN GER: STATEN LÅNAR ${fmtNum(flowYear)} % AV BNP PER ÅR</span>`
+    : `<span style="color:#4ae37a">DIN POLITIK GER ÖVERSKOTT: ${fmtNum(-flowYear)} % AV BNP PER ÅR BETALAR AV SKULDEN</span>`;
+  g.innerHTML = `<div class="gtitle">▸ \u{1F3E6} STATSSKULDEN</div>
+    <div class="bankhead"><span class="brating" style="--rc:${rt.color}">${rt.id}</span>
+      <div><b>${b.debt > 0 ? fmtInd('debt', pct) : 'INGEN SKULD'}</b>${b.debt > 0 ? ` &nbsp;(${money(b.debt)})` : ''}<br>
+      RÄNTA ${fmtNum(rt.rate)} % PER ÅR • BANKEN TILLÅTER PLANER PÅ HÖGST ${rt.term} ÅR</div></div>
+    <div class="ftext">${b.debt > 0
+      ? `VARJE MÅNAD (30 DAGAR) BETALAR DU <b>${money(bill.pay)}</b> — VARAV RÄNTA ${money(bill.interest)}. NÄSTA BETALNING OM ${nextIn} DAGAR.<br>`
+        + `MED DEN HÄR PLANEN ÄR SKULDEN AVBETALD OM ${yearsLeft} ÅR (RUNT DAG ${day + bill.months * BANK_MONTH}).`
+      : 'STATEN ÄR SKULDFRI. BANKEN LÅNAR UT OM DU BEHÖVER — MEN DÅ BÖRJAR AVBETALNINGARNA IGEN.'}<br>${flowTxt}`
+      + (b.missed ? `<br><span style="color:var(--red)">\u{1F6A8} ${b.missed}/${MISS_LIMIT} MISSADE BETALNINGAR I RAD — VID ${MISS_LIMIT} GÅR STATEN I KONKURS</span>` : '')
+      + (b.crisis > 0 ? `<br><span style="color:var(--red)">\u{1F4A5} BANKRUTTKRIS: ${b.crisis} DAGAR KVAR</span>` : '')
+      + '</div>';
+  // betyget och vad som påverkar det
+  const why = [`VÄGD SKULD ${fmtNum(R.eff ?? pct)} % (SKULD DELAT MED VÄLSTÅND) → ${RATINGS[R.base].id}`,
+    ...R.notes.map(([t, d]) => `${t} ${d > 0 ? '+' : ''}${d} STEG`)];
+  g.innerHTML += `<div class="ftext">KREDITBETYG: ${why.join(' • ')}</div>`;
+  // avbetalningsplanen
+  const plans = document.createElement('div');
+  plans.className = 'fpick';
+  const lab = document.createElement('div');
+  lab.className = 'ftext';
+  lab.textContent = 'AVBETALNINGSPLAN — DET BANKEN TILLÅTER:';
+  for (const y of PLAN_YEARS) {
+    const btn = document.createElement('button');
+    const ok = y <= rt.term;
+    const curPlan = b.debt > 0 && Math.ceil(bill.months / MONTHS_PER_YEAR) <= y && (b.plan === y);
+    btn.className = 'lawopt' + (curPlan ? ' cur' : '') + (ok ? '' : ' locked');
+    btn.textContent = `${ok ? '' : '\u{1F512} '}${y} ÅR`;
+    const p = annuity(b.debt, rt.rate, y * MONTHS_PER_YEAR);
+    btn.addEventListener('mouseenter', () => setPreview(ok
+      ? `<span class="dc">PLAN PÅ ${y} ÅR</span> &nbsp; ${money(Math.round(p))} I MÅNADEN, ${money(Math.round(p * y * MONTHS_PER_YEAR))} TOTALT`
+      : `<span class="dn">\u{1F512} BANKEN TILLÅTER HÖGST ${rt.term} ÅR MED BETYGET ${rt.id}</span>`));
+    btn.addEventListener('mouseleave', () => setPreview());
+    btn.addEventListener('click', () => (ok ? bankSetPlan(y) : warn(`BANKEN TILLÅTER HÖGST ${rt.term} ÅR MED BETYGET ${rt.id}`)));
+    plans.appendChild(btn);
+  }
+  if (b.debt > 0) { g.appendChild(lab); g.appendChild(plans); }
+  // extra avbetalning och lån
+  const acts = document.createElement('div');
+  acts.className = 'fpick';
+  const mk = (txt, fn, dis, tip) => {
+    const btn = document.createElement('button');
+    btn.className = 'lawopt' + (dis ? ' locked' : '');
+    btn.textContent = txt;
+    if (tip) { btn.addEventListener('mouseenter', () => setPreview(tip)); btn.addEventListener('mouseleave', () => setPreview()); }
+    btn.addEventListener('click', fn);
+    acts.appendChild(btn);
+  };
+  if (b.debt > 0) {
+    mk(`\u{1F4B8} BETALA 10 % EXTRA (${money(Math.min(Math.floor(s.res.money), Math.ceil(b.debt * 0.1)))})`, () => bankPayExtra(0.1), s.res.money < 1);
+    mk(`\u{1F4B0} BETALA ALLT (${money(Math.ceil(b.debt))})`, () => bankPayExtra(1), s.res.money < b.debt,
+      s.res.money < b.debt ? `<span class="dn">DU HAR ${money(s.res.money)} — SKULDEN ÄR ${money(Math.ceil(b.debt))}</span>` : '');
+  }
+  const loan = Math.round(LOAN_SHARE * bankY());
+  const room = creditRoom(b.debt, bankY(), WEALTH_TIER[s.home] || 1, R.idx);
+  const canLoan = R.idx < RATINGS.length - 1 && room >= loan;
+  mk(`\u{1F3E6} LÅNA ${money(loan)}`, bankBorrow, !canLoan, canLoan
+    ? `<span class="dc">LÅN PÅ 5 % AV BNP</span> &nbsp; BANKEN LÅNAR UT ${money(Math.floor(room))} TILL MED BETYGET ${rt.id} — SEDAN STIGER MÅNADSBETALNINGEN`
+    : `<span class="dn">BANKEN LÅNAR INTE UT MER MED BETYGET ${rt.id}</span>`);
+  g.appendChild(acts);
+  // de senaste betalningarna
+  if (b.log?.length) {
+    const h = document.createElement('div');
+    h.className = 'ftext';
+    h.innerHTML = 'SENASTE MÅNADERNA: ' + b.log.slice(0, 6).map((e) => `DAG ${e.day}: ${e.paid >= e.pay
+      ? `<span style="color:#4ae37a">${money(e.paid)}</span>` : `<span style="color:var(--red)">${money(e.paid)} AV ${money(e.pay)}</span>`}`).join(' • ');
+    g.appendChild(h);
+  }
+  body.appendChild(g);
 }
 
 // ---------- LAGAR-fliken ----------
@@ -6977,7 +7257,7 @@ function saveGame() {
           known: [...(s.known || [])],
           popMark: s.popMark, popStep: s.popStep,
           coldWars: s.coldWars, revolutions: s.revolutions, rest: s.rest, color: s.color,   // V5.8
-          faith: s.faith, ident: s.ident,   // V5.12–5.13
+          faith: s.faith, ident: s.ident, bank: s.bank,   // V5.12–5.13
         },
         world: state.world || {},
         history: (state.history || []).slice(0, 120),
@@ -7028,7 +7308,7 @@ function saveSession() {
       garrisons: s.garrisons, army: s.army, integ: s.integ, wars: s.wars, day: s.clock?.day || 1,
       rel: s.rel, allies: s.allies, truces: s.truces, disarmed: s.disarmed, cabinet: s.nation?.cabinet,
       partial: s.partial, bloc: s.bloc, aiBlocs: s.aiBlocs, flag: s.flag, indLag: s.indLag,
-      faith: s.faith, ident: s.ident,   // V5.12–5.13
+      faith: s.faith, ident: s.ident, bank: s.bank,   // V5.12–5.13
     }));
   } catch (e) { /* privat läge / fullt lager — strunt samma */ }
 }
@@ -7070,7 +7350,8 @@ function restoreSession(snap, home) {
   s.partial = snap.partial || {};
   s.indLag = snap.indLag || null;   // V5.6
   s.faith = snap.faith || null;   // V5.12
-  s.ident = snap.ident || null;   // V5.13
+  s.ident = snap.ident || null;   // V5.12
+  s.bank = snap.bank || null;   // V5.13
   s.stateFlags = snap.stateFlags || {};
   s.bloc = snap.bloc || null;
   s.aiBlocs = snap.aiBlocs || [];

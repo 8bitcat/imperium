@@ -33,7 +33,7 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | Fil | Innehåll |
 |---|---|
 | `stats.js` | 22 nationsvärden + `computeStats`. Nya stat-nycklar MÅSTE finnas här, annars noll effekt utan fel |
-| `laws.js` · `ideologies.js` · `research.js` | lagar (60 kategorier, 596 alternativ) · 19 ideologier/doktriner + axlar + sidogrenar · 18 grenar × 9 nivåer |
+| `laws.js` · `ideologies.js` · `research.js` | lagar (65 kategorier, 637 alternativ) · 19 ideologier/doktriner + axlar + sidogrenar · 18 grenar × 9 nivåer |
 | `laws-extra.js` | V5.7: nya alternativ i befintliga lagar (`after`-position, `locks`, `effects`), splitsas in i LAWS vid laddning |
 | `laws-more.js` | V5.8: helt nya lagkategorier som bär sin egen `axis`/`dir`, `locks` och `effects` — läses av laws.js, ideologies.js och statistics.js |
 | `laws-511.js` + `laws511/part1–6.js` | V5.11 LAGARNAS MAKT: tre nya val i varje lag (`EXTRAS` → laws-extra.js), fyra nya lagar (`NEW` → laws-more.js) och en stark statistikuppsättning för VARJE alternativ (`FX` → statistics.js, läggs sist och vinner per mått) |
@@ -49,6 +49,7 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | `statistics.js` | 261 verkliga mått i 15 grupper per land (data/indicators.json; brott är modeller, märkta ~) som nationsvärden + lagar (`LAW_EFFECTS`) flyttar; rikes-ihopräkning, rankningar, befolkningspyramid (`realmPyramid`, Världsbankens 5-årsgrupper per kön; `T = null` = startläget) |
 | `events/*.js` | V5.6: händelser per tema, ihopslagna i `events.js` |
 | `faith.js` · `country-data.js` | V5.12 TRON: folkets tro per land (`RELIGION_SHARES`, ungefär Pew 2020), statens tro via religionslagen (`faithKind`: state/neutral/none), omvändelse i steg per land och kaos när staten och folket tror olika (`chaosOf`, `chaosMods`) |
+| `bank.js` | V5.13 BANKEN: kreditbetyg AAA–D (`ratingOf`: skuld delat med välstånd + stabilitet, oro, korruption, krig, skuldbroms, missade betalningar), ränta/längsta plan/lånetak per betyg, annuitet (`annuity`), bankruttkris (`crisisMods`) |
 | `passport.js` | V5.12 NAMNET: landets identitet (`defaultIdent` ur `OFFICIAL` i country-data.js: officiellt namn, ISO alpha-3, passfärg) och passet med riktiga MRZ-rader (`passportHtml`) |
 
 **Befolkningen lever (V5.7):** `state.facts[cid].p` ändras var 10:e dag (`tickPopulation`,
@@ -68,6 +69,8 @@ sedan går med som vanlig `player` (`state.hosting`). Kompisar går med på kode
 `imperium.room` (`ROOM_KEY`, menyn: FORTSÄTT RUMMET), solo/TV i `imperium.game`.
 
 **Tron och namnet (V5.12):** fliken LANDET i NATION. `state.solo.faith` = { rel (statens tro), by: {cid: [[tro, andel]]} omvändelsesteg, chaos 0..1 } — `tickFaith` omvänder dagligen och ger incidenter; kaoset går in som egen källa `faith` i `computeStats` och via `setFaith` i statistiken. `religionFor(hemland)` följer statens tro. `state.solo.ident` = { off, short, code, cover, word, emblem, holder, renamed, day } — namnet byts EN gång; kortnamnet skrivs in i `globe.getCountry(cid).name` (`setCountryName`, originalet i `name0`) så det syns överallt. I rum skickas det som `realm` i `nation`-meddelandet (och `rename`), värden lägger det på `player.realm` och alla kör `applyIdent()` i `applyState`.
+
+**Statsskulden (V5.13):** `state.solo.bank` = { debt (💰), plan (år), months kvar, missed, defaultUntil, crisis, log }. Rikets BNP i spelets pengar = `bankY()` (fyra spelår av grundinkomsten). Startskulden = rikets verkliga statsskuld i % av BNP. `tickBank` betalar var 30:e dag; räcker pengarna inte läggs resten på skulden och efter 3 missade månader blir det statsbankrutt (halva skulden struken, betyget D i ett år, kris). Lagarnas och nationsvärdenas skuldeffekt (`s.debtPolicy` från `tickIndLag`) blir ett månadsunderskott eller -överskott (/40 per månad). Statsskuld och Räntekostnader i STATISTIK skrivs över med bankens siffror (`applyBankToIndicators`), och förhandsrutan för lagar visar skuldeffekten som "STATEN LÅNAR X % AV BNP MER PER ÅR".
 
 Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
 

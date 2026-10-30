@@ -60,7 +60,7 @@ export const INDICATORS = [
     fx: { income: 3, stability: -3, corruption: 2, unrest: 2, statepower: 1 }, desc: 'Hur snabbt priserna stiger per år' },
   { id: 'lendrate', name: 'Utlåningsränta', group: 'eko', fmt: 'pct', better: 'low', mode: 'add', min: 0, max: 80,
     fx: { stability: -2, corruption: 2, gdp: -1 }, desc: 'Vad det kostar att låna pengar' },
-  { id: 'debt', name: 'Statsskuld', group: 'eko', fmt: 'pctgdp', better: 'low', mode: 'add', min: 0, max: 300, agg: 'gdp',
+  { id: 'debt', name: 'Statsskuld', group: 'eko', fmt: 'pctgdp', better: 'low', mode: 'add', min: 0, max: 1000, agg: 'gdp',
     fx: { welfare: 15, income: -20, milpower: 8, stability: -5 }, desc: 'Statens skulder i procent av BNP' },
   { id: 'tax', name: 'Skatteintäkter', group: 'eko', fmt: 'pctgdp', better: null, mode: 'add', min: 3, max: 60, agg: 'gdp',
     fx: { income: 12, welfare: 6, gdp: -3 }, desc: 'Skatter i procent av BNP' },
