@@ -312,6 +312,62 @@
   .hrow.war { color: #ff9b8a; }
   /* V5.8: VÄRLDSLÄGET — kalla krig, krig, revolutioner */
   .wsec { color: var(--amber); font-size: 6px; margin: 10px 0 2px; }
+  /* V5.12: LANDET-fliken — passet, namnbytet och tron */
+  .passport { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin: 8px 0 10px; }
+  .pp-cover { --pp: #6b1d2a; width: 150px; height: 214px; flex: none; position: relative; box-sizing: border-box;
+    border-radius: 3px 10px 10px 3px; padding: 14px 10px 12px; text-align: center; color: #e2c26a;
+    background: linear-gradient(90deg, rgba(0,0,0,0.35) 0 7px, transparent 7px),
+      repeating-linear-gradient(45deg, rgba(255,255,255,0.035) 0 2px, transparent 2px 4px), var(--pp);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.55), inset 0 0 0 2px rgba(226,194,106,0.22);
+    display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
+  .pp-off { font-size: 7px; line-height: 1.7; letter-spacing: 1px; text-shadow: 0 1px 0 rgba(0,0,0,0.5); }
+  .pp-ring { width: 64px; height: 64px; border: 2px solid #e2c26a; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 3px rgba(226,194,106,0.2); }
+  .pp-emb { font-size: 32px; line-height: 1; filter: grayscale(1) sepia(1) saturate(5) hue-rotate(-12deg) brightness(1.15); }
+  .pp-embflag > * { width: 42px !important; height: auto !important; display: block; border-radius: 2px; }
+  .pp-word { font-size: 9px; letter-spacing: 2px; line-height: 1.7; }
+  .pp-word small { font-size: 6px; letter-spacing: 1px; opacity: 0.8; }
+  .pp-chip { width: 18px; height: 12px; border: 2px solid #e2c26a; border-radius: 3px; position: relative; box-sizing: border-box; }
+  .pp-chip::after { content: ''; position: absolute; left: 4px; top: 1px; width: 6px; height: 6px; border: 1px solid #e2c26a; border-radius: 50%; }
+  .pp-page { width: 290px; max-width: 100%; height: 214px; box-sizing: border-box; padding: 10px; border-radius: 3px; color: #2b2f3a;
+    background: repeating-radial-gradient(circle at 72% 38%, rgba(110,140,190,0.11) 0 2px, transparent 2px 6px), linear-gradient(160deg, #eef1e6, #dbe3ee);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.55); display: flex; flex-direction: column; gap: 6px; }
+  .pp-head { font-size: 6px; display: flex; justify-content: space-between; gap: 6px; color: #4a5872; letter-spacing: 1px; line-height: 1.5; }
+  .pp-grid { display: flex; gap: 8px; flex: 1; min-height: 0; }
+  .pp-photo { flex: none; }
+  .pp-photo svg { width: 62px; height: 70px; display: block; border: 1px solid #9aa6b8; }
+  .pp-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; font-size: 7px; align-content: start; min-width: 0; flex: 1; }
+  .pp-fields div { line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pp-fields .w { grid-column: span 2; }
+  .pp-fields i { display: block; font-style: normal; font-size: 5px; color: #6a7891; }
+  .pp-mrz { font-family: 'Courier New', monospace; font-size: 8px; letter-spacing: 0.4px; color: #1d2230; line-height: 1.3; white-space: nowrap; overflow: hidden; }
+  .landid { font-size: 8px; line-height: 2; color: var(--holo); text-align: center; }
+  .landid b { color: var(--amber); font-weight: normal; font-size: 10px; }
+  #renamebox { z-index: 80; }
+  #renamebox .card { width: min(760px, 94vw); max-height: 94vh; overflow-y: auto; text-align: left; padding: 18px; }
+  #renamebox .logo { text-align: center; }
+  .rnwarn { font-size: 7px; color: var(--amber); text-align: center; margin: 6px 0; line-height: 1.8; }
+  .rngrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 12px; align-items: start; }
+  .rnrow { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; font-size: 7px; color: var(--holo-dim); }
+  .rnrow .field { width: 100%; box-sizing: border-box; font-size: 8px; letter-spacing: 1px; text-align: left; text-transform: uppercase; margin: 0; padding: 8px; }
+  .rnsw { display: flex; flex-wrap: wrap; gap: 4px; }
+  .rnsw button { width: 24px; height: 24px; border: 2px solid rgba(255,255,255,0.15); cursor: pointer; padding: 0; }
+  .rnsw button.on { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber); }
+  .rnemb button { width: 30px; height: 30px; font-size: 15px; line-height: 1; background: rgba(0,0,0,0.35); color: #fff; }
+  .rnemb button.flagopt { width: auto; padding: 0 6px; font-family: inherit; font-size: 6px; }
+  @media (max-width: 640px) { .rngrid { grid-template-columns: 1fr; } }
+  .fbars { display: flex; flex-direction: column; gap: 3px; margin: 6px 0 8px; }
+  .fbar { display: grid; grid-template-columns: minmax(0, 170px) 1fr 46px; align-items: center; gap: 6px; font-size: 7px; }
+  .fbar .t { height: 8px; background: rgba(57,215,255,0.1); position: relative; }
+  .fbar .t i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--holo); }
+  .fbar.st { color: var(--amber); }
+  .fbar.st .t i { background: var(--amber); }
+  .fbar .p { text-align: right; }
+  .ftext { font-size: 7px; color: var(--holo-dim); line-height: 2; margin: 4px 0; }
+  .ftext b { color: var(--amber); font-weight: normal; }
+  .fpick { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+  .chaosm { display: inline-block; width: 120px; height: 8px; vertical-align: middle; margin: 0 6px; background: rgba(255,107,94,0.15); }
+  .chaosm i { display: block; height: 100%; }
   .tbar { display: inline-block; width: 70px; height: 6px; margin: 0 4px; vertical-align: middle; background: rgba(57,215,255,0.15); }
   .tbar i { display: block; height: 100%; }
   .cwbtn {
@@ -779,6 +835,28 @@
   </div>
 </div>
 
+<!-- V5.12: BYT NAMN — en gång per parti, med ett nytt pass -->
+<div id="renamebox" class="overlay">
+  <div class="card">
+    <div class="logo" style="font-size:12px">&#9999;&#65039; NYTT NAMN &amp; NYTT PASS</div>
+    <div class="rnwarn">DET GÅR BARA ATT BYTA NAMN EN GÅNG — VÄLJ MED OMSORG</div>
+    <div class="rngrid">
+      <div>
+        <label class="rnrow">OFFICIELLT NAMN<input id="rnOff" class="field" maxlength="48" autocomplete="off" spellcheck="false"></label>
+        <label class="rnrow">KORT NAMN (SYNS PÅ KARTAN)<input id="rnShort" class="field" maxlength="22" autocomplete="off" spellcheck="false"></label>
+        <label class="rnrow">FÖRKORTNING (2–5 BOKSTÄVER)<input id="rnCode" class="field" maxlength="5" autocapitalize="characters" autocomplete="off" spellcheck="false"></label>
+        <label class="rnrow">ORDET PÅ PASSET<input id="rnWord" class="field" maxlength="14" autocapitalize="characters" autocomplete="off" spellcheck="false"></label>
+        <div class="rnrow">PASSETS FÄRG<div id="rnCovers" class="rnsw"></div></div>
+        <div class="rnrow">EMBLEM<div id="rnEmblems" class="rnsw rnemb"></div></div>
+      </div>
+      <div id="rnPreview"></div>
+    </div>
+    <div id="rnErr" class="rnwarn" style="color:var(--red)"></div>
+    <button id="rnGo" class="btn amber">&#9989; BYT NAMN FÖR ALLTID</button>
+    <button id="rnNo" class="btn">AVBRYT</button>
+  </div>
+</div>
+
 <!-- KRIGSVARNING: går inte att missa -->
 <div id="waralert">
   <div class="wabox">
@@ -966,6 +1044,7 @@
     </div>
     <div id="nattabs">
       <button class="nattab on" data-tab="oversikt">ÖVERSIKT</button>
+      <button class="nattab" data-tab="landet">LANDET</button>
       <button class="nattab" data-tab="statistik">STATISTIK</button>
       <button class="nattab" data-tab="lagar">LAGAR</button>
       <button class="nattab" data-tab="ideologi">IDEOLOGI</button>

@@ -27,7 +27,9 @@ import { relLabel, naturalRelation, REL_EVENTS, sanctionFor, ALLY_MIN_REL, TRUCE
 import { scoreCountry, medalFor } from './ranking.js';
 import { money, people, soldiersOf, soldiersText, PEOPLE_PER_MAN } from './real.js';
 import { INDICATORS, IND, IND_GROUPS, RANKINGS, fmtInd, setIndicatorData, hasIndicatorData, isEstimated,
-  baseOf as baseOfInd, countryIndicators, realmIndicators, biggestChanges, rankBy, realmPyramid } from './statistics.js';
+  baseOf as baseOfInd, countryIndicators, realmIndicators, biggestChanges, rankBy, realmPyramid, setFaith } from './statistics.js';
+import { PASS_COVERS, PASS_EMBLEMS, passportHtml, defaultIdent } from './passport.js';
+import { FAITHS, FAITH_KEYS, faithKind, convertRate, sharesOf, compositionOf, majorityFaith, mismatch, chaosOf, chaosLabel, chaosMods } from './faith.js';
 import { POSTS, MINISTER_COST, makeCandidate, clashOf, cabinetMods, loyaltyLevel,
   levelOf, levelMult, xpToNext, LEVEL_TITLES, MAX_LEVEL } from './ministers.js';
 import { BLOC_RULES, BLOC_FOUND_COST, BLOC_INVITE_COST, BLOC_NAMES, canJoinBloc,
@@ -56,9 +58,9 @@ function puppetColor() { const c = soloColor(); return lumOf(c) > 200 ? mixHex(c
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.11.0';
+export const VERSION = '5.12.0';
 export const VERSION_DATE = '2026-10-30';
-export const VERSION_NAME = 'LAGARNAS MAKT';
+export const VERSION_NAME = 'TRON OCH NAMNET';
 
 const globe = new Globe($('#globe'));
 
@@ -250,12 +252,14 @@ function renderTopbar() {
   } else if (state.mode === 'solo') {
     const n = Object.keys(state.solo?.claims || {}).length;
     const form = state.solo?.nation?.formation;
-    el.textContent = form ? `${form.name.toUpperCase()} • ${n} LÄNDER` : (n ? `ERÖVRADE LÄNDER: ${n}` : 'ERÖVRINGSLÄGE');
+    const named = state.solo?.ident?.renamed;   // V5.12: ett nytt namn står överst
+    el.textContent = named || form ? `${realmName().toUpperCase()} • ${n} LÄNDER` : (n ? `ERÖVRADE LÄNDER: ${n}` : 'ERÖVRINGSLÄGE');
   }
   el.classList.toggle('roomlink', state.mode === 'player');
 }
 
 function applyState() {
+  applyIdent();   // V5.12: nya namn på kartan
   globe.setClaims(claimsMap());
   globe.setPartials(partialsMap());
   updateLabelOverrides();
@@ -518,7 +522,7 @@ function refreshInfoPanel() {
   const revLine = rev
     ? `<br><b>${rev.kind === 'kupp' ? '\u{1F396}\u{FE0F} KUPP' : '\u{270A} REVOLUTION'}:</b> <span style="color:var(--amber)">DAG ${rev.day} — ${(IDEOLOGIES[rev.from]?.name || rev.from).toUpperCase()} \u{2192} ${(IDEOLOGIES[rev.to]?.name || rev.to).toUpperCase()}</span>`
     : '';
-  $('#freli').innerHTML = `<b>RELIGION:</b> ${RELIGIONS[rel]?.icon || ''} ${RELIGIONS[rel]?.name.toUpperCase() || '?'}`
+  $('#freli').innerHTML = `<b>RELIGION:</b> ${faithLine(c.id)}`
     + `<br><b>HÅLLNING:</b> <span style="color:${st.color}">${st.icon} ${st.name}</span>`
     + `<br><span style="font-size:6px;color:var(--holo-dim)">${st.desc}</span>`
     + cold + revLine;
@@ -793,7 +797,7 @@ function renderFactDiplomacy(c) {
     el.appendChild(btn);
     const gift = document.createElement('button');
     gift.className = 'btn';
-    gift.innerHTML = '\u{1F381} SKICKA GÅVA (${money(200)}) <small>+12 RELATION</small>';
+    gift.innerHTML = `\u{1F381} SKICKA GÅVA (${money(200)}) <small>+12 RELATION</small>`;
     gift.addEventListener('click', () => {
       if (s.res.money < 200) { warn('FÖR LITE PENGAR'); return; }
       s.res.money -= 200;
@@ -1400,8 +1404,10 @@ function recomputeNation() {
     modifiers: modifierMods(s.mods),
     development: devSrc,
     extra: mergeMods(mergeMods(mergeMods(mergeMods(s.extra, s.permMods), s.factionMods), s.leaderMods), cabinetMods(s.nation)),
+    faith: chaosMods(s.faith?.chaos || 0),   // V5.12: religiöst kaos
   };
   s.stats = computeStats(s.nation, s.nationSources);
+  syncFaith();
 }
 
 function ownedResources() {
@@ -1789,7 +1795,7 @@ function computeRanking() {
     const sc = scoreCountry({ pop: popSum, cid: c.id, areaRank, army, stats: mine ? s.stats : null });
     rows.push({
       cid: c.id,
-      name: mine && s.home === c.id && s.nation?.formation ? s.nation.formation.name
+      name: mine && s.home === c.id && (s.ident?.renamed || s.nation?.formation) ? realmName()
         : (world?.aiEmpires?.[c.id]?.name || c.name),
       mine: !!mine, score: sc.total, parts: sc.parts,
     });
@@ -2323,8 +2329,173 @@ $('#waok').addEventListener('click', () => {
 
 // ---------- INTEGRATION av erövrade länder ----------
 // Ett nytt land är oroligt, kostar pengar och ger inget förrän det integrerats.
+// V5.12: ditt hemland har den tro staten valt — eller ingen, med ateism.
 function religionFor(cid) {
+  const s = state.solo;
+  if (s?.nation && cid === s.home) {
+    const kind = faithKind(faithLaw());
+    if (kind === 'state') return stateFaith();
+    if (kind === 'none') return 'SEKULAR';
+  }
   return religionOf(cid, globe.getCountry(cid)?.centroid);
+}
+
+// ---------- V5.12: TRON ----------
+// Folket har sin tro (faith.js), staten sin genom religionslagen. Med en
+// statsreligion omvänds folket långsamt; så länge många troende har en annan
+// tro än staten blir det oro — och väljer staten en tro som folket inte har
+// blir det totalt kaos tills omvändelsen hunnit ikapp.
+const FAITH_TITLE = { established: 'STATSKYRKA', statereligion: 'STATSRELIGION', religiouslaw: 'RELIGIÖS LAG', clergyrule: 'PRÄSTERSKAPET STYR' };
+const FAITH_PICK_COST = 40;
+const relName = (k) => `${RELIGIONS[k]?.icon || ''} ${(RELIGIONS[k]?.name || '?').toUpperCase()}`;
+
+function faithLaw() { return state.solo?.nation?.laws?.religion || 'secularism'; }
+function faithState() {
+  const s = state.solo;
+  s.faith ||= { rel: null, by: {}, chaos: 0 };
+  s.faith.by ||= {};
+  return s.faith;
+}
+
+// rikets tro just nu, vägd efter befolkning och med omvändelserna inräknade
+function realmFaith() {
+  const f = faithState();
+  const S = Object.fromEntries(FAITH_KEYS.map((k) => [k, 0]));
+  let tot = 0;
+  for (const { cid, share } of myRealmParts()) {
+    const w = (state.facts[cid]?.p || 0) * share;
+    if (!(w > 0)) continue;
+    const c = compositionOf(cid, f.by[cid]);
+    for (const k of FAITH_KEYS) S[k] += (c[k] || 0) * w;
+    tot += w;
+  }
+  if (tot > 0) for (const k of FAITH_KEYS) S[k] /= tot;
+  else Object.assign(S, sharesOf(state.solo?.home));
+  return S;
+}
+
+// statens tro: den valda, annars den folket är mest anknutet till
+function stateFaith() {
+  const f = faithState();
+  return f.rel || majorityFaith(realmFaith());
+}
+
+// statistics.js visar omvändelsen och kaoset bara i spelarens rike
+function syncFaith() {
+  const s = state.solo;
+  if (!s?.nation) { setFaith(null); return; }
+  const f = faithState();
+  const kind = faithKind(faithLaw());
+  setFaith({
+    cids: new Set(myRealmParts().map((p) => p.cid)),
+    steps: (cid) => f.by[cid] || null,
+    rel: kind === 'state' ? stateFaith() : null,
+    chaos: f.chaos || 0,
+  });
+}
+
+function updateFaithChaos() {
+  const f = faithState();
+  f.chaos = chaosOf(realmFaith(), stateFaith(), faithLaw());
+  return f.chaos;
+}
+
+// daglig omvändelse, kaos och religiösa incidenter
+function tickFaith() {
+  const s = state.solo;
+  if (!s?.nation) return;
+  const f = faithState();
+  const opt = faithLaw();
+  if (faithKind(opt) === 'state') {
+    if (!f.rel) f.rel = majorityFaith(realmFaith());
+    const rate = convertRate(opt);
+    for (const { cid } of myRealmParts()) {
+      const steps = (f.by[cid] ||= []);
+      let last = steps[steps.length - 1];
+      if (!last || last[0] !== f.rel) steps.push((last = [f.rel, 0]));
+      last[1] = Math.min(1, last[1] + rate);
+    }
+  }
+  const before = f.chaos || 0;
+  const ch = updateFaithChaos();
+  if (ch >= 0.7 && before < 0.7) {
+    toast(`\u{1F525} TOTALT KAOS — FOLKET VÄGRAR ${relName(stateFaith())}!`, 'red', 10000);
+    logEvent(`\u{1F525} RELIGIÖST KAOS: FOLKET GÅR EMOT STATENS TRO ${relName(stateFaith())}`, { mine: true });
+  } else if (ch >= 0.45 && before < 0.45) {
+    toast(`\u{26A0}\u{FE0F} RELIGIÖSA UPPLOPP — DE TROENDE PROTESTERAR MOT STATENS TRO`, 'red', 8000);
+  } else if (ch < 0.08 && before >= 0.25) {
+    toast(`\u{1F54A}\u{FE0F} DET RELIGIÖSA LUGNET ÄR TILLBAKA`, 'amber', 6000);
+    logEvent(`\u{1F54A}\u{FE0F} FOLKET HAR ACCEPTERAT ${relName(stateFaith())}`, { mine: true });
+  }
+  if (ch >= 0.25 && s.clock.day % 15 === 0) faithIncident(ch);
+}
+
+// religiösa incidenter — värre ju större kaoset är
+function faithIncident(ch) {
+  const s = state.solo;
+  const S = realmFaith();
+  const rel = stateFaith();
+  const other = FAITHS.filter((k) => k !== rel).sort((a, b) => (S[b] || 0) - (S[a] || 0))[0];
+  const who = `${(RELIGIONS[other]?.name || 'DE TROENDE').toUpperCase()}S ANHÄNGARE`;
+  if (ch >= 0.7) {
+    // provinser med annan tro kan bryta sig loss
+    const provs = Object.keys(s.claims).filter((cid) => cid !== s.home && !s.claims[cid].puppet && integOf(cid) && !integOf(cid).revolt
+      && majorityFaith(compositionOf(cid, s.faith.by[cid])) !== rel);
+    if (provs.length && Math.random() < 0.3) {
+      const cid = provs[Math.floor(Math.random() * provs.length)];
+      logEvent(`\u{1F525} RELIGIÖST UPPROR I ${cname(cid)}`, { mine: true, war: true });
+      revolt(cid);
+      return;
+    }
+    const loss = Math.round(s.res.money * 0.08);
+    s.res.money -= loss; s.res.pp = Math.max(0, s.res.pp - 12);
+    toast(`\u{1F525} KAOS: GUDSHUS STÄNGS OCH ${who} BLOCKERAR STÄDERNA (-${money(loss)} -12 \u{2696}\u{FE0F})`, 'red', 9000);
+    logEvent(`\u{1F525} ${who} BLOCKERAR STÄDERNA — KAOSET KOSTAR ${money(loss)}`, { mine: true });
+  } else if (ch >= 0.45) {
+    const loss = Math.round(s.res.money * 0.04);
+    s.res.money -= loss; s.res.pp = Math.max(0, s.res.pp - 6);
+    toast(`\u{26A0}\u{FE0F} UPPLOPP: ${who} DEMONSTRERAR MOT STATENS TRO (-${money(loss)} -6 \u{2696}\u{FE0F})`, 'red', 7000);
+  } else {
+    s.res.pp = Math.max(0, s.res.pp - 3);
+    toast(`\u{1F64F} ${who} KRÄVER SAMMA RÄTTIGHETER SOM STATENS TRO (-3 \u{2696}\u{FE0F})`, '', 6000);
+  }
+  renderResbar();
+}
+
+// byt statens tro (bara med en religionslag som ger staten en tro)
+function pickFaith(rel) {
+  const s = state.solo;
+  const f = faithState();
+  if (faithKind(faithLaw()) !== 'state' || rel === stateFaith()) return;
+  if (s.res.pp < FAITH_PICK_COST) { warn(`KRÄVER ${FAITH_PICK_COST} \u{2696}\u{FE0F} — DU HAR ${s.res.pp}`); return; }
+  s.res.pp -= FAITH_PICK_COST;
+  f.rel = rel;
+  const ch = updateFaithChaos();
+  recomputeNation(); renderResbar(); renderNationTab();
+  refreshInfoPanel();
+  toast(`${relName(rel)} ÄR NU STATENS TRO — ${chaosLabel(ch)}`, ch >= 0.45 ? 'red' : 'amber', 8000);
+  logEvent(`\u{1F64F} STATEN BYTTE TRO TILL ${relName(rel)} — ${chaosLabel(ch)}`, { mine: true });
+}
+
+// raden RELIGION i landsfakta: statens tro, eller den landet är mest anknutet till
+function faithLine(cid) {
+  const s = state.solo;
+  if (s?.nation && cid === s.home) {
+    const opt = faithLaw(), kind = faithKind(opt), S = realmFaith(), maj = majorityFaith(S);
+    if (kind === 'state') {
+      const ch = s.faith?.chaos || 0;
+      return `${relName(stateFaith())} — ${FAITH_TITLE[opt] || 'STATSRELIGION'}`
+        + (ch >= 0.08 ? ` <span style="color:${ch >= 0.45 ? 'var(--red)' : 'var(--amber)'}">(${chaosLabel(ch)})</span>` : '');
+    }
+    if (kind === 'none') return `\u{1F6AB} ${opt === 'banned' ? 'RELIGION FÖRBJUDEN' : 'ATEISTISK STAT'} · FOLKET ÄR MEST ANKNUTET TILL ${relName(maj)}`;
+    return `${opt === 'pluralism' ? '\u{1F91D} ALLA TROR LIKA' : '\u{1F52C} SEKULÄR STAT'} · MEST ANKNUTET TILL ${relName(maj)} (${Math.round(S[maj])}%)`;
+  }
+  const rel = religionFor(cid);
+  const S = sharesOf(cid), maj = majorityFaith(S);
+  if (rel === 'SEKULAR') return `\u{1F52C} SEKULÄRT · MEST ANKNUTET TILL ${relName(maj)} (${Math.round(S[maj])}%)`;
+  // "Kristendom" i spelets gamla tabell = alla kristna kyrkor tillsammans
+  const pct = rel === 'KRISTEN' ? (S.KRISTEN || 0) + (S.KATOLSK || 0) + (S.ORTODOX || 0) : S[rel] ?? S[maj];
+  return `${relName(rel)} (${Math.round(pct)}%)`;
 }
 
 // gränsar landet till resten av riket? (en exklav är mycket svårare att hålla)
@@ -2575,6 +2746,7 @@ function tickDay() {
     occUnrest += ph.unrest * 0.25;                      // oron RÄKNAS OM varje dag
   }
   tickIntegration();
+  tickFaith();   // V5.12
   tickDiplomacy();
   tickBlocApplications();
   tickMinisters();
@@ -3923,15 +4095,22 @@ $('#pausebtn').addEventListener('click', () => {
 let natTab = 'oversikt';
 let natIdeoPick = null;   // förhandsvald ideologi (bekräftas i rutan längst ner)
 
+// rubriken i NATION-panelen (V5.12: följer med när landet byter namn)
+function setNatTitle() {
+  const s = state.solo;
+  const home = globe.getCountry(s?.home);
+  const form = s?.nation?.formation;
+  $('#natname').textContent = form
+    ? `${form.icon} ${form.name.toUpperCase()} — ${home?.name.toUpperCase() || ''}`
+    : `DIN NATION — ${home?.name.toUpperCase() || ''}`;
+}
+
 function openNation() {
   const s = state.solo;
   if (!s?.nation || !s.home) return;
   const home = globe.getCountry(s.home);
   const fact = state.facts[s.home] || {};
-  const form = s.nation.formation;
-  $('#natname').textContent = form
-    ? `${form.icon} ${form.name.toUpperCase()} — ${home?.name.toUpperCase() || ''}`
-    : `DIN NATION — ${home?.name.toUpperCase() || ''}`;
+  setNatTitle();
   const flag = $('#natflag');
   if (fact.a2) { flag.src = `https://flagcdn.com/w80/${fact.a2.toLowerCase()}.png`; flag.style.display = 'block'; }
   else flag.style.display = 'none';
@@ -3950,7 +4129,7 @@ function modSummary(mods, max = 4) {
 // V5.8: 224 mått — en sökruta och hopfällbara grupper gör fliken överblickbar.
 // Ekonomi och brott är utfällda från start; en sökning visar träffar i alla grupper.
 let statQuery = '';
-const statShut = new Set(IND_GROUPS.map((g) => g.id).filter((id) => id !== 'eko' && id !== 'brt' && id !== 'dem'));
+const statShut = new Set(IND_GROUPS.map((g) => g.id).filter((id) => id !== 'eko' && id !== 'brt' && id !== 'dem' && id !== 'rel'));
 const PYRAMID_GROUP = IND_GROUPS.some((x) => x.id === 'dem') ? 'dem' : 'bef';
 
 // V5.10: befolkningspyramiden — män till vänster, kvinnor till höger, äldst överst.
@@ -4100,6 +4279,7 @@ function renderNationTab() {
   $('#nation').dataset.tab = natTab;
   recomputeNation();
   if (natTab === 'statistik') return renderStatsTab(body);
+  if (natTab === 'landet') return renderLandTab(body);   // V5.12
   if (natTab === 'lagar') return renderLawsTab(body);
   if (natTab === 'ideologi') return renderIdeologyTab(body);
   if (natTab === "forskning") return renderResearchTab(body);
@@ -4265,6 +4445,235 @@ function renderNationTab() {
   }
 }
 
+// ---------- V5.12: NAMNET OCH PASSET ----------
+// Landets identitet: officiellt namn, kortnamn (det som står på kartan) och
+// förkortning. Startar som landets verkliga (country-data.js) och kan bytas EN
+// gång per parti — då designar man också ett nytt pass.
+const escHtml = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function myIdent() {
+  const s = state.solo;
+  if (s?.ident) return s.ident;
+  const c = globe.getCountry(s?.home);
+  return defaultIdent(s?.home, c?.name0 || c?.name || '');
+}
+
+// kortnamnet gäller överallt där landets namn läses (kartan, landsfakta, listor)
+function setCountryName(cid, name) {
+  const c = globe.getCountry(cid);
+  if (!c) return;
+  c.name0 ||= c.name;
+  c.name = name || c.name0;
+}
+
+function applyIdent() {
+  const s = state.solo;
+  if (s?.home && s.ident?.renamed) setCountryName(s.home, s.ident.short);
+  // spelare i samma rum som bytt namn
+  for (const p of state.players || []) {
+    if (p.home && p.realm && p.home !== s?.home) setCountryName(p.home, p.realm);
+  }
+}
+
+function realmName() {
+  const s = state.solo;
+  if (s?.ident?.renamed) return s.ident.short;
+  return s?.nation?.formation?.name || globe.getCountry(s?.home)?.name || '';
+}
+
+function myFlagHtml(w = 42, h = 28) {
+  const s = state.solo;
+  const f = myFlag();
+  if (f) return flagHtml(f, w, h);
+  const a2 = state.facts[s?.home]?.a2;
+  return a2 ? `<img src="https://flagcdn.com/w80/${a2.toLowerCase()}.png" alt="">` : '';
+}
+
+function passData(id) {
+  const s = state.solo;
+  return {
+    ...id,
+    flag: myFlagHtml(),
+    holder: id.holder || s?.leader?.n || state.me?.name || 'MEDBORGARE',   // passet utfärdas till den som styr
+    issued: `DAG ${id.day || s?.clock?.day || 1}`,
+  };
+}
+
+function openRename() {
+  const s = state.solo;
+  if (!s?.home || s.ident?.renamed) return;
+  const cur = myIdent();
+  const draft = { ...cur };
+  let armed = false;
+  $('#rnOff').value = cur.off;
+  $('#rnShort').value = cur.short;
+  $('#rnCode').value = cur.code;
+  $('#rnWord').value = cur.word;
+  $('#rnErr').textContent = '';
+  const clean = (v, n) => String(v || '').replace(/[<>"&]/g, '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const read = () => {
+    draft.off = clean($('#rnOff').value, 48);
+    draft.short = clean($('#rnShort').value, 22);
+    draft.code = clean($('#rnCode').value, 5).toUpperCase().replace(/[^A-ZÅÄÖ]/g, '');
+    draft.word = clean($('#rnWord').value, 14).toUpperCase() || 'PASSPORT';
+  };
+  const draw = () => {
+    read();
+    $('#rnPreview').innerHTML = passportHtml(passData(draft));
+    armed = false;
+    $('#rnGo').textContent = '\u{2705} BYT NAMN FÖR ALLTID';
+  };
+  const swatches = (box, list, key, render) => {
+    box.innerHTML = '';
+    for (const v of list) {
+      const b = document.createElement('button');
+      render(b, v);
+      if (draft[key] === v) b.classList.add('on');
+      b.addEventListener('click', () => {
+        draft[key] = v;
+        box.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+        draw();
+      });
+      box.appendChild(b);
+    }
+  };
+  swatches($('#rnCovers'), PASS_COVERS, 'cover', (b, v) => { b.style.background = v; b.title = v; });
+  swatches($('#rnEmblems'), [null, ...PASS_EMBLEMS], 'emblem', (b, v) => {
+    if (v) b.textContent = v;
+    else { b.textContent = 'FLAGGAN'; b.classList.add('flagopt'); }
+  });
+  for (const id of ['#rnOff', '#rnShort', '#rnCode', '#rnWord']) $(id).oninput = draw;
+  $('#rnNo').onclick = () => overlay('#renamebox', false);
+  $('#rnGo').onclick = () => {
+    read();
+    const err = draft.off.length < 3 ? 'DET OFFICIELLA NAMNET ÄR FÖR KORT'
+      : draft.short.length < 2 ? 'DET KORTA NAMNET ÄR FÖR KORT'
+      : draft.code.length < 2 ? 'FÖRKORTNINGEN BEHÖVER 2–5 BOKSTÄVER' : '';
+    $('#rnErr').textContent = err;
+    if (err) return;
+    if (!armed) {   // två tryck — det går bara en gång
+      armed = true;
+      $('#rnGo').textContent = `\u{26A0}\u{FE0F} TRYCK IGEN — ${draft.short.toUpperCase()} FÖR ALLTID`;
+      return;
+    }
+    overlay('#renamebox', false);
+    applyRename(draft);
+  };
+  draw();
+  overlay('#renamebox', true);
+}
+
+function applyRename(draft) {
+  const s = state.solo;
+  const old = realmName();
+  s.ident = { ...draft, renamed: true, day: s.clock?.day || 1, holder: s.leader?.n || state.me?.name || '' };
+  setCountryName(s.home, s.ident.short);
+  setNatTitle();
+  toast(`\u{1F389} ${old.toUpperCase()} HETER NU ${s.ident.off.toUpperCase()} — NYA PASS DELAS UT!`, 'amber', 9000);
+  logEvent(`\u{270F}\u{FE0F} ${old.toUpperCase()} BYTTE NAMN TILL ${s.ident.off.toUpperCase()} (${s.ident.code})`, { mine: true });
+  globe.addFireworks(capitalLL(s.home), 7000);
+  if (state.mode === 'player') net.send('rename', { realm: s.ident.short });
+  saveGame();
+  applyState();
+  renderNationTab();
+}
+
+// ---------- V5.12: LANDET-fliken — namnet, passet och tron ----------
+function renderLandTab(body) {
+  const s = state.solo;
+  body.innerHTML = '';
+  const id = myIdent();
+  const g1 = document.createElement('div');
+  g1.className = 'natgroup';
+  g1.innerHTML = `<div class="gtitle">▸ LANDET</div>
+    <div class="landid"><b>${escHtml(id.off.toUpperCase())}</b><br>KORT NAMN: ${escHtml(id.short.toUpperCase())} • FÖRKORTNING: ${escHtml(id.code)}</div>
+    ${passportHtml(passData(id))}`;
+  const rb = document.createElement('button');
+  rb.className = 'lawopt';
+  rb.style.cssText = 'display:block;margin:0 auto';
+  if (s.ident?.renamed) {
+    rb.disabled = true;
+    rb.textContent = `\u{2714}\u{FE0F} NAMNET BYTTES DAG ${s.ident.day} — DET GÅR BARA EN GÅNG`;
+  } else {
+    rb.textContent = '\u{270F}\u{FE0F} BYT NAMN OCH DESIGNA NYA PASS (GÅR BARA EN GÅNG)';
+    rb.addEventListener('click', openRename);
+  }
+  g1.appendChild(rb);
+  body.appendChild(g1);
+
+  // ▸ TRO & RELIGION
+  const g2 = document.createElement('div');
+  g2.className = 'natgroup';
+  const opt = faithLaw(), kind = faithKind(opt);
+  const lawName = (LAWS.religion?.options.find((o) => o.id === opt)?.name || opt).toUpperCase();
+  const S = realmFaith();
+  const maj = majorityFaith(S);
+  const rel = kind === 'state' ? stateFaith() : null;
+  const ch = s.faith?.chaos || 0;
+  // fördelningen så som statistiken visar den (lagarnas sekularisering inräknad)
+  const ind = myIndicators();
+  const share = (k) => (ind && Number.isFinite(ind['r_' + k.toLowerCase()]) ? ind['r_' + k.toLowerCase()] : S[k] || 0);
+  const rows = FAITH_KEYS.map((k) => ({ k, v: share(k) })).filter((r) => r.v >= 0.5).sort((a, b) => b.v - a.v);
+  const bars = rows.map(({ k, v }) => `<div class="fbar${k === rel ? ' st' : ''}"><span>${k === 'SEKULAR' ? '\u{1F52C} INGEN RELIGION' : relName(k)}</span>`
+    + `<span class="t"><i style="width:${Math.min(100, v).toFixed(1)}%"></i></span><span class="p">${v.toFixed(v < 10 ? 1 : 0)}%</span></div>`).join('');
+  let txt;
+  if (kind === 'state') {
+    const fol = Math.round(100 * (1 - mismatch(S, rel)));
+    const chCol = ch >= 0.45 ? 'var(--red)' : ch >= 0.08 ? 'var(--amber)' : '#4ae37a';
+    const done = Math.min(...myRealmParts().map((p) => (s.faith?.by?.[p.cid] || []).filter((x) => x[0] === rel).reduce((a, x) => Math.max(a, x[1]), 0)));
+    const years = convertRate(opt) > 0 ? Math.ceil((1 - done) / convertRate(opt) / DAYS_PER_YEAR) : 0;
+    txt = `STATEN: <b>${relName(rel)} — ${FAITH_TITLE[opt] || lawName}</b><br>`
+      + `${fol}% AV DE TROENDE DELAR STATENS TRO${years > 0 && fol < 100 ? ` • OMVÄNDELSEN TAR ~${years} ÅR TILL` : ''}<br>`
+      + `RELIGIÖST LÄGE: <span class="chaosm"><i style="width:${Math.round(ch * 100)}%;background:${chCol}"></i></span><span style="color:${chCol}">${chaosLabel(ch)}</span>`;
+  } else if (kind === 'none') {
+    txt = `STATEN: <b>\u{1F6AB} ${opt === 'banned' ? 'RELIGION FÖRBJUDEN' : 'ATEISTISK STAT'}</b><br>FOLKET ÄR ÄNDÅ MEST ANKNUTET TILL <b>${relName(maj)}</b>.`;
+  } else {
+    txt = `STATEN: <b>${opt === 'pluralism' ? '\u{1F91D} ALLA TROR LIKA (PLURALISM)' : '\u{1F52C} SEKULÄR'}</b> — LANDET ÄR MEST ANKNUTET TILL <b>${relName(maj)}</b> (${Math.round(S[maj])}%).<br>`
+      + `VÄLJ STATE RELIGION (ELLER STATSKYRKA, RELIGIÖS LAG, PRÄSTERNA STYR) I LAGAR SÅ BLIR ${relName(maj)} STATENS TRO. SEDAN KAN DU BYTA TRO HÄR — MEN BYTER DU FRÅN DEN TRO FOLKET HAR KAN DET BLI TOTALT KAOS.`;
+  }
+  g2.innerHTML = `<div class="gtitle">▸ TRO & RELIGION</div><div class="ftext">${txt}</div><div class="fbars">${bars}</div>`;
+  if (kind === 'state') {
+    const head = document.createElement('div');
+    head.className = 'ftext';
+    head.textContent = `BYT STATENS TRO — ${FAITH_PICK_COST} \u{2696}\u{FE0F}. FOLKET OMVÄNDS LÅNGSAMT; TILLS DESS BLIR DET ORO.`;
+    g2.appendChild(head);
+    const pick = document.createElement('div');
+    pick.className = 'fpick';
+    let armed = null;
+    for (const k of FAITHS) {
+      const b = document.createElement('button');
+      b.className = 'lawopt' + (k === rel ? ' cur' : '');
+      b.textContent = relName(k);
+      const would = chaosOf(S, k, opt);
+      b.addEventListener('mouseenter', () => setPreview(k === rel
+        ? `<span class="dc">${relName(k)} — STATENS TRO NU</span>`
+        : `<span class="dc">${relName(k)} SOM STATENS TRO — ${FAITH_PICK_COST} \u{2696}\u{FE0F}</span> &nbsp; <span class="${would >= 0.45 ? 'dn' : 'dp'}">DIREKT EFTER BYTET: ${chaosLabel(would)} (${Math.round(would * 100)}%)</span>`
+          + ` &nbsp; ${Math.round(S[k] || 0)}% AV FOLKET HAR DEN TRON IDAG`));
+      b.addEventListener('mouseleave', () => setPreview());
+      b.addEventListener('click', () => {
+        if (k === rel) return;
+        if (armed !== k) {   // två tryck — totalt kaos ska inte komma av ett felklick
+          armed = k;
+          pick.querySelectorAll('button').forEach((x) => { x.style.outline = ''; });
+          b.style.outline = '1px solid var(--red)';
+          toast(`TRYCK IGEN FÖR ${relName(k)} — ${chaosLabel(would)}`, would >= 0.45 ? 'red' : 'amber', 4000);
+          return;
+        }
+        pickFaith(k);
+      });
+      pick.appendChild(b);
+    }
+    g2.appendChild(pick);
+  } else {
+    const go = document.createElement('button');
+    go.className = 'lawopt';
+    go.textContent = '\u{1F4DC} TILL LAGARNA';
+    go.addEventListener('click', () => { natTab = 'lagar'; renderNationTab(); });
+    g2.appendChild(go);
+  }
+  body.appendChild(g2);
+}
+
 // ---------- LAGAR-fliken ----------
 function renderLawsTab(body) {
   const s = state.solo;
@@ -4298,6 +4707,12 @@ function renderLawsTab(body) {
       s.res.pp -= pend.cost;
       s.nation.laws[pend.cat] = pend.oid;
       state.pendingLaw = null;
+      if (pend.cat === 'religion') {   // V5.12: statsreligionen blir den landet är mest anknutet till
+        const f = faithState();
+        if (faithKind(pend.oid) === 'state' && !f.rel) f.rel = majorityFaith(realmFaith());
+        updateFaithChaos();
+        refreshInfoPanel();
+      }
       recomputeNation();
       renderResbar();
       renderNationTab();
@@ -6021,6 +6436,14 @@ function startTV(wantCode) {
         player.color = c;
         broadcastState();
         applyState();
+      } else if (t === 'rename') {
+        // V5.12: spelaren bytte namn på sitt land — alla ska se det direkt
+        const player = state.players.find((p) => p.id === peerId);
+        if (!player) return;
+        player.realm = String(d?.realm || '').replace(/[<>"&]/g, '').slice(0, 22);
+        broadcastState();
+        applyState();
+        if (player.realm) toast(`✏️ ${player.name.toUpperCase()}S LAND HETER NU ${player.realm.toUpperCase()}`, 'amber', 6000);
       } else if (t === 'claim') {
         const player = state.players.find((p) => p.id === peerId);
         const id = String(d?.country || '');
@@ -6049,6 +6472,7 @@ function startTV(wantCode) {
           ? { name: String(d.formation.name).slice(0, 40), icon: String(d.formation.icon || '').slice(0, 4) }
           : null;
         player.factionIcon = d?.faction || '';
+        player.realm = String(d?.realm || '').replace(/[<>"&]/g, '').slice(0, 22);   // V5.12: nytt landsnamn
         player.boost = d?.boost && typeof d.boost === 'object' ? d.boost : {};
         player.kenneyRow = Number(d?.kenneyRow) || 8;
         player.units = Array.isArray(d?.units) ? d.units.slice(0, 40) : [];
@@ -6553,6 +6977,7 @@ function saveGame() {
           known: [...(s.known || [])],
           popMark: s.popMark, popStep: s.popStep,
           coldWars: s.coldWars, revolutions: s.revolutions, rest: s.rest, color: s.color,   // V5.8
+          faith: s.faith, ident: s.ident,   // V5.12–5.13
         },
         world: state.world || {},
         history: (state.history || []).slice(0, 120),
@@ -6603,6 +7028,7 @@ function saveSession() {
       garrisons: s.garrisons, army: s.army, integ: s.integ, wars: s.wars, day: s.clock?.day || 1,
       rel: s.rel, allies: s.allies, truces: s.truces, disarmed: s.disarmed, cabinet: s.nation?.cabinet,
       partial: s.partial, bloc: s.bloc, aiBlocs: s.aiBlocs, flag: s.flag, indLag: s.indLag,
+      faith: s.faith, ident: s.ident,   // V5.12–5.13
     }));
   } catch (e) { /* privat läge / fullt lager — strunt samma */ }
 }
@@ -6643,6 +7069,8 @@ function restoreSession(snap, home) {
   s.disarmed = snap.disarmed || [];
   s.partial = snap.partial || {};
   s.indLag = snap.indLag || null;   // V5.6
+  s.faith = snap.faith || null;   // V5.12
+  s.ident = snap.ident || null;   // V5.13
   s.stateFlags = snap.stateFlags || {};
   s.bloc = snap.bloc || null;
   s.aiBlocs = snap.aiBlocs || [];
@@ -6674,6 +7102,7 @@ function startNationSync() {
       leader: s.leader?.n || '',
       leaderDesc: s.leader ? leaderDesc(s.leader) : '',
       formation: s.nation.formation ? { name: s.nation.formation.name, icon: s.nation.formation.icon } : null,
+      realm: s.ident?.renamed ? s.ident.short : '',   // V5.12
       faction: FACTIONS[s.faction]?.icon || '',
       boost: battleBoost(),                       // stridsbonus, så PvP blir rättvist
       kenneyRow: FACTIONS[s.faction]?.kenneyRow ?? 8,

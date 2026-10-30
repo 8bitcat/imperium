@@ -61,8 +61,9 @@ export function computeStats(nation, sources = {}) {
     const mods = sources.modifiers?.[id] || 0;      // V5: aktiva modifierare
     const dev = sources.development?.[id] || 0;     // V5: infrastruktur + stadsnivå
     const extra = sources.extra?.[id] || 0;   // händelser, atomslag, tillfällig oro m.m.
-    const total = Math.max(-100, Math.min(100, b + law + ideo + res + mods + dev + extra));
-    breakdown[id] = { base: b, laws: law, ideology: ideo, research: res, modifiers: mods, development: dev, extra, total };
+    const faith = sources.faith?.[id] || 0;   // V5.12: religiöst kaos
+    const total = Math.max(-100, Math.min(100, b + law + ideo + res + mods + dev + extra + faith));
+    breakdown[id] = { base: b, laws: law, ideology: ideo, research: res, modifiers: mods, development: dev, extra, faith, total };
   }
   return breakdown;
 }

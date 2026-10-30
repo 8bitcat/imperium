@@ -46,8 +46,10 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | `globe.js` · `globe3d.js` | pixelglob (d3) · WebGL-planet. All ritning går via `_project`/`_front` så den funkar i båda |
 | `net.js` · `data.js` · `names.js` | PeerJS (värden äger världen) · kartdata · svenska landsnamn |
 | `real.js` | V5.6: allt som VISAS i riktiga tal — 1 💰 = 100 miljoner $, 1 🧍 = 1 000 människor, förband i soldater. Spelet räknar internt i gamla enheter |
-| `statistics.js` | 246 verkliga mått i 14 grupper per land (data/indicators.json; brott är modeller, märkta ~) som nationsvärden + lagar (`LAW_EFFECTS`) flyttar; rikes-ihopräkning, rankningar, befolkningspyramid (`realmPyramid`, Världsbankens 5-årsgrupper per kön; `T = null` = startläget) |
+| `statistics.js` | 261 verkliga mått i 15 grupper per land (data/indicators.json; brott är modeller, märkta ~) som nationsvärden + lagar (`LAW_EFFECTS`) flyttar; rikes-ihopräkning, rankningar, befolkningspyramid (`realmPyramid`, Världsbankens 5-årsgrupper per kön; `T = null` = startläget) |
 | `events/*.js` | V5.6: händelser per tema, ihopslagna i `events.js` |
+| `faith.js` · `country-data.js` | V5.12 TRON: folkets tro per land (`RELIGION_SHARES`, ungefär Pew 2020), statens tro via religionslagen (`faithKind`: state/neutral/none), omvändelse i steg per land och kaos när staten och folket tror olika (`chaosOf`, `chaosMods`) |
+| `passport.js` | V5.12 NAMNET: landets identitet (`defaultIdent` ur `OFFICIAL` i country-data.js: officiellt namn, ISO alpha-3, passfärg) och passet med riktiga MRZ-rader (`passportHtml`) |
 
 **Befolkningen lever (V5.7):** `state.facts[cid].p` ändras var 10:e dag (`tickPopulation`,
 1 spelår = 120 dagar) med `popchange` ur statistics.js; startvärdet ligger i `p0`. Allt som
@@ -64,6 +66,8 @@ SKAPA RUM (`createRoom`) startar värden i en dold iframe `?server=1&name=…` (
 sedan går med som vanlig `player` (`state.hosting`). Kompisar går med på koden (`#join`) eller
 `?room=KOD`. Färg i ett rum = värdens `player.color` (meddelandet `color`). Värdrummet sparas i
 `imperium.room` (`ROOM_KEY`, menyn: FORTSÄTT RUMMET), solo/TV i `imperium.game`.
+
+**Tron och namnet (V5.12):** fliken LANDET i NATION. `state.solo.faith` = { rel (statens tro), by: {cid: [[tro, andel]]} omvändelsesteg, chaos 0..1 } — `tickFaith` omvänder dagligen och ger incidenter; kaoset går in som egen källa `faith` i `computeStats` och via `setFaith` i statistiken. `religionFor(hemland)` följer statens tro. `state.solo.ident` = { off, short, code, cover, word, emblem, holder, renamed, day } — namnet byts EN gång; kortnamnet skrivs in i `globe.getCountry(cid).name` (`setCountryName`, originalet i `name0`) så det syns överallt. I rum skickas det som `realm` i `nation`-meddelandet (och `rename`), värden lägger det på `player.realm` och alla kör `applyIdent()` i `applyState`.
 
 Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
 

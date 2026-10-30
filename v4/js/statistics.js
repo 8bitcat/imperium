@@ -22,6 +22,7 @@ import { LAWS } from './laws.js';
 import { LAW_EXTRAS } from './laws-extra.js';
 import { NEW_LAWS } from './laws-more.js';
 import { FX_511 } from './laws-511.js';
+import { FAITHS, FAITH_KEYS, sharesOf, compositionOf } from './faith.js';
 
 export const IND_GROUPS = [
   { id: 'eko', name: 'EKONOMI', icon: '\u{1F4B0}' },
@@ -30,6 +31,7 @@ export const IND_GROUPS = [
   { id: 'jor', name: 'JORDBRUK & MAT', icon: '\u{1F33E}' },
   { id: 'bef', name: 'BEFOLKNING', icon: '\u{1F465}' },
   { id: 'dem', name: 'DEMOGRAFI & FAMILJ', icon: '\u{1F46A}' },
+  { id: 'rel', name: 'TRO & RELIGION', icon: '\u{1F64F}' },   // V5.12
   { id: 'kun', name: 'KUNSKAP & TEKNIK', icon: '\u{1F4DA}' },
   { id: 'sam', name: 'SAMHÄLLE & RÄTT', icon: '\u{2696}\u{FE0F}' },
   { id: 'brt', name: 'BROTT & SÄKERHET', icon: '\u{1F6A8}' },
@@ -211,6 +213,40 @@ export const INDICATORS = [
     fx: { statepower: 3 }, desc: 'Andel av stadsborna som bor i landets största stad' },
   { id: 'megacity', name: 'Bor i miljonstäder', group: 'dem', fmt: 'pct', better: null, mode: 'mul', max: 100,
     desc: 'Andel av invånarna som bor i en stad med över en miljon människor' },
+
+  // ---------- V5.12: TRO & RELIGION ----------
+  // Folkets tro ur faith.js (ungefär Pew 2020). Religionslagen flyttar andelen
+  // utan religion; en statsreligion omvänder de troende (se countryIndicators).
+  { id: 'believers', name: 'Troende', group: 'rel', fmt: 'pct', better: null, agg: 'derived',
+    desc: 'Andel av befolkningen som tillhör någon religion' },
+  { id: 'mainfaith', name: 'Största trons andel', group: 'rel', fmt: 'pct', better: null, agg: 'derived',
+    desc: 'Hur stor del av folket som har landets största tro' },
+  { id: 'statefaith', name: 'Följer statens tro', group: 'rel', fmt: 'pct', better: 'high', agg: 'derived',
+    desc: 'Andel av de troende som har samma tro som staten (bara när staten har en religion)' },
+  { id: 'reldiv', name: 'Religiös mångfald', group: 'rel', fmt: 'score100', better: null, agg: 'derived',
+    desc: '0 = alla troende har samma tro, 100 = väldigt många olika' },
+  { id: 'reltension', name: 'Religiösa spänningar', group: 'rel', fmt: 'score10', better: 'low', agg: 'derived',
+    desc: 'Hur mycket tron splittrar landet — högt när staten och folket tror på olika saker' },
+  { id: 'r_kristen', name: 'Protestanter & andra kristna', group: 'rel', fmt: 'pct', better: null, mode: 'add', min: 0, max: 100,
+    desc: 'Andel som är protestanter eller tillhör andra kristna kyrkor' },
+  { id: 'r_katolsk', name: 'Katoliker', group: 'rel', fmt: 'pct', better: null, mode: 'add', min: 0, max: 100,
+    desc: 'Andel som tillhör katolska kyrkan' },
+  { id: 'r_ortodox', name: 'Ortodoxa kristna', group: 'rel', fmt: 'pct', better: null, mode: 'add', min: 0, max: 100,
+    desc: 'Andel som tillhör de ortodoxa kyrkorna' },
+  { id: 'r_islam', name: 'Muslimer', group: 'rel', fmt: 'pct', better: null, mode: 'add', min: 0, max: 100,
+    desc: 'Andel som är muslimer' },
+  { id: 'r_judisk', name: 'Judar', group: 'rel', fmt: 'pct', better: null, mode: 'add', min: 0, max: 100,
+    desc: 'Andel som är judar' },
+  { id: 'r_hindu', name: 'Hinduer', group: 'rel', fmt: 'pct', better: null, mode: 'add', min: 0, max: 100,
+    desc: 'Andel som är hinduer' },
+  { id: 'r_buddhist', name: 'Buddhister', group: 'rel', fmt: 'pct', better: null, mode: 'add', min: 0, max: 100,
+    desc: 'Andel som är buddhister' },
+  { id: 'r_sikh', name: 'Sikher', group: 'rel', fmt: 'pct', better: null, mode: 'add', min: 0, max: 100,
+    desc: 'Andel som är sikher' },
+  { id: 'r_folktro', name: 'Folktro & övriga', group: 'rel', fmt: 'pct', better: null, mode: 'add', min: 0, max: 100,
+    desc: 'Andel med folkreligioner, traditionella religioner och övriga trosriktningar' },
+  { id: 'r_sekular', name: 'Ingen religion', group: 'rel', fmt: 'pct', better: null, mode: 'add', min: 0, max: 100,
+    desc: 'Andel som inte tillhör någon religion' },
 
   // ---------- KUNSKAP & TEKNIK ----------
   { id: 'literacy', name: 'Läskunnighet', group: 'kun', fmt: 'pct', better: 'high', mode: 'add', min: 10, max: 100,
@@ -996,6 +1032,15 @@ for (const [cat, opts] of Object.entries(FX_511)) {
   for (const [opt, fx] of Object.entries(opts)) addLawFx(cat, opt, fx);
 }
 
+// V5.12: religionslagen flyttar andelen utan religion (de troende fördelas
+// sedan som förut — se faithStep)
+const FAITH_LAW_FX = {
+  banned: { r_sekular: ['+', 40] }, atheism: { r_sekular: ['+', 22] }, pluralism: { r_sekular: ['+', -4] },
+  established: { r_sekular: ['+', -6] }, statereligion: { r_sekular: ['+', -14] },
+  religiouslaw: { r_sekular: ['+', -25] }, clergyrule: { r_sekular: ['+', -35] },
+};
+for (const [opt, fx] of Object.entries(FAITH_LAW_FX)) addLawFx('religion', opt, fx);
+
 // startläget per lagkategori (det verkliga datat har redan landets politik)
 const DEFAULT_LAW = Object.fromEntries(Object.entries(LAWS).map(([cat, L]) =>
   [cat, (L.options.find((o) => o.default) || L.options[Math.floor(L.options.length / 2)]).id]));
@@ -1137,6 +1182,9 @@ export function setIndicatorData(raw, facts) {
     const own = {};
     for (const k in raw[cid] || {}) if (!PYR_RAW.has(k)) own[k] = raw[cid][k];
     BASE[cid] = { ...own, ...(OVERRIDES[cid] || {}) };
+    // V5.12: folkets tro (faith.js) — alla länder har en fördelning
+    const S = sharesOf(cid);
+    for (let i = 0; i < FAITH_KEYS.length; i++) BASE[cid][FAITH_IDS[i]] = S[FAITH_KEYS[i]] || 0;
   }
   const ids = Object.keys(BASE);
   // land utan BNP per capita: grannarna i HDI, annars världsmedianen
@@ -1423,6 +1471,33 @@ function followers(v, b, pop) {
   if (n) v.crimeidx = 100 * Math.exp(s / n);
 }
 
+// ---------- V5.12: tron ----------
+// FAITH = spelarens rike: { cids: Set, steps(cid) → omvändelsestegen, rel = statens tro, chaos 0..1 }
+// (sätts av main.js). Bara där — och bara när lagarna räknas — omvänds folket och biter kaoset.
+let FAITH = null;
+export function setFaith(f) { FAITH = f; }
+const FAITH_IDS = FAITH_KEYS.map((k) => 'r_' + k.toLowerCase());
+
+function faithStep(v, b, cid, laws) {
+  const mine = !!laws && !!FAITH?.cids?.has(cid);
+  const S = mine ? compositionOf(cid, FAITH.steps(cid)) : sharesOf(cid);
+  // lagarna har flyttat andelen utan religion; de troende fördelas som i S
+  const sec = clampV(v.r_sekular, 0, 100);
+  const bel0 = 100 - (S.SEKULAR || 0);
+  const k = bel0 > 0 ? (100 - sec) / bel0 : 0;
+  for (let i = 0; i < FAITHS.length; i++) v[FAITH_IDS[i]] = (S[FAITHS[i]] || 0) * k;
+  v.r_sekular = sec;
+  const ch = mine ? FAITH.chaos || 0 : 0;
+  if (ch < 0.01) return;
+  // religiöst kaos: hatbrott, våld och flykt — och turisterna uteblir
+  const mul = (id, f) => { if (Number.isFinite(v[id])) v[id] = clampV(v[id] * f, IND[id]?.min, IND[id]?.max); };
+  const add = (id, n) => { if (Number.isFinite(v[id])) v[id] = clampV(v[id] + n, IND[id]?.min, IND[id]?.max); };
+  mul('hatecrime', 1 + 4 * ch); mul('homicide', 1 + ch); mul('assault', 1 + 0.8 * ch); mul('vandalism', 1 + 1.5 * ch);
+  mul('tourists', 1 - 0.75 * ch); add('feelsafe', -35 * ch); add('polstab', -1.8 * ch); add('gdpgrowth', -4 * ch);
+  add('voice', -0.5 * ch);
+  v.netmig = (v.netmig || 0) - (LIVE?.[cid]?.p || b.pop) * 0.012 * ch;
+}
+
 // laws = landets lagar (för LAW_EFFECTS); null = inga direkta lageffekter
 export function countryIndicators(cid, T, T0 = null, laws = null) {
   const b = BASE[cid];
@@ -1450,6 +1525,7 @@ export function countryIndicators(cid, T, T0 = null, laws = null) {
       if (IND[id]) v[id] = clampV(v[id], IND[id].min, IND[id].max);
     }
   }
+  if (Number.isFinite(v.r_sekular)) faithStep(v, b, cid, laws);   // V5.12
   // V5.7: befolkningen lever — dagens folkmängd i stället för startårets
   const pop = LIVE?.[cid]?.p || b.pop;
   v.pop = pop;
@@ -1589,6 +1665,24 @@ export function realmIndicators(parts, T, extra = {}, t0Of = null, laws = null, 
     for (const k of PYR_DERIVED) out[k] = ps[k];
   }
   if (out.households > 0) out.hhsize = pop / out.households;
+  // V5.12: tron i riket — troende, mångfald, statens tro och spänningarna
+  if (Number.isFinite(out.r_sekular)) {
+    const bel = Math.max(0, 100 - out.r_sekular);
+    let mx = 0, h = 0;
+    for (let i = 0; i < FAITHS.length; i++) {
+      const x = out[FAITH_IDS[i]] || 0;
+      if (x > mx) mx = x;
+      if (bel > 0) h += (x / bel) ** 2;
+    }
+    out.believers = bel;
+    out.mainfaith = mx;
+    out.reldiv = bel > 0 ? clampV(100 * (1 - h), 0, 100) : 0;
+    const mine = !noPolicy && laws && FAITH && parts.some((p) => FAITH.cids.has(p.cid));
+    const rel = mine ? FAITH.rel : null;
+    if (rel && bel > 0) out.statefaith = 100 * (out['r_' + rel.toLowerCase()] || 0) / bel;
+    const ch = mine ? FAITH.chaos || 0 : 0;
+    out.reltension = clampV(out.reldiv / 100 * 3.5 + ch * 6.5 + 0.5 * Math.log10(Math.max(1, out.hatecrime || 1)), 0, 10);
+  }
   const growth = pop > 0 ? (out.popchange || 0) / pop : 0;
   out.doubling = 100 * growth;
   out.pop25 = pop * Math.max(0, 1 + growth) ** 25;
