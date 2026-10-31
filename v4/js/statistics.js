@@ -605,6 +605,126 @@ export const INDICATORS = [
   // ---------- FÖRSVAR ----------
   { id: 'armsimp', name: 'Vapenimport', group: 'fvr', fmt: 'usdbig', better: null, mode: 'mul', agg: 'sum',
     fx: { milpower: 0.6, readiness: 0.2, factory: -0.3 }, desc: 'Värdet av vapen som köps från andra länder per år' },
+
+  // ================= V5.14: 37 nya verkliga mått + 18 nya brott =================
+  // ---------- EKONOMI ----------
+  { id: 'gnipc', name: 'BNI per capita', group: 'eko', fmt: 'usd', better: 'high', mode: 'mul',
+    desc: 'Inkomsten per invånare, inräknat pengar som flyter in och ut ur landet' },
+  { id: 'manufexp', name: 'Industrivaror i exporten', group: 'eko', fmt: 'pct', better: 'high', mode: 'add', min: 0, max: 100,
+    fx: { factory: 12, research: 5 }, desc: 'Andel av varuexporten som är fabriksvaror' },
+  { id: 'ictexp', name: 'IT-varor i exporten', group: 'eko', fmt: 'pct', better: 'high', mode: 'add', min: 0, max: 80,
+    fx: { research: 8, factory: 4 }, desc: 'Andel av varuexporten som är datorer, telefoner och elektronik' },
+  { id: 'fuelexp', name: 'Bränsle i exporten', group: 'eko', fmt: 'pct', better: null, mode: 'add', min: 0, max: 100,
+    fx: { factory: 3 }, desc: 'Andel av varuexporten som är olja, gas och kol' },
+  { id: 'oresexp', name: 'Malm och metaller i exporten', group: 'eko', fmt: 'pct', better: null, mode: 'add', min: 0, max: 100,
+    fx: { factory: 2 }, desc: 'Andel av varuexporten som är malm och metaller' },
+  { id: 'foodimp', name: 'Mat i importen', group: 'eko', fmt: 'pct', better: null, mode: 'add', min: 0, max: 80,
+    fx: { factory: -3, gdp: -2 }, desc: 'Andel av varuimporten som är livsmedel' },
+  { id: 'credit', name: 'Lån till företag och hushåll', group: 'eko', fmt: 'pctgdp', better: null, mode: 'add', min: 0, max: 300, agg: 'gdp',
+    fx: { gdp: 12, factory: 5, corruption: -5 }, desc: 'Hur mycket bankerna lånat ut till företag och hushåll, i procent av BNP' },
+  { id: 'broadmoney', name: 'Penningmängd', group: 'eko', fmt: 'pctgdp', better: null, mode: 'add', min: 5, max: 500, agg: 'gdp',
+    fx: { gdp: 10 }, desc: 'Alla pengar i landet (kontanter och bankkonton) i procent av BNP' },
+  { id: 'extdebt', name: 'Utlandsskuld', group: 'eko', fmt: 'pctgdp', better: 'low', mode: 'add', min: 0, max: 400, agg: 'gdp',
+    fx: { income: -10, corruption: 5, stability: -5 }, desc: 'Vad landet är skyldigt utlandet, i procent av inkomsten' },
+  { id: 'debtserv', name: 'Skuldtjänst', group: 'eko', fmt: 'pct', better: 'low', mode: 'add', min: 0, max: 150,
+    fx: { income: -6, corruption: 4 }, desc: 'Andel av exportinkomsterna som går till att betala utlandsskulden' },
+  { id: 'tourspend', name: 'Turistresor utomlands', group: 'eko', fmt: 'usdbig', better: null, mode: 'mul', agg: 'sum',
+    fx: { qol: 0.6, gdp: 0.4 }, desc: 'Vad landets invånare spenderar på resor utomlands per år' },
+  { id: 'atms', name: 'Bankomater', group: 'eko', fmt: 'per100k', better: null, mode: 'mul',
+    fx: { gdp: 0.3, corruption: -0.2 }, desc: 'Uttagsautomater per 100 000 vuxna' },
+  { id: 'bankbranch', name: 'Bankkontor', group: 'eko', fmt: 'per100k', better: null, mode: 'mul',
+    fx: { gdp: 0.2 }, desc: 'Bankkontor per 100 000 vuxna' },
+  // ---------- ARBETE ----------
+  { id: 'unempfem', name: 'Arbetslöshet bland kvinnor', group: 'arb', fmt: 'pct', better: 'low', mode: 'add', min: 0.2, max: 60,
+    desc: 'Andel av kvinnorna i arbetskraften som saknar jobb' },
+  { id: 'unempmale', name: 'Arbetslöshet bland män', group: 'arb', fmt: 'pct', better: 'low', mode: 'add', min: 0.2, max: 60,
+    desc: 'Andel av männen i arbetskraften som saknar jobb' },
+  { id: 'unempedu', name: 'Arbetslösa högutbildade', group: 'arb', fmt: 'pct', better: 'low', mode: 'add', min: 0.2, max: 60,
+    fx: { gdp: -3, research: -3, unrest: 1 }, desc: 'Arbetslöshet bland dem som pluggat på universitet' },
+  { id: 'wagework', name: 'Löntagare', group: 'arb', fmt: 'pct', better: 'high', mode: 'add', min: 3, max: 99,
+    fx: { gdp: 8, factory: 6, welfare: 3 }, desc: 'Andel av de sysselsatta som har en anställning med lön' },
+  { id: 'parttime', name: 'Deltidsarbetande', group: 'arb', fmt: 'pct', better: null, mode: 'add', min: 1, max: 60,
+    fx: { welfare: 4, qol: 3 }, desc: 'Andel av de sysselsatta som jobbar deltid' },
+  { id: 'femmanagers', name: 'Kvinnliga chefer', group: 'arb', fmt: 'pct', better: 'high', mode: 'add', min: 1, max: 70,
+    fx: { freedom: 6, welfare: 2 }, desc: 'Andel av cheferna som är kvinnor' },
+  { id: 'childlabor', name: 'Barnarbete (7–14 år)', group: 'arb', fmt: 'pct', better: 'low', mode: 'add', min: 0, max: 70,
+    fx: { welfare: -10, hdi: -10, gdp: -3 }, desc: 'Andel av barnen som måste arbeta i stället för att bara gå i skolan' },
+  // ---------- VÄLFÄRD & HÄLSA ----------
+  { id: 'healthpc', name: 'Vård per invånare', group: 'hal', fmt: 'usd', better: 'high', mode: 'mul',
+    desc: 'Vad landet lägger på vård per invånare och år' },
+  { id: 'neonatal', name: 'Nyföddas dödlighet', group: 'hal', fmt: 'per1000', better: 'low', mode: 'mul',
+    fx: { welfare: -0.5, hdi: -0.6, qol: -0.2 }, desc: 'Barn som dör under sin första månad, per 1 000 födda' },
+  { id: 'birthcare', name: 'Förlossningar med barnmorska', group: 'hal', fmt: 'pct', better: 'high', mode: 'add', min: 10, max: 100,
+    fx: { welfare: 10, hdi: 8 }, desc: 'Andel av barnen som föds med läkare eller barnmorska på plats' },
+  { id: 'hepb', name: 'Vaccin mot hepatit B', group: 'hal', fmt: 'pct', better: 'high', mode: 'add', min: 20, max: 99,
+    fx: { welfare: 6, hdi: 4 }, desc: 'Andel av ettåringarna som vaccinerats mot hepatit B' },
+  { id: 'handwash', name: 'Tvätta händerna hemma', group: 'hal', fmt: 'pct', better: 'high', mode: 'add', min: 2, max: 100,
+    fx: { welfare: 6, qol: 6 }, desc: 'Andel som har tvål och vatten att tvätta händerna med hemma' },
+  { id: 'cleanfuel', name: 'Rent bränsle i köket', group: 'hal', fmt: 'pct', better: 'high', mode: 'add', min: 0, max: 100,
+    fx: { qol: 8, hdi: 6, factory: 2 }, desc: 'Andel som lagar mat med el eller gas i stället för ved och kol' },
+  { id: 'commdeath', name: 'Döda i smittsamma sjukdomar', group: 'hal', fmt: 'pct', better: 'low', mode: 'add', min: 1, max: 80,
+    fx: { welfare: -8, hdi: -10 }, desc: 'Andel av dödsfallen som beror på smittsamma sjukdomar, svält och förlossningar' },
+  { id: 'injurydeath', name: 'Döda i olyckor och skador', group: 'hal', fmt: 'pct', better: 'low', mode: 'add', min: 2, max: 40,
+    fx: { safety: -5, qol: -2 }, desc: 'Andel av dödsfallen som beror på olyckor, trafik och våld' },
+  // ---------- KUNSKAP & TEKNIK ----------
+  { id: 'lowsec', name: 'Klarar grundskolan', group: 'kun', fmt: 'pct', better: 'high', mode: 'add', min: 5, max: 110,
+    fx: { hdi: 10, research: 5, welfare: 4 }, desc: 'Andel av ungdomarna som går ut grundskolan (över 100 = fler äldre tar igen den)' },
+  { id: 'litfem', name: 'Läskunniga kvinnor', group: 'kun', fmt: 'pct', better: 'high', mode: 'add', min: 5, max: 100,
+    fx: { hdi: 8, freedom: 4 }, desc: 'Andel av de vuxna kvinnorna som kan läsa och skriva' },
+  { id: 'girlsschool', name: 'Flickor per pojke i skolan', group: 'kun', fmt: 'num2', better: null, mode: 'add', min: 0.4, max: 1.4,
+    fx: { freedom: 0.1 }, desc: '1,00 betyder att lika många flickor som pojkar går i skolan' },
+  { id: 'trainedteach', name: 'Utbildade lärare', group: 'kun', fmt: 'pct', better: 'high', mode: 'add', min: 10, max: 100,
+    fx: { research: 6, welfare: 4 }, desc: 'Andel av lärarna i lågstadiet som har lärarutbildning' },
+  { id: 'patentsfor', name: 'Patent från utlandet', group: 'kun', fmt: 'count', better: null, mode: 'mul', agg: 'sum',
+    fx: { research: 0.4, gdp: 0.4 }, desc: 'Patentansökningar från utländska företag per år' },
+  // ---------- INFRASTRUKTUR & ENERGI ----------
+  { id: 'elecloss', name: 'Elförluster i nätet', group: 'inf', fmt: 'pct', better: 'low', mode: 'add', min: 1, max: 60,
+    fx: { factory: -6, corruption: 5 }, desc: 'Andel av elen som försvinner (läckor och stöld) innan den når kunden' },
+  // ---------- MILJÖ ----------
+  { id: 'ghg', name: 'Växthusgaser totalt', group: 'nat', fmt: 'mt', better: 'low', mode: 'mul', agg: 'sum',
+    fx: { factory: 0.5 }, desc: 'Alla växthusgaser landet släpper ut per år, omräknat till koldioxid' },
+  { id: 'n2o', name: 'Lustgas', group: 'nat', fmt: 'mt', better: 'low', mode: 'mul', agg: 'sum',
+    fx: { factory: 0.3 }, desc: 'Utsläpp av lustgas (mest från gödsel och jordbruk), omräknat till koldioxid' },
+  { id: 'disasters', name: 'Drabbade av torka och översvämning', group: 'nat', fmt: 'pct', better: 'low', mode: 'add', min: 0, max: 40,
+    desc: 'Andel av befolkningen som drabbats av torka, översvämning eller extrem hetta (snitt per år)' },
+
+  // ---------- V5.14: nya brott (uppskattade som de andra, se setIndicatorData) ----------
+  { id: 'youthcrime', name: 'Ungdomsbrott', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { welfare: -0.3, safety: -0.2, unrest: 0.2 }, desc: 'Brott där den misstänkta är 15–20 år, per 100 000 invånare och år' },
+  { id: 'harass', name: 'Ofredande', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { safety: -0.3, freedom: -0.1 }, desc: 'Någon blir trakasserad eller skrämd, fall per 100 000 och år' },
+  { id: 'trespass', name: 'Olaga intrång', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { safety: -0.2 }, desc: 'Någon tar sig in där de inte får vara, fall per 100 000 och år' },
+  { id: 'biketheft', name: 'Cykelstölder', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { safety: -0.2, welfare: -0.1 }, desc: 'Stulna cyklar per 100 000 invånare och år' },
+  { id: 'graffiti', name: 'Klotter', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { safety: -0.15, qol: -0.1 }, desc: 'Anmält klotter på hus, tåg och skyltar, per 100 000 och år' },
+  { id: 'hitrun', name: 'Smitning från olycka', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { safety: -0.2 }, desc: 'Förare som kör iväg efter en olycka, per 100 000 och år' },
+  { id: 'speeding', name: 'Fortkörningsböter', group: 'brt', fmt: 'per100k', better: null, mode: 'mul',
+    fx: { statepower: 0.2, safety: 0.1 }, desc: 'Bötfällda för fortkörning per 100 000 och år — fler kameror ger fler böter' },
+  { id: 'animalcruelty', name: 'Djurplågeri', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { welfare: -0.2 }, desc: 'Anmält djurplågeri per 100 000 invånare och år' },
+  { id: 'counterfeit', name: 'Varumärkesförfalskning', group: 'ekb', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { corruption: 0.4, research: -0.2 }, desc: 'Upptäckta piratkopior och fejkade märkesvaror, fall per 100 000 och år' },
+  { id: 'forgery', name: 'Dokumentförfalskning', group: 'ekb', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { corruption: 0.4, statepower: -0.2 }, desc: 'Falska pass, intyg och kontrakt, fall per 100 000 och år' },
+  { id: 'embezzle', name: 'Förskingring', group: 'ekb', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { corruption: 0.5 }, desc: 'Någon tar pengar som de bara skulle ta hand om, fall per 100 000 och år' },
+  { id: 'insider', name: 'Insiderbrott', group: 'ekb', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { corruption: 0.3 }, desc: 'Fusk på börsen med hemlig information, fall per 100 000 och år' },
+  { id: 'piracy', name: 'Piratkopierade program', group: 'ekb', fmt: 'pct', better: 'low', mode: 'add', min: 5, max: 95,
+    fx: { corruption: 2, research: -2 }, desc: 'Andel av datorprogrammen i landet som är olagliga kopior' },
+  { id: 'illegallog', name: 'Olaglig avverkning', group: 'ekb', fmt: 'pct', better: 'low', mode: 'add', min: 0, max: 90,
+    fx: { corruption: 3, statepower: -1 }, desc: 'Andel av skogen som huggs ner som sker olagligt' },
+  { id: 'detention', name: 'Häktade utan dom', group: 'rtt', fmt: 'pct', better: 'low', mode: 'add', min: 3, max: 90,
+    fx: { freedom: -6, statepower: 4, justtime: 2 }, desc: 'Andel av fångarna som sitter inne utan att ha fått en dom' },
+  { id: 'policetrust', name: 'Förtroende för polisen', group: 'rtt', fmt: 'pct', better: 'high', mode: 'add', min: 5, max: 97,
+    fx: { safety: 8, corruption: -10, freedom: 3, approval: 3 }, desc: 'Andel som litar på polisen' },
+  { id: 'lawyers', name: 'Advokater', group: 'rtt', fmt: 'per100k', better: null, mode: 'mul',
+    fx: { freedom: 0.3, corruption: -0.2 }, desc: 'Advokater per 100 000 invånare' },
+  { id: 'judges', name: 'Domare', group: 'rtt', fmt: 'per100k', better: null, mode: 'mul',
+    fx: { statepower: 0.2, freedom: 0.1 }, desc: 'Domare per 100 000 invånare' },
 ];
 
 export const IND = Object.fromEntries(INDICATORS.map((d) => [d.id, d]));
@@ -1041,6 +1161,167 @@ const FAITH_LAW_FX = {
 };
 for (const [opt, fx] of Object.entries(FAITH_LAW_FX)) addLawFx('religion', opt, fx);
 
+// V5.14: lagarnas effekter på de nya måtten och brotten (läggs sist, nyare vinner per mått)
+const LAW_EFFECTS_514 = {
+  policing: {
+    abolished: { youthcrime: ['*', 1.6], biketheft: ['*', 1.8], graffiti: ['*', 2], trespass: ['*', 1.8], speeding: ['*', 0.2], policetrust: ['+', -20] },
+    unarmed: { youthcrime: ['*', 1.1], harass: ['*', 1.05], policetrust: ['+', 8], speeding: ['*', 0.8] },
+    community: { youthcrime: ['*', 0.8], graffiti: ['*', 0.8], harass: ['*', 0.85], policetrust: ['+', 15], detention: ['+', -4] },
+    oversight: { policetrust: ['+', 18], detention: ['+', -6], harass: ['*', 0.9] },
+    tough: { youthcrime: ['*', 0.85], graffiti: ['*', 0.75], biketheft: ['*', 0.85], policetrust: ['+', -5], detention: ['+', 6], speeding: ['*', 1.3] },
+    militarized: { youthcrime: ['*', 0.85], policetrust: ['+', -15], detention: ['+', 12], speeding: ['*', 1.2] },
+    predictive: { youthcrime: ['*', 0.8], biketheft: ['*', 0.85], detention: ['+', 8], policetrust: ['+', -8] },
+    secretpolice: { policetrust: ['+', -35], detention: ['+', 30], lawyers: ['*', 0.6], harass: ['*', 1.2] },
+  },
+  surveillance: {
+    none: { speeding: ['*', 0.6], graffiti: ['*', 1.15], biketheft: ['*', 1.1] },
+    encryption: { speeding: ['*', 0.8] },
+    facial: { graffiti: ['*', 0.75], biketheft: ['*', 0.8], policetrust: ['+', -4] },
+    mass: { speeding: ['*', 1.8], graffiti: ['*', 0.7], biketheft: ['*', 0.8], policetrust: ['+', -8] },
+    total: { speeding: ['*', 2.5], graffiti: ['*', 0.5], biketheft: ['*', 0.6], harass: ['*', 0.8], policetrust: ['+', -15] },
+    informant: { harass: ['*', 0.85], policetrust: ['+', -25], detention: ['+', 15] },
+  },
+  punishments: {
+    abolition: { detention: ['+', -10], youthcrime: ['*', 1.25], judges: ['*', 0.7] },
+    minimal: { youthcrime: ['*', 1.1], detention: ['+', -5] },
+    restorative: { youthcrime: ['*', 0.85], graffiti: ['*', 0.85] },
+    harsh: { detention: ['+', 8], youthcrime: ['*', 0.95] },
+    threestrikes: { detention: ['+', 10], lawyers: ['*', 1.1] },
+    veryharsh: { detention: ['+', 15], youthcrime: ['*', 0.9], policetrust: ['+', -5] },
+    penallabor: { detention: ['+', 18], policetrust: ['+', -8] },
+  },
+  trials: {
+    long: { detention: ['+', 10], lawyers: ['*', 1.2], judges: ['*', 1.2] }, legalaid: { lawyers: ['*', 1.4], detention: ['+', -8] },
+    jury: { lawyers: ['*', 1.15] }, plea: { detention: ['+', -4], lawyers: ['*', 0.9] },
+    quick: { detention: ['+', -6], judges: ['*', 0.8], lawyers: ['*', 0.8] },
+    tribunals: { detention: ['+', 20], lawyers: ['*', 0.5], judges: ['*', 0.6], policetrust: ['+', -8] },
+    notrial: { detention: ['+', 45], lawyers: ['*', 0.4], policetrust: ['+', -20] },
+  },
+  civil_rights: {
+    extremelyhigh: { detention: ['+', -8], lawyers: ['*', 1.2], policetrust: ['+', 8] }, antidiscrim: { harass: ['*', 0.8], femmanagers: ['+', 4] },
+    emergency: { detention: ['+', 20], policetrust: ['+', -8] }, socialcredit: { detention: ['+', 15], harass: ['*', 0.8], speeding: ['*', 1.5] },
+    norights: { detention: ['+', 30], lawyers: ['*', 0.4], policetrust: ['+', -20] },
+  },
+  government: {
+    directdemo: { policetrust: ['+', 5] }, authoritarian: { detention: ['+', 12], lawyers: ['*', 0.8] },
+    junta: { detention: ['+', 20], policetrust: ['+', -12] }, totalitarian: { detention: ['+', 25], policetrust: ['+', -10], lawyers: ['*', 0.5] },
+  },
+  drugs: { legal: { youthcrime: ['*', 0.85] }, freemarket: { youthcrime: ['*', 0.9] }, war: { youthcrime: ['*', 1.2], detention: ['+', 12], policetrust: ['+', -10] } },
+  alcohol_policy: { dutyfree: { harass: ['*', 1.2], hitrun: ['*', 1.25] }, free: { harass: ['*', 1.15], hitrun: ['*', 1.15] }, prohibition: { harass: ['*', 0.85], hitrun: ['*', 0.8] } },
+  internet: { charter: { piracy: ['+', 4] }, free: { piracy: ['+', 5], counterfeit: ['*', 1.1] }, censored: { piracy: ['+', 8] }, firewall: { piracy: ['+', 12] } },
+  intellectual_property: {
+    abolished: { piracy: ['+', 40], counterfeit: ['*', 3], patentsfor: ['*', 0.1] }, prizes: { piracy: ['+', 20], counterfeit: ['*', 1.8], patentsfor: ['*', 0.4] },
+    short: { piracy: ['+', 8], counterfeit: ['*', 1.3], patentsfor: ['*', 0.8] }, compulsory: { piracy: ['+', 4], patentsfor: ['*', 0.7] },
+    extended: { piracy: ['+', -6], counterfeit: ['*', 0.8], patentsfor: ['*', 1.2] }, enforcement: { piracy: ['+', -15], counterfeit: ['*', 0.6], patentsfor: ['*', 1.3] },
+    perpetual: { piracy: ['+', -20], counterfeit: ['*', 0.5], patentsfor: ['*', 1.4] },
+  },
+  environment: {
+    rightsofnature: { illegallog: ['+', -18] }, strict: { illegallog: ['+', -12] }, thirty: { illegallog: ['+', -10] }, strong: { illegallog: ['+', -6] },
+    voluntary: { illegallog: ['+', 5] }, weak: { illegallog: ['+', 10] }, none: { illegallog: ['+', 20] }, frontier: { illegallog: ['+', 28] },
+  },
+  animal_welfare: {
+    phaseout: { animalcruelty: ['*', 0.3] }, animalrights: { animalcruelty: ['*', 0.4] }, strong: { animalcruelty: ['*', 0.6] }, improved: { animalcruelty: ['*', 0.8] },
+    selfreg: { animalcruelty: ['*', 1.1] }, weak: { animalcruelty: ['*', 1.3] }, none: { animalcruelty: ['*', 1.8] }, wildtrade: { animalcruelty: ['*', 2.2] },
+  },
+  education: {
+    nonecomp: { youthcrime: ['*', 1.4], lowsec: ['+', -30], litfem: ['+', -15], childlabor: ['+', 8], trainedteach: ['+', -15] },
+    freewill: { lowsec: ['+', -12], childlabor: ['+', 3], youthcrime: ['*', 1.15] }, free: { lowsec: ['+', 5], trainedteach: ['+', 4] },
+    strict: { lowsec: ['+', 4], youthcrime: ['*', 0.92] }, verystrict: { lowsec: ['+', 6], youthcrime: ['*', 0.88] },
+  },
+  equality: {
+    quotas: { femmanagers: ['+', 18], unempfem: ['+', -1], girlsschool: ['+', 0.05] },
+    full: { femmanagers: ['+', 15], litfem: ['+', 3], girlsschool: ['+', 0.05], unempfem: ['+', -1] },
+    strong: { femmanagers: ['+', 8] }, equalpay: { femmanagers: ['+', 6], unempfem: ['+', -0.5] },
+    homemaker: { femmanagers: ['+', -6], parttime: ['+', 6] },
+    traditional: { femmanagers: ['+', -15], unempfem: ['+', 2], girlsschool: ['+', -0.1], litfem: ['+', -8] },
+    segregation: { femmanagers: ['+', -20], girlsschool: ['+', -0.15], litfem: ['+', -15] },
+    restricted: { femmanagers: ['+', -40], litfem: ['+', -30], girlsschool: ['+', -0.4] },
+  },
+  childcare: { compulsory: { unempfem: ['+', -2], parttime: ['+', -6] }, free: { unempfem: ['+', -1.5], parttime: ['+', -5] }, none: { parttime: ['+', 5], unempfem: ['+', 1.5] } },
+  minimum_wage: { statewages: { wagework: ['+', 8] }, veryhigh: { wagework: ['+', 5], childlabor: ['+', -2] }, none: { childlabor: ['+', 4], wagework: ['+', -8] } },
+  unions: { selfmanaged: { wagework: ['+', 4] }, mandatory: { wagework: ['+', 4], parttime: ['+', -4] }, banned: { childlabor: ['+', 3], wagework: ['+', -3] } },
+  workhours: { fourday: { parttime: ['+', 10] }, week35: { parttime: ['+', 5] }, sixday: { parttime: ['+', -8], injurydeath: ['+', 1] }, maximum: { parttime: ['+', -15], injurydeath: ['+', 2] } },
+  welfare: { extreme: { youthcrime: ['*', 0.75], childlabor: ['+', -5], commdeath: ['+', -4] }, huge: { youthcrime: ['*', 0.85] }, none: { youthcrime: ['*', 1.3], childlabor: ['+', 6] }, independent: { youthcrime: ['*', 1.2] } },
+  healthcare: {
+    statemed: { healthpc: ['*', 1.2], neonatal: ['*', 0.75], birthcare: ['+', 8] },
+    fullyfree: { healthpc: ['*', 1.4], neonatal: ['*', 0.7], birthcare: ['+', 8], hepb: ['+', 4] },
+    free: { healthpc: ['*', 1.2], neonatal: ['*', 0.85], birthcare: ['+', 4] }, mostlyunfree: { neonatal: ['*', 1.2], birthcare: ['+', -6] },
+    unfree: { healthpc: ['*', 0.8], neonatal: ['*', 1.5], birthcare: ['+', -15], hepb: ['+', -10], commdeath: ['+', 6] },
+  },
+  healthcare_quality: {
+    minimal: { neonatal: ['*', 1.8], birthcare: ['+', -20], commdeath: ['+', 10] }, low: { neonatal: ['*', 1.3] },
+    modern: { neonatal: ['*', 0.8], healthpc: ['*', 1.2] }, extra: { neonatal: ['*', 0.6], healthpc: ['*', 1.5] },
+  },
+  vaccination: { discouraged: { hepb: ['+', -55], commdeath: ['+', 10] }, noprogram: { hepb: ['+', -45], commdeath: ['+', 8] }, mandatory: { hepb: ['+', 6] }, passport: { hepb: ['+', 8] } },
+  energy: { rationing: { ghg: ['*', 0.4] }, renewable: { ghg: ['*', 0.5], elecloss: ['+', -2] }, green: { ghg: ['*', 0.75] }, fossil: { ghg: ['*', 1.3] }, dominance: { ghg: ['*', 1.5], fuelexp: ['+', 15] } },
+  agriculture: { organic: { n2o: ['*', 0.6] }, agribusiness: { n2o: ['*', 1.4] }, biotech: { n2o: ['*', 1.2] } },
+  globalism: {
+    tradehub: { manufexp: ['+', 8], tourspend: ['*', 1.6], foodimp: ['+', 4] }, union: { manufexp: ['+', 6], tourspend: ['*', 1.4], foodimp: ['+', 3] },
+    isolationist: { tourspend: ['*', 0.2], foodimp: ['+', -8], manufexp: ['+', -15] }, autarky: { tourspend: ['*', 0.05], foodimp: ['+', -10], manufexp: ['+', -20] },
+  },
+  monetary: { printing: { broadmoney: ['+', 60], credit: ['+', -30] }, gold: { broadmoney: ['+', -20] }, freebanking: { credit: ['+', 20] } },
+  banking: {
+    monobank: { atms: ['*', 0.5], bankbranch: ['*', 1.4], credit: ['+', -40] }, nationalized: { credit: ['+', -25], bankbranch: ['*', 1.2] },
+    strict: { credit: ['+', -10] }, light: { credit: ['+', 15], atms: ['*', 1.1] }, offshore: { credit: ['+', 25], insider: ['*', 1.5] },
+    none: { credit: ['+', 40], insider: ['*', 2], embezzle: ['*', 1.5] },
+  },
+  economic_system: { central: { credit: ['+', -50], atms: ['*', 0.4], wagework: ['+', 10] }, planned: { credit: ['+', -30], wagework: ['+', 6] }, plain: { credit: ['+', 30] }, ancap: { credit: ['+', 40], insider: ['*', 2] } },
+  transport: {
+    carfree: { biketheft: ['*', 1.6], hitrun: ['*', 0.5], speeding: ['*', 0.3] }, freetransit: { biketheft: ['*', 1.3], hitrun: ['*', 0.8] },
+    carnation: { hitrun: ['*', 1.2], biketheft: ['*', 0.8], speeding: ['*', 1.3] },
+  },
+  military_service: { mandatory: { youthcrime: ['*', 0.85] }, nationalservice: { youthcrime: ['*', 0.85] }, lifelong: { youthcrime: ['*', 0.75] } },
+  emigration: { banned: { tourspend: ['*', 0.05] }, approved: { tourspend: ['*', 0.2] }, exitvisa: { tourspend: ['*', 0.4] } },
+  visa_policy: { visafree: { counterfeit: ['*', 1.1] }, closed: { counterfeit: ['*', 0.6] } },
+  cash: {
+    anonymous: { atms: ['*', 1.6], bankbranch: ['*', 1.4] }, cashlaw: { atms: ['*', 1.3] }, cardfirst: { atms: ['*', 0.6] },
+    cbdc: { atms: ['*', 0.4] }, tracked: { atms: ['*', 0.2], bankbranch: ['*', 0.5] },
+  },
+  // ----- de nya lagarna i V5.14 -----
+  juvenile_justice: {
+    socialonly: { youthcrime: ['*', 1.35], detention: ['+', -6] }, age16: { youthcrime: ['*', 1.15] }, conferences: { youthcrime: ['*', 0.8], graffiti: ['*', 0.85] },
+    records: { youthcrime: ['*', 0.95] }, parental: { youthcrime: ['*', 0.9], graffiti: ['*', 0.9] }, age12: { youthcrime: ['*', 0.85], detention: ['+', 4] },
+    bootcamp: { youthcrime: ['*', 0.8], detention: ['+', 6], policetrust: ['+', -4] }, adults: { youthcrime: ['*', 0.75], detention: ['+', 10], policetrust: ['+', -8] },
+  },
+  anti_corruption: {
+    agency: { embezzle: ['*', 0.4], forgery: ['*', 0.6], insider: ['*', 0.5], policetrust: ['+', 12] }, opengov: { embezzle: ['*', 0.55], insider: ['*', 0.7], policetrust: ['+', 8] },
+    whistle: { embezzle: ['*', 0.65], insider: ['*', 0.75] }, assetdecl: { embezzle: ['*', 0.8] }, gifts: { embezzle: ['*', 1.2] },
+    immunity: { embezzle: ['*', 1.5], policetrust: ['+', -8] }, purges: { embezzle: ['*', 1.1], detention: ['+', 10], policetrust: ['+', -10] },
+    patronage: { embezzle: ['*', 2], forgery: ['*', 1.5], insider: ['*', 1.8], policetrust: ['+', -15] },
+  },
+  border_control: {
+    none: { counterfeit: ['*', 1.6], forgery: ['*', 1.3] }, openunion: { counterfeit: ['*', 1.25] }, biometric: { forgery: ['*', 0.7] },
+    scanning: { counterfeit: ['*', 0.8], forgery: ['*', 0.75] }, fences: { counterfeit: ['*', 0.75], tourspend: ['*', 0.9] },
+    wall: { counterfeit: ['*', 0.6], tourspend: ['*', 0.8] }, militarized: { counterfeit: ['*', 0.5], tourspend: ['*', 0.6], detention: ['+', 6] },
+  },
+  lobbying: {
+    publiconly: { embezzle: ['*', 0.7], insider: ['*', 0.7] }, register: { insider: ['*', 0.9] }, revolving: { insider: ['*', 1.3] },
+    anonymous: { embezzle: ['*', 1.3], insider: ['*', 1.4] }, superpac: { insider: ['*', 1.5] }, unlimited: { embezzle: ['*', 1.6], insider: ['*', 1.8] },
+  },
+  consumer_protection: {
+    pricecontrol: { counterfeit: ['*', 0.6] }, adban: { counterfeit: ['*', 0.75] }, warranty: { counterfeit: ['*', 0.8] }, ombudsman: { counterfeit: ['*', 0.85] },
+    aggressive: { counterfeit: ['*', 1.3] }, arbitration: { counterfeit: ['*', 1.4] }, caveat: { counterfeit: ['*', 2] },
+  },
+  forestry: {
+    oldgrowth: { illegallog: ['+', -15] }, stateforest: { illegallog: ['+', -10] }, certified: { illegallog: ['+', -8] },
+    production: { illegallog: ['+', 4] }, concessions: { illegallog: ['+', 12] }, landclearing: { illegallog: ['+', 20] }, clearcut: { illegallog: ['+', 25] },
+  },
+  hunting: {
+    banned: { animalcruelty: ['*', 0.7] }, sanctuaries: { animalcruelty: ['*', 0.8] }, openseason: { animalcruelty: ['*', 1.3] }, trophy: { animalcruelty: ['*', 1.6] },
+  },
+  science_funding: { megaprojects: { patentsfor: ['*', 1.3] }, cuts: { patentsfor: ['*', 0.8] }, none: { patentsfor: ['*', 0.6] } },
+  road_safety: {
+    nolimits: { speeding: ['*', 0.1], hitrun: ['*', 1.4] }, autobahn: { speeding: ['*', 0.4], hitrun: ['*', 1.2] }, lightenf: { speeding: ['*', 0.6], hitrun: ['*', 1.1] },
+    vision: { speeding: ['*', 1.3], hitrun: ['*', 0.85] }, cameras: { speeding: ['*', 2], hitrun: ['*', 0.75] },
+    strict: { speeding: ['*', 2.5], hitrun: ['*', 0.7] }, zerotol: { speeding: ['*', 3.5], hitrun: ['*', 0.6] },
+  },
+  urban_planning: { newtowns: { graffiti: ['*', 0.9] }, developer: { graffiti: ['*', 1.1] }, nozoning: { graffiti: ['*', 1.25], trespass: ['*', 1.2] } },
+};
+for (const [cat, opts] of Object.entries(LAW_EFFECTS_514)) {
+  if (!LAWS[cat]) continue;
+  for (const [opt, fx] of Object.entries(opts)) addLawFx(cat, opt, fx);
+}
+
 // startläget per lagkategori (det verkliga datat har redan landets politik)
 const DEFAULT_LAW = Object.fromEntries(Object.entries(LAWS).map(([cat, L]) =>
   [cat, (L.options.find((o) => o.default) || L.options[Math.floor(L.options.length / 2)]).id]));
@@ -1131,17 +1412,24 @@ const RAW_KEYS_58 = ['gdppcppp', 'savings', 'consumption', 'invest', 'industry',
 // V5.10: demografin (uppskattas som V5.8-måtten, med medianen)
 const RAW_KEYS_510 = ['olddep', 'youngdep', 'adofert', 'contracept', 'adultmortm', 'adultmortf', 'sexratio',
   'largestcity', 'megacity'];
+// V5.14: ännu fler verkliga mått (tools/build-indicators.mjs)
+const RAW_KEYS_514 = ['gnipc', 'fuelexp', 'foodimp', 'oresexp', 'manufexp', 'ictexp', 'extdebt', 'debtserv', 'credit',
+  'broadmoney', 'tourspend', 'atms', 'bankbranch', 'parttime', 'wagework', 'unempfem', 'unempmale', 'unempedu',
+  'childlabor', 'femmanagers', 'healthpc', 'birthcare', 'hepb', 'handwash', 'cleanfuel', 'neonatal', 'commdeath',
+  'injurydeath', 'girlsschool', 'lowsec', 'litfem', 'trainedteach', 'patentsfor', 'elecloss', 'ghg', 'n2o', 'disasters'];
 // räknas per invånare — uppskattas som andel och skalas sedan med folkmängden
 const PER_CAPITA_SUMS = { tourists: 1, airpax: 1, patents: 1, netmig: 1, articles: 1, armsexp: 1, labor: 1,
   tourrcpt: 1, listed: 1, cerealprod: 1, fishcatch: 1, aquaculture: 1, outofschool: 1, co2total: 1, methane: 1,
-  armsimp: 1, airfreight: 1 };
+  armsimp: 1, airfreight: 1, tourspend: 1, patentsfor: 1, ghg: 1, n2o: 1 };
 // V5.8: saknas värdet betyder det (nästan alltid) noll: inga malariamyggor, ett
 // givarland som inte får bistånd, ingen järnväg, eller — i ett fattigare land —
 // ingen börs. true = säkert noll, en funktion = noll bara om villkoret gäller
 // (märks då som uppskattat), annars vanlig uppskattning.
 // 'wb' = noll om Världsbanken har landet men inte måttet (V5.10: ett land utan
 // miljonstad saknas i listan) — ett land som helt saknas där uppskattas i stället.
-const ZERO_IF_MISSING = { malaria: true, aid: true, rail: true, listed: (b) => b.gdppc < 12000, megacity: 'wb' };
+const ZERO_IF_MISSING = { malaria: true, aid: true, rail: true, listed: (b) => b.gdppc < 12000, megacity: 'wb',
+  // V5.14: rika länder har inget barnarbete och redovisar ingen utlandsskuld hos Världsbanken
+  childlabor: (b) => b.gdppc > 15000, debtserv: (b) => b.gdppc > 15000 };
 // järnvägsnät som Världsbanken saknar (CIA World Factbook, avrundat — märks ~)
 const RAIL_KM = { '484': 20800, '036': 33000, '170': 2100, '024': 2900, '068': 4000, '516': 2600, '324': 1100,
   '400': 500, '430': 430, '768': 570, '418': 420, '728': 250, '232': 300 };
@@ -1149,7 +1437,7 @@ const RAIL_KM = { '484': 20800, '036': 33000, '170': 2100, '024': 2900, '068': 4
 const NO_IMPUTE = { marine: 1, ports: 1, energyimp: 1 };
 // brotten som vägs ihop till Brottslighet (100 = ett typiskt land i världen)
 const CRIME_KEYS = ['homicide', 'assault', 'threats', 'robbery', 'burglary', 'theft', 'cartheft', 'vandalism',
-  'kidnapping', 'extortion', 'fraud', 'gangs'];
+  'kidnapping', 'extortion', 'fraud', 'gangs', 'youthcrime', 'harass', 'biketheft', 'graffiti'];
 let CRIME_MED = {};
 
 // V5.10: befolkningspyramiden — Världsbankens andel av männen (pm…) resp.
@@ -1196,8 +1484,8 @@ export function setIndicatorData(raw, facts) {
     BASE[cid].gdppc = median(gdps);
   }
   const lg = (cid) => Math.log(Math.max(100, BASE[cid].gdppc));
-  const robust = new Set([...RAW_KEYS_58, ...RAW_KEYS_510]);
-  for (const key of [...RAW_KEYS, ...RAW_KEYS_58, ...RAW_KEYS_510]) {
+  const robust = new Set([...RAW_KEYS_58, ...RAW_KEYS_510, ...RAW_KEYS_514]);
+  for (const key of [...RAW_KEYS, ...RAW_KEYS_58, ...RAW_KEYS_510, ...RAW_KEYS_514]) {
     if (NO_IMPUTE[key]) continue;
     let missing = ids.filter((c) => !Number.isFinite(BASE[c][key]));
     if (!missing.length) continue;
@@ -1308,6 +1596,33 @@ export function setIndicatorData(raw, facts) {
         + 6 / Math.sqrt(Math.max(1, b.density || 50) / 50), 5, 90),
       cctv: clampV(1 + 40 * (P / 20000) ** 0.9 * (1 + 1.5 * Math.max(0, -V)) * (1.4 - 0.35 * Math.max(0, V)), 0.5, 600),
     };
+    // V5.14: 18 nya brott och rättsmått, uppskattade på samma sätt
+    const eff = (Ge + Rl + 5) / 10;                       // 0 = stat som inte fungerar, 1 = mycket välfungerande
+    const model3 = {
+      youthcrime: 320 * youth * urb * law * C ** 0.6,
+      harass: 90 * H ** 0.3 * urb * (0.6 + 0.4 * law),
+      trespass: 40 * rich ** 0.25 * law * urb,
+      biketheft: 150 * urb * rich ** 0.2 * law * C ** 0.5,
+      graffiti: 120 * urb * rich ** 0.3 * law * youth,
+      hitrun: 3 + 25 * cars * law * C ** 0.5,
+      speeding: 400 + 3500 * cars * (0.3 + 0.7 * eff),
+      animalcruelty: 2 + 8 * law * (1 + 0.5 * unst),
+      counterfeit: 4 + 15 * corr * rich ** 0.2 * Math.sqrt(((b.exports ?? 30) + (b.imports ?? 35)) / 70),
+      forgery: 5 + 20 * corr * law,
+      embezzle: 3 + 12 * corr ** 1.3 * rich ** 0.2,
+      insider: 0.05 + 0.3 * Math.sqrt(rich) * corr,
+      piracy: clampV(18 + 55 * (1 - (Rl + 2.5) / 5) - 4 * Math.log10(Math.max(1, rich)), 8, 92),
+      illegallog: clampV(3 + 55 * corr ** 1.4 * law * Math.min(1.3, (b.forest ?? 30) / 30), 0, 85),
+      detention: clampV(12 + 50 * (1 - eff) ** 1.3, 5, 85),
+      policetrust: clampV(28 + 12 * Rl + 8 * Ge - 4 * Math.log(H), 8, 95),
+      lawyers: 15 + 140 * Math.min(2, rich) ** 0.5 * eff,
+      judges: 2 + 18 * eff,
+    };
+    for (const [k, v] of Object.entries(model3)) {
+      if (Number.isFinite(b[k])) continue;
+      b[k] = v;
+      (EST[cid] ||= new Set()).add(k);
+    }
     for (const [k, v] of Object.entries(model2)) {
       if (Number.isFinite(b[k])) continue;
       b[k] = v;
@@ -1440,6 +1755,19 @@ function followers(v, b, pop) {
   set('freshwater', v.freshwater / popR);
   set('airdeath', v.airdeath * ratio('pm25') ** 0.7);
   set('prisonocc', v.prisonocc * ratio('prisoners'));
+  // V5.14: de nya måtten följer sina föräldrar
+  set('gnipc', v.gnipc * gdpR);
+  set('healthpc', v.healthpc * gdpR * ratio('healthx'));
+  set('tourspend', v.tourspend * gdpR * popR);
+  set('patentsfor', v.patentsfor * ratio('patents'));
+  set('ghg', v.ghg * ratio('co2') * popR);
+  set('n2o', v.n2o * ratio('fertilizer') * popR);
+  set('neonatal', v.neonatal * ratio('infmort'));
+  const du = (v.unemp ?? b0('unemp')) - b0('unemp');
+  set('unempfem', v.unempfem + du);
+  set('unempmale', v.unempmale + du);
+  set('unempedu', v.unempedu + du * 0.6);
+  set('litfem', v.litfem + ((v.literacy ?? b0('literacy')) - b0('literacy')));
   // fler barn och pensionärer → tyngre försörjningsbörda
   const dep = (k, o) => (k + o) / Math.max(1, 100 - k - o);
   if (Number.isFinite(v.kids) && Number.isFinite(v.old)) set('dependency', v.dependency * dep(v.kids, v.old) / dep(b0('kids'), b0('old')));

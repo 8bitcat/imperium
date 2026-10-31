@@ -11,11 +11,15 @@ import * as p4 from './laws511/part4.js';
 import * as p5 from './laws511/part5.js';
 import * as p6 from './laws511/part6.js';
 import * as p7 from './laws511/part7.js';   // V5.13: fem nya lagar (skuldbroms, banker, vapenexport, patent, semester)
+import * as p8 from './laws511/part8.js';   // V5.14: brott och rätt
+import * as p9 from './laws511/part9.js';   // V5.14: ekonomi
+import * as p10 from './laws511/part10.js'; // V5.14: natur och råvaror
+import * as p11 from './laws511/part11.js'; // V5.14: samhälle
 
 export const EXTRAS_511 = {};
 export const FX_511 = {};
 export const NEW_511 = {};
-for (const p of [p1, p2, p3, p4, p5, p6, p7]) {
+for (const p of [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11]) {
   Object.assign(EXTRAS_511, p.EXTRAS || {});
   Object.assign(NEW_511, p.NEW || {});
   for (const [cat, opts] of Object.entries(p.FX || {})) Object.assign((FX_511[cat] ||= {}), opts);

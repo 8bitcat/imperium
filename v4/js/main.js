@@ -60,9 +60,9 @@ function puppetColor() { const c = soloColor(); return lumOf(c) > 200 ? mixHex(c
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.13.0';
-export const VERSION_DATE = '2026-10-30';
-export const VERSION_NAME = 'BANKEN';
+export const VERSION = '5.14.0';
+export const VERSION_DATE = '2026-10-31';
+export const VERSION_NAME = 'LAG OCH ORDNING';
 
 const globe = new Globe($('#globe'));
 
@@ -1822,6 +1822,12 @@ function myRealmParts() {
     parts.push({ cid, share: s.partial?.[cid]?.share ?? 1 });
   }
   return parts;
+}
+
+// V5.14: länder som räknas för ett historiskt rike — hemlandet och allt du äger
+// HELT (annekterat). Lydstater och delvis tagna länder räknas inte.
+function empireOwnedIds() {
+  return myRealmParts().filter((p) => p.share >= 1 && !isSplit(p.cid)).map((p) => p.cid);
 }
 
 function mySoldiers() {
@@ -4021,7 +4027,9 @@ function checkArrivals() {
         delete world.aiPuppets?.[m.target];
         toast(`\u{1F525} ${attName} HAR ANNEKTERAT ${cname(m.target)}!`, 'red', 7000);
       }
-      if (histE && !emp.empireId && empireComplete(histE, [m.att, ...emp.owned])) {
+      // V5.14: lydstater räknas inte — riket kräver ALLA gamla länder annekterade
+      if (histE && histE.core === m.att && !emp.empireId
+        && empireComplete(histE, [m.att, ...emp.owned.filter((c) => !world.aiPuppets?.[c])])) {
         emp.empireId = histE.id; emp.name = histE.name; emp.color = histE.color;
         toast(`${histE.icon} ${histE.name.toUpperCase()} HAR ÅTERUPPSTÅTT!`, 'amber', 9000);
       }
@@ -4356,7 +4364,11 @@ function renderNationTab() {
   // RIKEN & STATSFÖRBUND: utropa historiska riken (kräver grundlandet + territorier)
   // eller bilda union/konfederation/federation/imperium av dina länder
   const ownedIds = Object.keys(s.claims);
-  if (ownedIds.length >= 2) {
+  // V5.14: bara HELA egna länder räknas för ett historiskt rike — inte lydstater
+  // och inte länder där du bara tagit en del av städerna
+  const fullIds = empireOwnedIds();
+  const myEmpires = HISTORICAL_EMPIRES.filter((e) => e.core === s.home);
+  if (ownedIds.length >= 2 || myEmpires.length) {
     const fDiv = document.createElement('div');
     fDiv.className = 'natgroup';
     const ft = document.createElement('div');
@@ -4387,8 +4399,10 @@ function renderNationTab() {
       }
       fDiv.appendChild(row);
     };
-    for (const e of HISTORICAL_EMPIRES) {
-      const prog = empireProgress(e, ownedIds);
+    // V5.14: ett historiskt rike kan BARA utropas av sitt grundland — Sverige som
+    // erövrar Tyskland blir inte Tyska kejsardömet, Sovjetunionen utropas av Ryssland
+    for (const e of myEmpires) {
+      const prog = empireProgress(e, fullIds);
       if (!prog.hasCore) continue;
       // V5.8: ALLA rikets gamla länder krävs — de som saknas visas med namn
       const formable = prog.have >= e.need && s.nation.formation?.id !== e.id;

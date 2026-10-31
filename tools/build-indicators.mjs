@@ -92,6 +92,20 @@ const WB = [
   // varje femårsgrupp, 0–4 … 75–79 och 80+
   ...['0004', '0509', '1014', '1519', '2024', '2529', '3034', '3539', '4044', '4549', '5054', '5559', '6064',
     '6569', '7074', '7579', '80UP'].flatMap((g) => [['pm' + g.toLowerCase(), `SP.POP.${g}.MA.5Y`], ['pf' + g.toLowerCase(), `SP.POP.${g}.FE.5Y`]]),
+  // V5.14: ännu mer statistik — ekonomi, arbete, hälsa, skola, infrastruktur, miljö, samhälle, försvar
+  ['gnipc', 'NY.GNP.PCAP.CD'], ['fuelexp', 'TX.VAL.FUEL.ZS.UN'], ['foodimp', 'TM.VAL.FOOD.ZS.UN'],
+  ['oresexp', 'TX.VAL.MMTL.ZS.UN'], ['manufexp', 'TX.VAL.MANF.ZS.UN'], ['ictexp', 'TX.VAL.ICTG.ZS.UN'],
+  ['extdebt', 'DT.DOD.DECT.GN.ZS'], ['debtserv', 'DT.TDS.DECT.EX.ZS'], ['credit', 'FS.AST.PRVT.GD.ZS'],
+  ['broadmoney', 'FM.LBL.BMNY.GD.ZS'], ['tourspend', 'ST.INT.XPND.CD'], ['atms', 'FB.ATM.TOTL.P5'],
+  ['bankbranch', 'FB.CBK.BRCH.P5'], ['parttime', 'SL.TLF.PART.ZS'], ['wagework', 'SL.EMP.WORK.ZS'],
+  ['unempfem', 'SL.UEM.TOTL.FE.ZS'], ['unempmale', 'SL.UEM.TOTL.MA.ZS'], ['unempedu', 'SL.UEM.ADVN.ZS'],
+  ['childlabor', 'SL.TLF.0714.ZS'], ['femmanagers', 'SL.EMP.SMGT.FE.ZS'],
+  ['healthpc', 'SH.XPD.CHEX.PC.CD'], ['birthcare', 'SH.STA.BRTC.ZS'], ['hepb', 'SH.IMM.HEPB'],
+  ['handwash', 'SH.STA.HYGN.ZS'], ['cleanfuel', 'EG.CFT.ACCS.ZS'], ['neonatal', 'SH.DYN.NMRT'],
+  ['commdeath', 'SH.DTH.COMM.ZS'], ['injurydeath', 'SH.DTH.INJR.ZS'],
+  ['girlsschool', 'SE.ENR.PRSC.FM.ZS'], ['lowsec', 'SE.SEC.CMPT.LO.ZS'], ['litfem', 'SE.ADT.LITR.FE.ZS'],
+  ['trainedteach', 'SE.PRM.TCAQ.ZS'], ['patentsfor', 'IP.PAT.NRES'], ['elecloss', 'EG.ELC.LOSS.ZS'],
+  ['ghg', 'EN.GHG.ALL.MT.CE.AR5'], ['n2o', 'EN.GHG.N2O.MT.CE.AR5'], ['disasters', 'EN.CLC.MDAT.ZS'],
 ];
 
 // Bara vissa nycklar:  node tools/build-indicators.mjs gdppcppp savings …
