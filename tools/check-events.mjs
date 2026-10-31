@@ -30,8 +30,12 @@ S.setIndicatorData(JSON.parse(readFileSync(join(ROOT, 'v4/data/indicators.json')
 const STAT_IDS = Object.keys(STATS);
 const IND_IDS = new Set(S.INDICATORS.map((d) => d.id));
 const RES_KEYS = new Set(['money', 'pp', 'rp', 'man']);
-const CHOICE_KEYS = new Set(['text', 'tip', 'cost', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law']);
-const EVENT_KEYS = new Set(['id', 'icon', 'weight', 'cooldown', 'title', 'text', 'when', 'choices']);
+const CHOICE_KEYS = new Set(['text', 'tip', 'cost', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'risk', 'next']);
+const EVENT_KEYS = new Set(['id', 'icon', 'weight', 'cooldown', 'title', 'text', 'when', 'choices', 'rare', 'chain']);
+// V5.15: utfallen i ett chansval (risk.win / risk.lose)
+const OUTCOME_KEYS = new Set(['text', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law']);
+const PLACEHOLDERS = new Set(['rike', 'granne', 'land', 'stad', 'huvudstad']);
+const nextRefs = [];   // [var, id] — kontrolleras när alla filer är lästa
 const CAPS = { money: 2500, pp: 60, rp: 150, man: 25 };
 
 // ---------- slumpade lägen ----------
@@ -81,6 +85,23 @@ function sampleCtx(emptyInd = false) {
 const SAMPLES = Array.from({ length: 400 }, () => sampleCtx());
 const EMPTY_IND = Array.from({ length: 40 }, () => sampleCtx(true));
 
+// ---------- effekter (ett val eller ett chansutfall) ----------
+function effects(c, P, E) {
+  for (const grp of ['temp', 'perm']) {
+    for (const [k, v] of Object.entries(c[grp] || {})) {
+      if (!STATS[k]) E(`${P}: ${grp}.${k} är inget nationsvärde`);
+      else if (!Number.isInteger(v) || Math.abs(v) > (grp === 'perm' ? 20 : 30) || v === 0) E(`${P}: ${grp}.${k} = ${v} (heltal, ±${grp === 'perm' ? 20 : 30})`);
+    }
+  }
+  if (c.mod != null && !MODIFIERS[c.mod]) E(`${P}: modifieraren "${c.mod}" finns inte`);
+  if (c.unmod != null && !MODIFIERS[c.unmod]) E(`${P}: modifieraren "${c.unmod}" finns inte`);
+  if (c.rel != null && (!Number.isInteger(c.rel) || Math.abs(c.rel) > 30)) E(`${P}: rel heltal ±30`);
+  if (c.law != null) {
+    const [cat, opt] = Array.isArray(c.law) ? c.law : [];
+    if (!LAWS[cat]?.options.some((o) => o.id === opt)) E(`${P}: law ['${cat}', '${opt}'] finns inte`);
+  }
+}
+
 // ---------- kontroll av en händelse ----------
 function checkEvent(ev, where) {
   const err = [], warn = [];
@@ -96,8 +117,14 @@ function checkEvent(ev, where) {
   if (typeof ev.text !== 'string' || ev.text.length < 40 || ev.text.length > 420) E(`text 40–420 tecken (har ${ev.text?.length})`);
   else if (ev.text === ev.text.toUpperCase()) E('texten ska vara vanlig skrift, inte versaler');
   if (/\bundefined\b|\bNaN\b/.test(JSON.stringify(ev))) E('innehåller undefined/NaN');
-  // villkoret
-  if (typeof ev.when !== 'function') E('when saknas');
+  for (const m of JSON.stringify(ev).matchAll(/\{(\w*)\}/g)) if (!PLACEHOLDERS.has(m[1].toLowerCase()) || (m[1] !== m[1].toLowerCase() && m[1] !== m[1].toUpperCase())) E(`okänd platshållare {${m[1]}} (finns: ${[...PLACEHOLDERS].join(', ')})`);
+  if (ev.rare != null && ev.rare !== true) E('rare ska vara true eller utelämnas');
+  if (ev.chain != null && ev.chain !== true) E('chain ska vara true eller utelämnas');
+  // villkoret (en kedjehändelse lottas aldrig — den behöver inget villkor)
+  if (ev.chain) {
+    if (ev.when != null) E('en kedjehändelse (chain: true) ska inte ha when — den kommer bara via next');
+    if (ev.weight != null || ev.rare) E('en kedjehändelse ska inte ha weight/rare');
+  } else if (typeof ev.when !== 'function') E('when saknas');
   else {
     unknown.clear();
     let hits = 0, crash = null;
@@ -107,7 +134,7 @@ function checkEvent(ev, where) {
     for (const u of unknown) E(`okänt namn i when: ${u}`);
     const pct = (hits / SAMPLES.length) * 100;
     if (pct === 0) E('when slår aldrig till (0 % av lägena)');
-    else if (pct < 0.5) W(`when slår nästan aldrig till (${pct.toFixed(1)} %)`);
+    else if (pct < 0.5 && !ev.rare) W(`when slår nästan aldrig till (${pct.toFixed(1)} %)`);
     else if (pct > 60) E(`when slår till nästan alltid (${pct.toFixed(0)} %) — snäva in villkoret`);
   }
   // valen
@@ -119,28 +146,36 @@ function checkEvent(ev, where) {
     for (const k of Object.keys(c)) if (!CHOICE_KEYS.has(k)) E(`${P}: okänt fält "${k}"`);
     if (typeof c.text !== 'string' || c.text !== c.text.toUpperCase() || c.text.length < 3 || c.text.length > 70) E(`${P}: text i VERSALER, 3–70 tecken`);
     if (c.tip != null && (typeof c.tip !== 'string' || c.tip.length > 100)) E(`${P}: tip ≤ 100 tecken`);
-    for (const grp of ['cost', 'res']) {
-      for (const [k, v] of Object.entries(c[grp] || {})) {
+    for (const [grp, src] of [['cost', c.cost], ['res', c.res], ['risk.win.res', c.risk?.win?.res], ['risk.lose.res', c.risk?.lose?.res]]) {
+      for (const [k, v] of Object.entries(src || {})) {
         if (!RES_KEYS.has(k)) E(`${P}: ${grp}.${k} finns inte (money/pp/rp/man)`);
         else if (!(v > 0) || v > CAPS[k]) E(`${P}: ${grp}.${k} = ${v} (1–${CAPS[k]})`);
       }
     }
-    for (const grp of ['temp', 'perm']) {
-      for (const [k, v] of Object.entries(c[grp] || {})) {
-        if (!STATS[k]) E(`${P}: ${grp}.${k} är inget nationsvärde`);
-        else if (!Number.isInteger(v) || Math.abs(v) > (grp === 'perm' ? 20 : 30) || v === 0) E(`${P}: ${grp}.${k} = ${v} (heltal, ±${grp === 'perm' ? 20 : 30})`);
+    effects(c, P, E);
+    // V5.15: chansval — utfallet lottas när man väljer
+    if (c.risk != null) {
+      const r = c.risk;
+      if (typeof r !== 'object' || !(r.chance >= 0.1 && r.chance <= 0.9)) E(`${P}: risk.chance 0.1–0.9`);
+      for (const side of ['win', 'lose']) {
+        const o = r?.[side];
+        if (!o || typeof o !== 'object') { E(`${P}: risk.${side} saknas`); continue; }
+        for (const k of Object.keys(o)) if (!OUTCOME_KEYS.has(k)) E(`${P}: risk.${side}: okänt fält "${k}" (cost går inte i ett utfall)`);
+        if (typeof o.text !== 'string' || o.text.length < 10 || o.text.length > 120) E(`${P}: risk.${side}.text 10–120 tecken`);
+        else if (o.text === o.text.toUpperCase()) E(`${P}: risk.${side}.text ska vara vanlig skrift`);
+        effects(o, `${P} risk.${side}`, E);
+        if (!['res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law'].some((k) => o[k] != null)) E(`${P}: risk.${side} gör ingenting`);
       }
+      for (const k of Object.keys(r || {})) if (!['chance', 'win', 'lose'].includes(k)) E(`${P}: risk: okänt fält "${k}"`);
     }
-    if (c.mod != null && !MODIFIERS[c.mod]) E(`${P}: modifieraren "${c.mod}" finns inte`);
-    if (c.unmod != null && !MODIFIERS[c.unmod]) E(`${P}: modifieraren "${c.unmod}" finns inte`);
-    if (c.rel != null && (!Number.isInteger(c.rel) || Math.abs(c.rel) > 30)) E(`${P}: rel heltal ±30`);
-    if (c.law != null) {
-      const [cat, opt] = Array.isArray(c.law) ? c.law : [];
-      if (!LAWS[cat]?.options.some((o) => o.id === opt)) E(`${P}: law ['${cat}', '${opt}'] finns inte`);
+    if (c.next != null) {
+      const list = Array.isArray(c.next) ? c.next : [c.next];
+      if (!list.length || list.some((x) => x !== null && typeof x !== 'string')) E(`${P}: next = 'id' eller ['id', null, …]`);
+      for (const id of list) if (id) nextRefs.push([`${where} ${ev.id} ${P}`, id]);
     }
     const isFree = !c.cost || Object.values(c.cost).every((v) => !v);
     if (isFree) free++;
-    const hasEffect = ['cost', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law'].some((k) => c[k] != null && (typeof c[k] !== 'object' || Array.isArray(c[k]) || Object.keys(c[k]).length));
+    const hasEffect = ['cost', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'risk', 'next'].some((k) => c[k] != null && (typeof c[k] !== 'object' || Array.isArray(c[k]) || Object.keys(c[k]).length));
     if (!hasEffect) E(`${P}: valet gör ingenting`);
   });
   if (!free) E('inget val är gratis — spelaren kan fastna');
@@ -185,6 +220,20 @@ for (const f of files) {
   }
   if (report) console.log(`${fe ? '✗' : '✓'} ${short}: ${list.length} händelser, ${fe} fel, ${fw} varningar`);
   if (report) { errors += fe; warnings += fw; total += list.length; }
+}
+// V5.15: följdhändelser måste finnas, och en kedjehändelse måste nås av något val
+const allEv = new Map();
+for (const f of files) { try { const m = await imp(f); for (const e of (m.EVENTS || [])) allEv.set(e.id, e); } catch { /* redan rapporterat */ } }
+const reached = new Set();
+for (const [w, id] of nextRefs) {
+  if (!seen.has(id)) { console.log(`✗ ${w}: next '${id}' finns inte`); errors++; }
+  else if (!allEv.get(id)?.chain) { console.log(`! ${w}: next '${id}' är ingen kedjehändelse (chain: true) — den kan också lottas fram av sig själv`); warnings++; }
+  reached.add(id);
+}
+for (const [id, e] of allEv) {
+  if (!e.chain || reached.has(id)) continue;
+  const f = seen.get(id) || '';
+  if (!only || resolve(join(ROOT, f)) === only) { console.log(`✗ ${f} ${id}: kedjehändelsen nås aldrig — inget val har next: '${id}'`); errors++; }
 }
 console.log(`\n${errors ? '✗' : '✓'} ${total} händelser kontrollerade — ${errors} fel, ${warnings} varningar`);
 process.exit(errors ? 1 : 0);

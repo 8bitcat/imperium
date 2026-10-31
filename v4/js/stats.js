@@ -40,6 +40,10 @@ export const STATS = {
 
 export const STAT_IDS = Object.keys(STATS);
 
+// V5.15 INGA GRÄNSER: värden som producerar något och därför kan växa förbi 100
+// (oändlig forskning, fler länder). Visas med sitt raw-värde i NATION.
+export const UNCAPPED = new Set(['income', 'gdp', 'factory', 'research', 'polpower', 'manpower', 'milpower']);
+
 // Neutralt basvärde: hela världen startar balanserat (per spec).
 // Basen kan senare färgas av landsprofiler.
 export function baseStats() {
@@ -63,8 +67,13 @@ export function computeStats(nation, sources = {}) {
     const extra = sources.extra?.[id] || 0;   // händelser, atomslag, tillfällig oro m.m.
     const faith = sources.faith?.[id] || 0;   // V5.12: religiöst kaos
     const bank = sources.bank?.[id] || 0;     // V5.13: statsbankrutt
-    const total = Math.max(-100, Math.min(100, b + law + ideo + res + mods + dev + extra + faith + bank));
-    breakdown[id] = { base: b, laws: law, ideology: ideo, research: res, modifiers: mods, development: dev, extra, faith, bank, total };
+    const sum = b + law + ideo + res + mods + dev + extra + faith + bank;
+    const total = Math.max(-100, Math.min(100, sum));
+    // V5.15: raw har inget tak uppåt. Det är raw som ger pengar, forskning,
+    // politisk makt och rekryter per dag (UNCAPPED) — statistiken och allt
+    // annat läser fortfarande total (−100…100).
+    const raw = Math.max(-100, sum);
+    breakdown[id] = { base: b, laws: law, ideology: ideo, research: res, modifiers: mods, development: dev, extra, faith, bank, total, raw };
   }
   return breakdown;
 }

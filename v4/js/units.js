@@ -101,24 +101,28 @@ export function expandUnits(units) {
 }
 
 // ---------- snabbresultat (tärningsmodell) ----------
-export function autoResolve(atkUnits, defUnits) {
+// V5.15: atkBoost/defBoost (valfria) = battleBoost(): extra skada per typ och
+// up[typ].hp = forskningens hälsa i procent
+export function autoResolve(atkUnits, defUnits, atkBoost = null, defBoost = null) {
   const a = atkUnits.map((u) => ({ ...u }));
   const d = defUnits.map((u) => ({ ...u }));
   let rounds = 0;
   while (a.some((u) => u.hp > 0) && d.some((u) => u.hp > 0) && rounds < 40) {
     rounds++;
-    const volley = (from, to, defBonus) => {
+    const volley = (from, to, defBonus, fb, tb) => {
       const alive = to.filter((u) => u.hp > 0);
       if (!alive.length) return;
       for (const u of from) {
         if (u.hp <= 0) continue;
         const target = alive[(rounds * 7 + u.hp * 3) % alive.length];
         if (target.hp <= 0) continue;
-        target.hp = Math.max(0, target.hp - attackDamage(u, target, defBonus));
+        const raw = attackDamage(u, target, defBonus) + (fb?.[u.type] || 0);
+        const soak = 1 + (tb?.up?.[target.type]?.hp || 0) / 100;
+        target.hp = Math.max(0, target.hp - Math.max(1, Math.round(raw / soak)));
       }
     };
-    volley(a, d, 1);
-    volley(d, a, 0);
+    volley(a, d, 1, atkBoost, defBoost);
+    volley(d, a, 0, defBoost, atkBoost);
   }
   const surA = a.filter((u) => u.hp > 0);
   const surD = d.filter((u) => u.hp > 0);

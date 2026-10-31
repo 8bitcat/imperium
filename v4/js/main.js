@@ -6,13 +6,14 @@ import { RESOURCES, RECIPES, resourcesOf } from './resources.js';
 import { STARTER_ARMY, defenderArmy, compOf, autoResolve, biomeFor, BIOMES, mkUnit, loadWarSprites, UNIT_TYPES, consolidate, expandUnits } from './units.js';
 import { BattleA } from './battleA.js';
 import { BattleB } from './battleB.js';
-import { STATS, STAT_GROUPS, computeStats, statGoodness } from './stats.js';
+import { STATS, STAT_GROUPS, computeStats, statGoodness, UNCAPPED } from './stats.js';
 import { LAWS, defaultLaws, lawMods, lawChangeCost, lawOption } from './laws.js';
 import { IDEOLOGIES, countryIdeology, ideologyMods, lawLockedBy, enforceRequirements, IDEOLOGY_COST, DOCTRINE_COST, IDEOLOGY_TRACKS, trackOf, switchBlockedBy, branchesOf,
   ideologyHarmony, lawCostFactor, preferredIndex, ideologyDistance, tradeCostFactor, tradeBlockedBy, allyBlockedBy, blocBlockedBy, axesOf } from './ideologies.js';
-import { RESEARCH, TIER_COST, TIER_DAYS, researchMods, combatBonus, hasUnlock, logisticsRange, satCoverage, espionageTier } from './research.js';
+import { RESEARCH, researchMods, combatBonus, hasUnlock, logisticsRange, satCoverage, espionageTier,
+  tierOf, tierCost, tierDays, missingNeeds, unitUpgrades, UNIT_STATS, ENDLESS_NAME, roman } from './research.js';
 import { MODIFIERS, modifierMods, tickModifiers, tickTrend, grant as grantMod, revoke as revokeMod, activeList as modList } from './modifiers.js';
-import { EVENTS, pickEvent, affordable, EVENT_COUNT } from './events.js';
+import { EVENTS, pickEvent, affordable, EVENT_COUNT, EVENT_BY_ID, nextEventGap, fillText, rollNext } from './events.js';
 import { DEV_MAX, DEV_STEP, DEV_KINDS, DEV_RAMP, stepCost, devOf, raiseDev, realmDev, devMods, tradeDevFactor, devColor, devLabel, devColorMap, aiDevStep } from './development.js';
 import { BUILDINGS, CITY_SLOTS, UNIT_NEEDS_BUILDING, TRADE_PRICES, TRADE_DEFAULT } from './buildings.js';
 import { countryIncomeOf, armySizeOf, econOf, WEALTH_TIER } from './economy.js';
@@ -60,9 +61,9 @@ function puppetColor() { const c = soloColor(); return lumOf(c) > 200 ? mixHex(c
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.14.0';
+export const VERSION = '5.15.0';
 export const VERSION_DATE = '2026-10-31';
-export const VERSION_NAME = 'LAG OCH ORDNING';
+export const VERSION_NAME = 'INGA GRÄNSER';
 
 const globe = new Globe($('#globe'));
 
@@ -1873,6 +1874,8 @@ function tickIndLag() {
     const cur = s.indLag[id] ?? want;
     s.indLag[id] = Math.abs(want - cur) <= Math.abs(want) * 0.002 + 1e-9 ? want : cur + (want - cur) * 0.04;
   }
+  // V5.15: rikets FoU i % av BNP just nu — forskningspoängen räknas på den
+  s.rdNow = Number.isFinite(plain.rnd) ? Math.max(0, plain.rnd + (s.indLag.rnd || 0)) : null;
 }
 
 // ---------- V5.7: LEVANDE BEFOLKNING ----------
@@ -2684,6 +2687,7 @@ function battleBoost() {
     INF: cb.INF + r + (fc.INF || 0),
     TANK: cb.TANK + r + (fc.TANK || 0),
     FLYG: cb.FLYG + r + (fc.FLYG || 0),
+    up: unitUpgrades(s.nation),   // V5.15: hälsa, räckvidd, rörlighet, läkning
   };
 }
 
@@ -2722,8 +2726,10 @@ function deltaHtml(deltaMods) {
   for (const [k, d] of Object.entries(deltaMods)) {
     if (!d) continue;
     const good = statGoodness(k, d) > 0;
-    const cur = stats?.[k]?.total ?? 0;
-    const next = Math.max(-100, Math.min(100, cur + d));
+    // V5.15: produktionsvärden (UNCAPPED) har inget tak — visa raw
+    const free = UNCAPPED.has(k);
+    const cur = free ? (stats?.[k]?.raw ?? stats?.[k]?.total ?? 0) : (stats?.[k]?.total ?? 0);
+    const next = free ? Math.max(-100, cur + d) : Math.max(-100, Math.min(100, cur + d));
     parts.push(`<span class="${good ? 'dp' : 'dn'}">${(STATS[k]?.name || k).toUpperCase()} ${cur} \u{2192} ${next}</span>`);
   }
   return parts.join(' &nbsp;') || '<span class="dc">INGEN FÖRÄNDRING</span>';
@@ -2742,7 +2748,10 @@ function tickDay() {
   tickIndLag();   // V5.6: statistiken glider mot det läge politiken pekar ut
   if (state.mode === 'solo' && s.clock.day % 10 === 0) tickPopulation();   // V5.7
   const st = s.stats;
-  s.res.money = Math.max(0, s.res.money + Math.round(10 + st.income.total * 0.3));
+  // V5.15 INGA GRÄNSER: inkomst, forskning, politisk makt och rekrytering räknas
+  // på raw-värdet (utan tak vid 100) — oändlig forskning ger oändlig avkastning
+  const raw = (k) => st[k]?.raw ?? st[k]?.total ?? 0;
+  s.res.money = Math.max(0, s.res.money + Math.round(10 + raw('income') * 0.3));
   // varje ägt land bidrar efter sin ekonomiska tyngd — MEN erövrade länder ger
   // inget förrän de integrerats: i ockupationsfasen kostar de i stället.
   let occUnrest = 0;
@@ -2794,9 +2803,14 @@ function tickDay() {
   if (occUnrest > 0) s.occUnrest = Math.min(45, occUnrest); else delete s.occUnrest;
   s.res.money = Math.max(0, s.res.money);
   s.res.pp = Math.max(0, s.res.pp);
-  s.res.man += Math.max(0, Math.round(2 + st.manpower.total * 0.06));
-  s.res.rp += Math.max(0, Math.round(1 + Math.max(0, st.research.total) * 0.08));
-  s.res.pp += Math.max(0, Math.round(2 + st.polpower.total * 0.04));
+  s.res.man += Math.max(0, Math.round(2 + raw('manpower') * 0.06));
+  // V5.15: forskningspoängen har bråkdelar (FoU-delen) — de sparas till nästa dag
+  const rg = researchIncome();
+  s.rpAcc = (s.rpAcc || 0) + rg.base + rg.stat + rg.rd;
+  const wholeRp = Math.floor(s.rpAcc);
+  s.res.rp += wholeRp;
+  s.rpAcc -= wholeRp;
+  s.res.pp += Math.max(0, Math.round(2 + raw('polpower') * 0.04));
 
   // stadsbyggnadernas dagliga avkastning
   for (const b of allBuildings()) {
@@ -2906,12 +2920,28 @@ function tickDay() {
     renderBuildCorner();
   }
 
-  // forskning tar tid — en åt gången
+  // forskning tar tid. V5.15: flera projekt samtidigt (researchSlots), takten
+  // följer Research output (researchSpeed) och labben ger ibland genombrott
+  // eller bakslag — man vet aldrig exakt när något blir klart.
   if (s.researchQueue?.length) {
-    const rq = s.researchQueue[0];
-    if (--rq.left <= 0) {
-      s.researchQueue.shift();
-      s.nation.research[rq.branch] = rq.tier;
+    const active = activeResearch();
+    const speed = researchSpeed();
+    for (const rq of active) {
+      rq.left -= speed;
+      const r = Math.random();
+      if (rq.left > 2 && r < 0.004) {
+        rq.left = Math.max(1, rq.left * 0.4);
+        toast(`\u{1F4A1} GENOMBROTT I LABBET: ${rq.name.toUpperCase()} BLIR KLAR MYCKET TIDIGARE`, 'amber', 7000);
+        logEvent(`\u{1F4A1} GENOMBROTT: ${rq.name.toUpperCase()}`, { mine: true });
+      } else if (r > 0.997) {
+        rq.left += Math.round(rq.total * 0.2);
+        toast(`\u{1F9EA} BAKSLAG I LABBET: ${rq.name.toUpperCase()} DRÖJER ${Math.round(rq.total * 0.2)} DAGAR TILL`, 'red', 7000);
+      }
+    }
+    for (const rq of active) {
+      if (rq.left > 0) continue;
+      s.researchQueue.splice(s.researchQueue.indexOf(rq), 1);
+      s.nation.research[rq.branch] = Math.max(s.nation.research[rq.branch] || 0, rq.tier);
       recomputeNation();
       toast(`\u{1F52C} FORSKNING KLAR: ${rq.name.toUpperCase()}`, 'amber', 5000);
       if (rq.unlock === 'nuke') toast('\u{2622}\u{FE0F} KÄRNVAPEN UPPLÅST — NY KNAPP VID RÄTTFÄRDIGAT KRIG', 'red', 7000);
@@ -2944,11 +2974,12 @@ function tickDay() {
   if (state.pendingEvent && !$('#eventovl').classList.contains('show')) state.pendingEvent = null;
 
   // V5: händelser, men bara om något i landets läge faktiskt matchar en händelse.
-  // V5.6: med 600+ händelser kommer de lite tätare — var 20–55:e dag (≈1 minut
-  // realtid) i stället för var 30–90:e, så att variationen faktiskt syns.
-  if (!state.pendingEvent && --s.nextEvent <= 0) {
+  // V5.15: avståndet lottas (nextEventGap) — ibland flera i rad, ibland en lång
+  // tystnad — och en följdhändelse vars dag har kommit hoppar före kön.
+  const due = !state.pendingEvent && (s.eventQueue || []).some((q) => q.day <= s.clock.day);
+  if (!state.pendingEvent && (--s.nextEvent <= 0 || due)) {
+    if (s.nextEvent <= 0) s.nextEvent = nextEventGap();
     maybeFireEvent();
-    s.nextEvent = 20 + Math.floor(Math.random() * 35);
   }
 
   // försörjningskontroll varje dag
@@ -3083,10 +3114,72 @@ function maybeFireEvent() {
   const s = state.solo;
   if (state.battle || state.pendingEvent) return;
   const c = eventCtx();
-  const ev = pickEvent(c, s.seenEvents || {});
+  // V5.15: följdhändelser (kedjor) går före lottningen när deras dag har kommit
+  // En följd ärver namnen (grannland, stad …) från händelsen som startade den.
+  let ev = null, vars = null;
+  const qi = (s.eventQueue || []).findIndex((q) => q.day <= c.day);
+  if (qi >= 0) {
+    const q = s.eventQueue.splice(qi, 1)[0];
+    ev = EVENT_BY_ID[q.id] || null;
+    vars = q.vars || null;
+  }
+  ev ||= pickEvent(c, s.seenEvents || {});
   if (!ev) return;
   (s.seenEvents ||= {})[ev.id] = c.day;
-  openEventDialog(ev);
+  openEventDialog(eventInstance(ev, vars));
+}
+
+// V5.15: rikets dagsinkomst ungefär — händelsernas belopp följer den
+function moneyPerDay() {
+  const s = state.solo;
+  let m = 10 + (s.stats?.income?.raw ?? 0) * 0.3;
+  for (const cid of Object.keys(s.claims || {})) m += countryIncomeOf(state.facts[cid]?.p, cid) * (s.partial?.[cid]?.share ?? 1);
+  return Math.max(10, m);
+}
+
+// V5.15: vad platshållarna i en händelse blir just nu
+function eventVars() {
+  const s = state.solo;
+  const pick = (a) => a[Math.floor(Math.random() * a.length)];
+  const name = (cid) => globe.getCountry(cid)?.name || '?';
+  const owned = Object.keys(s.claims || {});
+  if (!owned.length) owned.push(s.home);
+  const foreign = globe.countries.map((x) => x.id).filter((id) => !s.claims?.[id] && id !== s.home);
+  const near = new Set();
+  for (const cid of owned) for (const n of globe.neighbors?.[cid] || []) if (!s.claims?.[n] && n !== s.home && globe.getCountry(n)) near.add(n);
+  const granne = pick(near.size ? [...near] : foreign);
+  const far = foreign.filter((id) => id !== granne);
+  const cities = owned.flatMap((cid) => (state.cities[cid] || []).map((x) => x.n)).filter(Boolean);
+  const cap = (state.cities[s.home] || []).find((x) => x.c)?.n || cities[0] || realmName();
+  return {
+    rike: realmName() || name(s.home), granne: name(granne), land: name(pick(far.length ? far : foreign)),
+    stad: pick(cities.length ? cities : [cap]), huvudstad: cap,
+  };
+}
+
+// V5.15: en händelse som den ser ut DEN HÄR gången — platshållarna ifyllda och
+// pengarna skalade efter rikets ekonomi (plus lite slump), så samma händelse
+// aldrig blir exakt likadan två gånger. Originalet i EVENTS rörs inte.
+function eventInstance(ev, vars = null) {
+  const v = { ...eventVars(), ...(vars || {}) };
+  const f = Math.max(1, Math.sqrt(moneyPerDay() / 80)) * (0.8 + Math.random() * 0.45);
+  const jit = () => 0.8 + Math.random() * 0.45;
+  const scale = (o) => {
+    if (!o) return o;
+    const out = { ...o };
+    if (out.money) out.money = Math.max(1, Math.round(out.money * f / 10) * 10);
+    for (const k of ['pp', 'rp', 'man']) if (out[k]) out[k] = Math.max(1, Math.round(out[k] * jit()));
+    return out;
+  };
+  const fill = (t) => fillText(t, v);
+  const outcome = (o) => o && { ...o, text: fill(o.text), res: scale(o.res) };
+  return {
+    ...ev, title: fill(ev.title), text: fill(ev.text),
+    choices: ev.choices.map((ch) => ({
+      ...ch, text: fill(ch.text), tip: fill(ch.tip), cost: scale(ch.cost), res: scale(ch.res), vars: v,
+      risk: ch.risk && { chance: ch.risk.chance, win: outcome(ch.risk.win), lose: outcome(ch.risk.lose) },
+    })),
+  };
 }
 
 function effectHtml(ch) {
@@ -3111,7 +3204,15 @@ function effectHtml(ch) {
   if (ch.unmod) bits.push(`<span class="ep">\u{2713} ${MODIFIERS[ch.unmod]?.name} FÖRSVINNER</span>`);
   if (ch.rel) bits.push(`<span class="${ch.rel > 0 ? 'ep' : 'en'}">${ch.rel > 0 ? '+' : ''}${ch.rel} RELATION MED VÄRLDEN</span>`);
   if (ch.law) bits.push(`<span class="ec">\u{1F4DC} LAGEN ÄNDRAS</span>`);
-  return bits.length ? `<span class="efx">${bits.join(' &nbsp;\u{00B7}&nbsp; ')}</span>` : '';
+  // V5.15: chansval (egen rad) och följder
+  if (ch.next) bits.push('<span class="enext">\u{23F3} DET HÄR KAN FÅ FÖLJDER…</span>');
+  let risk = '';
+  if (ch.risk) {
+    const inner = (o) => effectHtml(o).replace(/^<span class="efx">|<\/span>$/g, '') || 'INGET';
+    risk = `<span class="erisk">\u{1F3B2} ${Math.round(ch.risk.chance * 100)} % CHANS: ${inner(ch.risk.win)}`
+      + ` &nbsp;/&nbsp; ANNARS: ${inner(ch.risk.lose)}</span>`;
+  }
+  return bits.length || risk ? `<span class="efx">${bits.join(' &nbsp;\u{00B7}&nbsp; ')}${risk}</span>` : '';
 }
 
 function openEventDialog(ev) {
@@ -3134,12 +3235,28 @@ function openEventDialog(ev) {
       + (cant ? `<span class="efx en">\u{1F512} ${cant}</span>` : '');
     if (cant) btn.disabled = true;
     btn.addEventListener('click', () => {
-      applyChoice(ch);
-      state.pendingEvent = null;
-      state.solo.clock.paused = wasPaused;
-      overlay('#eventovl', false);
-      toast(`${ev.icon} ${ev.title}: ${ch.text}`, 'amber', 7000);
+      const out = applyChoice(ch);
+      const close = () => {
+        state.pendingEvent = null;
+        state.solo.clock.paused = wasPaused;
+        overlay('#eventovl', false);
+      };
       logEvent(`${ev.icon} ${ev.title} \u{2192} ${ch.text}`, { mine: true });
+      if (!out) {
+        close();
+        toast(`${ev.icon} ${ev.title}: ${ch.text}`, 'amber', 7000);
+        return;
+      }
+      // V5.15: ett chansval — visa hur det gick i samma ruta innan den stängs
+      logEvent(`\u{1F3B2} ${out.won ? 'LYCKADES' : 'MISSLYCKADES'}: ${out.o.text}`, { mine: true });
+      $('#evtext').innerHTML = `<b style="color:${out.won ? '#4ae37a' : 'var(--red)'}">\u{1F3B2} ${out.won ? 'DET GICK VÄGEN!' : 'DET GICK INTE SOM DU TÄNKT…'}</b><br>`
+        + escHtml(out.o.text) + effectHtml(out.o);
+      box.innerHTML = '';
+      const ok = document.createElement('button');
+      ok.className = 'evchoice';
+      ok.textContent = 'OK';
+      ok.addEventListener('click', close);
+      box.appendChild(ok);
     });
     box.appendChild(btn);
   });
@@ -3178,9 +3295,20 @@ function applyChoice(ch) {
     else if (locked) toast(`\u{1F512} ${LAWS[cat].name.toUpperCase()}: ${locked.toUpperCase()} — LAGEN STÅR KVAR`, '', 5000);
   }
   if (ch.rel) for (const cid of Object.keys(s.rel || {})) relChange(cid, ch.rel);
+  // V5.15: följdhändelse om 10–45 dagar (kanske — next kan innehålla null)
+  const nx = rollNext(ch.next);
+  if (nx) (s.eventQueue ||= []).push({ id: nx, day: s.clock.day + 10 + Math.floor(Math.random() * 36), vars: ch.vars || null });
+  // V5.15: chansval — utfallet lottas nu och verkställs som ett eget val
+  let out = null;
+  if (ch.risk) {
+    const won = Math.random() < ch.risk.chance;
+    out = { won, o: won ? ch.risk.win : ch.risk.lose };
+    applyChoice(out.o);
+  }
   recomputeNation();
   renderResbar();
   if ($('#nation').classList.contains('show')) renderNationTab();
+  return out;
 }
 
 // ---------- V5: INFRASTRUKTUR- OCH STADSNIVÅLAGRET PÅ KARTAN ----------
@@ -3230,7 +3358,10 @@ function renderBuildCorner() {
   };
   const rows = [];
   (s.buildQueue || []).forEach((b, i) => rows.push(row('\u{1F528}', b.name, b.left, b.total, i === 0)));
-  (s.researchQueue || []).forEach((r, i) => rows.push(row('\u{1F52C}', r.name, r.left, r.total, i === 0)));
+  // V5.15: flera projekt pågår samtidigt och dagarna räknas med forskningstakten
+  const resOn = activeResearch(), resSpeed = researchSpeed();
+  (s.researchQueue || []).forEach((r) => rows.push(row('\u{1F52C}', r.name,
+    Math.max(0, Math.ceil(r.left / resSpeed)), Math.ceil(r.total / resSpeed), resOn.includes(r))));
   (s.devQueue || []).forEach((d, i) => rows.push(row(DEV_KINDS[d.kind].icon, `${DEV_KINDS[d.kind].name} — ${cname(d.cid)}`, d.left, d.total, i === 0)));
   for (const [tid, w] of Object.entries(s.wars || {})) {
     if (w.status === 'justifying') rows.push(row('\u{2696}\u{FE0F}', `KRIG: ${cname(tid)}`, w.days, w.total || w.days, true));
@@ -4444,7 +4575,8 @@ function renderNationTab() {
     div.appendChild(title);
     for (const [id, def] of Object.entries(STATS)) {
       if (def.group !== g.id) continue;
-      const v = stats[id].total;
+      // V5.15: produktionsvärden visas utan tak (raw) — stapeln är full vid 100
+      const v = UNCAPPED.has(id) ? (stats[id].raw ?? stats[id].total) : stats[id].total;
       const good = statGoodness(id, v);
       const row = document.createElement('div');
       row.className = 'statrow';
@@ -4457,7 +4589,7 @@ function renderNationTab() {
         const fill = document.createElement('div');
         fill.className = 'sfill';
         fill.style.background = good > 0 ? '#4ae37a' : '#ff6b5e';
-        const half = Math.abs(v) / 2;
+        const half = Math.min(100, Math.abs(v)) / 2;
         if (v > 0) { fill.style.left = '50%'; fill.style.width = half + '%'; }
         else { fill.style.left = (50 - half) + '%'; fill.style.width = half + '%'; }
         bar.appendChild(fill);
@@ -5323,24 +5455,90 @@ function renderCabinetTab(body) {
   }
 }
 
+// ---------- V5.15: FORSKNINGEN UTAN TAK ----------
+// Forskningspoäng per dag: en grundpoäng + Research output (raw, utan tak) +
+// rikets VERKLIGA FoU (Världsbankens "Forskning" i % av BNP gånger rikets
+// dagsinkomst — fler och rikare länder forskar mer) + stadsbyggnader.
+function researchIncome() {
+  const s = state.solo;
+  const raw = Math.max(0, s.stats?.research?.raw ?? s.stats?.research?.total ?? 0);
+  const rdPct = s.rdNow ?? 1;
+  let bld = 0;
+  for (const b of allBuildings()) bld += BUILDINGS[b]?.daily?.rp || 0;
+  const base = 1, stat = raw * 0.08, rd = (rdPct / 100) * moneyPerDay() * 3;
+  return { base, stat, rd, rdPct, bld, total: base + stat + rd + bld };
+}
+// takten: hög Research output gör att varje projekt går fortare
+function researchSpeed() {
+  return 1 + Math.max(0, state.solo.stats?.research?.raw ?? 0) / 250;
+}
+// fler forskargrupper: ett projekt till per 80 i Research output
+function researchSlots() {
+  return 1 + Math.floor(Math.max(0, state.solo.stats?.research?.raw ?? 0) / 80);
+}
+const RESEARCH_QUEUE_MAX = 12;
+// De projekt som forskas på just nu: de första i kön som får plats, men en
+// gren tar en nivå i taget och en nivå väntar på sina förkunskaper.
+function activeResearch() {
+  const s = state.solo;
+  const slots = researchSlots();
+  const out = [];
+  const busy = new Set();
+  for (const rq of s.researchQueue || []) {
+    if (out.length >= slots) break;
+    const wait = busy.has(rq.branch) || missingNeeds(s.nation, rq.branch, rq.tier - 1).length > 0;
+    busy.add(rq.branch);
+    if (!wait) out.push(rq);
+  }
+  return out;
+}
+
+function unitUpText(u) {
+  return UNIT_STATS.filter((x) => u[x.k]).map((x) => `${x.icon} ${x.name} ${x.fmt(u[x.k])}`).join(' \u{00B7} ');
+}
+
 function renderResearchTab(body) {
   const s = state.solo;
   const q = s.researchQueue || [];
-  body.innerHTML = `<div style="font-size:7px;color:var(--holo-dim);margin-bottom:8px">DU HAR <span style="color:var(--amber)">${s.res.rp} \u{1F52C}</span> FORSKNINGSPOÄNG — RESEARCH OUTPUT GER FLER PER DAG</div>`;
+  const inc = researchIncome();
+  const speed = researchSpeed();
+  const slots = researchSlots();
+  const f1 = (v) => (v >= 10 ? Math.round(v) : Math.round(v * 10) / 10);
+  body.innerHTML = `<div class="reshead">DU HAR <b>${s.res.rp} \u{1F52C}</b> FORSKNINGSPOÄNG · <b>+${f1(inc.total)}</b> PER DAG`
+    + `<small>${inc.base} GRUND + ${f1(inc.stat)} RESEARCH OUTPUT + ${f1(inc.rd)} FOU (${fmtNum(inc.rdPct)} % AV BNP) + ${inc.bld} BYGGNADER — INGET TAK</small>`
+    + `<small>TAKT <b>\u{00D7}${speed.toFixed(2)}</b> \u{00B7} <b>${slots}</b> PROJEKT SAMTIDIGT (ETT TILL PER 80 RESEARCH OUTPUT) \u{00B7} GENOMBROTT OCH BAKSLAG KAN HÄNDA</small></div>`;
   // FORSKNINGSKÖN högst upp: vad som pågår och vad som står på tur
+  const active = activeResearch();
   const qbox = document.createElement('div');
   qbox.id = 'resqueue';
   qbox.innerHTML = q.length
-    ? `<div class="qhead">\u{1F52C} FORSKNINGSKÖ (${q.length})</div>` + q.map((r, i) => {
-      const pct = i === 0 ? Math.round(((r.total - r.left) / r.total) * 100) : 0;
+    ? `<div class="qhead">\u{1F52C} FORSKNINGSKÖ (${q.length}/${RESEARCH_QUEUE_MAX})</div>` + q.map((r, i) => {
+      const on = active.includes(r);
+      const pct = on ? Math.round(((r.total - Math.max(0, r.left)) / r.total) * 100) : 0;
+      const miss = missingNeeds(s.nation, r.branch, r.tier - 1);
+      const why = miss.length
+        ? `\u{1F512} VÄNTAR PÅ ${miss.map((m) => `${RESEARCH[m.branch].name.toUpperCase()} T${m.tier}`).join(', ')}`
+        : `I KÖ — CA ${Math.ceil(r.left / speed)} DAGAR`;
       return `<div class="qrow">
-        <div class="qname">${i === 0 ? '\u{25B6} ' : `${i + 1}. `}${r.name.toUpperCase()}</div>
+        <div class="qname">${on ? '\u{25B6} ' : `${i + 1}. `}${r.name.toUpperCase()}</div>
         <div class="pbar"><div class="pfill" style="width:${pct}%"></div></div>
-        <div class="qsub">${i === 0 ? `${Math.max(0, r.left)} DAGAR KVAR` : `I KÖ — ${r.total} DAGAR`}</div>
+        <div class="qsub">${on ? `CA ${Math.max(1, Math.ceil(r.left / speed))} DAGAR KVAR` : why}</div>
       </div>`;
     }).join('')
     : '<div class="qhead" style="color:var(--holo-dim)">INGEN FORSKNING PÅGÅR — VÄLJ NEDAN (FLERA KAN KÖAS)</div>';
   body.appendChild(qbox);
+
+  // FÖRBANDEN — vad militärforskningen gjort med infanteri, pansar och flyg
+  const up = unitUpgrades(s.nation);
+  const ub = document.createElement('div');
+  ub.className = 'unitup';
+  ub.innerHTML = '<div class="gtitle">\u{25B8} FÖRBANDEN — VAD FORSKNINGEN GJORT MED DEM</div>'
+    + `<div class="uugrid"><span></span>${UNIT_STATS.map((x) => `<span class="uuh">${x.icon} ${x.name}</span>`).join('')}`
+    + ['INF', 'TANK', 'FLYG'].map((T) => `<span class="uun">${UNIT_TYPES[T].name}</span>`
+      + UNIT_STATS.map((x) => `<span class="${up[T][x.k] ? 'uuv' : 'uuz'}">${x.fmt(up[T][x.k])}</span>`).join('')).join('')
+    + '</div>';
+  body.appendChild(ub);
+
   for (const [gname, gid] of [['CIVIL FORSKNING', 'civil'], ['MILITÄR FORSKNING', 'militar']]) {
     const gt = document.createElement('div');
     gt.className = 'gtitle';
@@ -5350,45 +5548,72 @@ function renderResearchTab(body) {
       if (branch.group !== gid) continue;
       const row = document.createElement('div');
       row.className = 'resrow';
+      const done = s.nation.research[bid] || 0;
+      const named = branch.tiers.length;
       const nm = document.createElement('div');
       nm.className = 'rname';
-      nm.textContent = `${branch.icon} ${branch.name.toUpperCase()}`;
+      nm.innerHTML = `${branch.icon} ${branch.name.toUpperCase()}<small>NIVÅ ${done}${done >= named ? ' \u{221E}' : ''}</small>`;
       row.appendChild(nm);
-      const done = s.nation.research[bid] || 0;
       const inQueue = q.filter((r) => r.branch === bid).length; // köade nivåer i grenen
-      branch.tiers.forEach((t, i) => {
+      // klara oändliga nivåer ryms i en enda ruta
+      let doneBox = null;
+      if (done > named) {
+        doneBox = document.createElement('button');
+        doneBox.className = 'tierbox done endless';
+        doneBox.innerHTML = `\u{221E} T${named + 1}–T${done} \u{2713}<br>${done - named} OÄNDLIGA NIVÅER KLARA`;
+        doneBox.addEventListener('mouseenter', () => setPreview(`<span class="dc">${ENDLESS_NAME[bid].toUpperCase()} I–${roman(done - named)} — KLARA</span>`));
+        doneBox.addEventListener('mouseleave', () => setPreview());
+      }
+      const last = Math.max(named, done + inQueue + 1);   // visa alltid nästa nivå
+      for (let i = 0; i < last; i++) {
+        if (i === named && doneBox) row.appendChild(doneBox);
+        if (i >= named && i < done) continue;              // klara oändliga: i rutan ovan
+        const t = tierOf(bid, i);
         const qi = q.findIndex((r) => r.branch === bid && r.tier === i + 1);
-        const active = qi === 0;
-        const queued = qi > 0;
+        const isActive = qi >= 0 && active.includes(q[qi]);
+        const queued = qi >= 0 && !isActive;
         const canQueue = i === done + inQueue;    // nästa nivå som går att köa
+        const cost = tierCost(i);
+        // förkunskaper räknas som uppfyllda om de är klara ELLER ligger i kön före
+        const miss = missingNeeds(s.nation, bid, i).filter((m) => (s.nation.research[m.branch] || 0)
+          + q.filter((r) => r.branch === m.branch).length < m.tier);
         const box = document.createElement('button');
-        box.className = 'tierbox ' + (i < done ? 'done' : (active || queued || canQueue) ? 'avail' : 'locked');
-        box.innerHTML = active
-          ? `T${i + 1} \u{25B6} PÅGÅR (${q[0].left}d)<br>${t.name}`
+        box.className = 'tierbox ' + (i < done ? 'done' : (isActive || queued || (canQueue && !miss.length)) ? 'avail' : 'locked')
+          + (t.endless ? ' endless' : '');
+        const tag = `${t.endless ? '\u{221E} ' : ''}T${i + 1}`;
+        box.innerHTML = isActive
+          ? `${tag} \u{25B6} PÅGÅR (${Math.max(1, Math.ceil(q[qi].left / speed))}d)<br>${t.name}`
           : queued
-          ? `T${i + 1} \u{23F3} I KÖ (${qi + 1}:A)<br>${t.name}`
-          : `T${i + 1} ${i < done ? '\u{2713}' : `(${TIER_COST[i]} \u{1F52C})`}<br>${t.name}`;
+          ? `${tag} \u{23F3} I KÖ (${qi + 1}:A)<br>${t.name}`
+          : `${tag} ${i < done ? '\u{2713}' : `(${cost} \u{1F52C})`}<br>${t.name}`;
         box.addEventListener('mouseenter', () => {
+          const allUp = Object.entries(t.unit || {}).map(([T, u]) => ({ T, u: { ...u, atk: t.combat?.[T] || 0 } }));
+          for (const [T, a] of Object.entries(t.combat || {})) if (!t.unit?.[T]) allUp.push({ T, u: { atk: a } });
+          const units = allUp.map(({ T, u }) => `<span class="dp">${UNIT_TYPES[T].name}: ${unitUpText(u)}</span>`).join(' ');
+          const need = missingNeeds(s.nation, bid, i);
           const extra = (t.unlock === 'nuke' ? ' <span class="dn">\u{2622}\u{FE0F} LÅSER UPP KÄRNVAPEN</span>' : '')
+            + (units ? ' ' + units : '')
+            + (need.length ? ` <span class="dn">\u{1F512} KRÄVER ${need.map((m) => `${RESEARCH[m.branch].name.toUpperCase()} T${m.tier}`).join(', ')}</span>` : '')
             + (t.desc ? ` <span class="desc">${t.desc}</span>` : '');
-          setPreview(`<span class="dc">T${i + 1} ${t.name.toUpperCase()} — ${TIER_COST[i]} \u{1F52C}</span> &nbsp; ` + deltaHtml(t.mods || {}) + extra);
+          setPreview(`<span class="dc">${tag} ${t.name.toUpperCase()} — ${cost} \u{1F52C} · CA ${Math.ceil(tierDays(i) / speed)} DAGAR</span> &nbsp; ` + deltaHtml(t.mods || {}) + extra);
         });
         box.addEventListener('mouseleave', () => setPreview());
         box.addEventListener('click', () => {
-          if (i < done || active || queued) return;
+          if (i < done || isActive || queued) return;
           if (!canQueue) { warn('KRÄVER FÖREGÅENDE NIVÅ'); return; }
-          if (q.length >= 6) { warn('MAX 6 PROJEKT I KÖN'); return; }
-          if (s.res.rp < TIER_COST[i]) { warn(`KRÄVER ${TIER_COST[i]} \u{1F52C} — DU HAR ${s.res.rp}`); return; }
-          s.res.rp -= TIER_COST[i];
-          const days = TIER_DAYS[i] || TIER_DAYS[TIER_DAYS.length - 1];
+          if (miss.length) { warn(`KRÄVER ${miss.map((m) => `${RESEARCH[m.branch].name.toUpperCase()} T${m.tier}`).join(' OCH ')} FÖRST`); return; }
+          if (q.length >= RESEARCH_QUEUE_MAX) { warn(`MAX ${RESEARCH_QUEUE_MAX} PROJEKT I KÖN`); return; }
+          if (s.res.rp < cost) { warn(`KRÄVER ${cost} \u{1F52C} — DU HAR ${s.res.rp}`); return; }
+          s.res.rp -= cost;
+          const days = tierDays(i);
           (s.researchQueue ||= []).push({ branch: bid, tier: i + 1, name: t.name, left: days, total: days, unlock: t.unlock });
           renderBuildCorner(); renderResbar(); renderNationTab();
           toast(q.length
             ? `\u{1F52C} ${t.name.toUpperCase()} LAGD I FORSKNINGSKÖN (PLATS ${q.length + 1})`
-            : `\u{1F52C} FORSKNING STARTAD: ${t.name.toUpperCase()} — KLAR OM ${days} DAGAR`, 'amber', 5000);
+            : `\u{1F52C} FORSKNING STARTAD: ${t.name.toUpperCase()} — KLAR OM CA ${Math.ceil(days / speed)} DAGAR`, 'amber', 5000);
         });
         row.appendChild(box);
-      });
+      }
       body.appendChild(row);
     }
   }
@@ -6094,7 +6319,7 @@ $('#chAuto').addEventListener('click', () => {
   closeChooser();
   const target = state.pendingTarget;
   const def = defenderArmy(target, state.facts[target.id]);
-  const r = autoResolve(state.solo.army.units, def);
+  const r = autoResolve(state.solo.army.units, def, battleBoost());   // V5.15: forskningen räknas
   finishBattle({
     winner: r.winner,
     survivors: r.survivorsA.map(({ type, hp }) => ({ type, hp })),
@@ -6931,7 +7156,7 @@ function finalizePvp(battleId, result) {
     // anfallaren svarar inte — avgör med tärningsmodellen
     const r = autoResolve(
       (A.units || []).map((u) => ({ ...u, side: 0 })),
-      (D.units || []).map((u) => ({ ...u, side: 1 })));
+      (D.units || []).map((u) => ({ ...u, side: 1 })), A.boost, D.boost);
     attWon = r.winner === 0;
     aUnits = sanitizeUnits(r.survivorsA, 0);
     dUnits = sanitizeUnits(r.survivorsD, 1);
@@ -6972,7 +7197,7 @@ function resolvePvpAuto(entry) {
   if (!A || !D || !c) return;
   const r = autoResolve(
     (A.units || []).map((u) => ({ ...u, side: 0 })),
-    (D.units || []).map((u) => ({ ...u, side: 1 })),
+    (D.units || []).map((u) => ({ ...u, side: 1 })), A.boost, D.boost,
   );
   const attWon = r.winner === 0;
   if (attWon) {
@@ -7272,6 +7497,7 @@ function saveGame() {
           popMark: s.popMark, popStep: s.popStep,
           coldWars: s.coldWars, revolutions: s.revolutions, rest: s.rest, color: s.color,   // V5.8
           faith: s.faith, ident: s.ident, bank: s.bank,   // V5.12–5.13
+          eventQueue: s.eventQueue || [],   // V5.15: följdhändelser som väntar
         },
         world: state.world || {},
         history: (state.history || []).slice(0, 120),
@@ -7323,6 +7549,7 @@ function saveSession() {
       rel: s.rel, allies: s.allies, truces: s.truces, disarmed: s.disarmed, cabinet: s.nation?.cabinet,
       partial: s.partial, bloc: s.bloc, aiBlocs: s.aiBlocs, flag: s.flag, indLag: s.indLag,
       faith: s.faith, ident: s.ident, bank: s.bank,   // V5.12–5.13
+      eventQueue: s.eventQueue || [],   // V5.15
     }));
   } catch (e) { /* privat läge / fullt lager — strunt samma */ }
 }
@@ -7364,6 +7591,7 @@ function restoreSession(snap, home) {
   s.partial = snap.partial || {};
   s.indLag = snap.indLag || null;   // V5.6
   s.faith = snap.faith || null;   // V5.12
+  s.eventQueue = snap.eventQueue || [];   // V5.15
   s.ident = snap.ident || null;   // V5.12
   s.bank = snap.bank || null;   // V5.13
   s.stateFlags = snap.stateFlags || {};
@@ -7690,4 +7918,5 @@ window.__imperium = {
   recomputeNation, tickModifiersNow, maybeFireEvent, refreshInfoPanel,
   renderNationTab, refreshInfraLayer, queueDev, aiWorldTick, tickDay,
   MODIFIERS, EVENTS, RESEARCH, LAWS, IDEOLOGIES, devOf, raiseDev,
+  openEventDialog, eventInstance, battleBoost, researchIncome, activeResearch,   // V5.15
 };

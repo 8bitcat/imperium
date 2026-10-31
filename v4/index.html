@@ -526,6 +526,20 @@
   .tierbox.done { border-color: rgba(62,230,200,0.6); color: var(--green, #3ee6c8); cursor: default; }
   .tierbox.avail { border-color: var(--amber); color: var(--amber); }
   .tierbox.locked { opacity: 0.35; cursor: not-allowed; }
+  /* V5.15: oändlig forskning, förbanden, forskningstakten */
+  .tierbox.endless { border-style: dashed; }
+  .tierbox.endless.avail { border-color: #c9a2ff; color: #c9a2ff; }
+  .resrow .rname small { display: block; font-size: 6px; color: var(--holo-dim); margin-top: 3px; }
+  .reshead { font-size: 7px; color: var(--holo-dim); margin-bottom: 8px; line-height: 2; }
+  .reshead b { color: var(--amber); font-weight: normal; }
+  .reshead small { display: block; font-size: 6px; line-height: 1.9; }
+  .unitup { margin: 6px 0 10px; }
+  .uugrid { display: grid; grid-template-columns: 128px repeat(5, 1fr); gap: 3px 6px; font-size: 6px; line-height: 1.8; }
+  .uugrid .uuh { color: var(--holo-dim); }
+  .uugrid .uun { color: var(--text); }
+  .uugrid .uuv { color: #4ae37a; }
+  .uugrid .uuz { color: var(--holo-dim); opacity: 0.6; }
+  @media (max-width: 820px) { .uugrid { grid-template-columns: 96px repeat(5, 1fr); font-size: 5px; } }
 
   /* ---- armésektionen ---- */
   .armybuild { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
@@ -616,6 +630,12 @@
   .evchoice .ep { color: #4ae37a; }
   .evchoice .en { color: var(--red); }
   .evchoice .ec { color: var(--amber); }
+  /* V5.15: chansval och följder */
+  .evchoice .erisk { display: block; margin-top: 3px; color: #c9a2ff; }
+  .evchoice .erisk .ep, .evchoice .erisk .en, .evchoice .erisk .ec { white-space: nowrap; }
+  .evchoice .enext { color: #8fd3ff; }
+  #evtext .efx { display: block; margin-top: 8px; font-size: 7px; }
+  #evtext .ep { color: #4ae37a; } #evtext .en { color: var(--red); } #evtext .ec { color: var(--amber); }
   #evfoot { font-size: 6px; color: var(--holo-dim); margin-top: 10px; text-align: center; letter-spacing: 1px; }
 
   /* modifierarlistan i NATION-fliken */

@@ -32,12 +32,12 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 
 | Fil | Innehåll |
 |---|---|
-| `stats.js` | 22 nationsvärden + `computeStats`. Nya stat-nycklar MÅSTE finnas här, annars noll effekt utan fel |
-| `laws.js` · `ideologies.js` · `research.js` | lagar (85 kategorier, 802 alternativ) · 19 ideologier/doktriner + axlar + sidogrenar · 18 grenar × 9 nivåer |
+| `stats.js` | 22 nationsvärden + `computeStats`. Nya stat-nycklar MÅSTE finnas här, annars noll effekt utan fel. V5.15: varje värde har `total` (−100…100, det statistiken och allt gammalt läser) och `raw` (inget tak uppåt); `UNCAPPED` = de som producerar och visas med raw |
+| `laws.js` · `ideologies.js` · `research.js` | lagar (85 kategorier, 802 alternativ) · 19 ideologier/doktriner + axlar + sidogrenar · 27 grenar × 9 namngivna nivåer + OÄNDLIGT många till (`tierOf`, `tierCost`, `tierDays`), förkunskaper mellan grenar (`NEEDS`), förbandens egenskaper (`unit`: hp/rng/mv/heal → `unitUpgrades`) |
 | `laws-extra.js` | V5.7: nya alternativ i befintliga lagar (`after`-position, `locks`, `effects`), splitsas in i LAWS vid laddning |
 | `laws-more.js` | V5.8: helt nya lagkategorier som bär sin egen `axis`/`dir`, `locks` och `effects` — läses av laws.js, ideologies.js och statistics.js |
 | `laws-511.js` + `laws511/part1–11.js` | V5.11 LAGARNAS MAKT: tre nya val i varje lag (`EXTRAS` → laws-extra.js), fyra nya lagar (`NEW` → laws-more.js) och en stark statistikuppsättning för VARJE alternativ (`FX` → statistics.js, läggs sist och vinner per mått) |
-| `events.js` · `modifiers.js` · `development.js` | 699 händelser med villkor · 45 modifierare · stadsnivå/infrastruktur 0–100 |
+| `events.js` · `modifiers.js` · `development.js` | 1 743 händelser med villkor (V5.15: +1 044 i nio nya teman, 220 kedjehändelser, 615 med chansval) · 45 modifierare · stadsnivå/infrastruktur 0–100 |
 | `war.js` · `integration.js` · `stance.js` | casus belli/krav/historiska riken (32 st — BARA grundlandet `core` kan utropa sitt rike, och ALLA `lands` krävs helt annekterade: lydstater och delvis tagna länder räknas inte, se `empireOwnedIds` i main.js) · integration av erövrat land · ländernas hållning |
 | `geopolitics.js` | V5.8: VÄRLDSLÄGET — kalla krig (spänning 0–100, incidenter, kris → ibland varmt krig), val i demokratier, revolutioner/kupper som river upp lagarna. Ren logik; main.js kopplar in den via `geoApi(ctx)` i `aiWorldTick` |
 | `diplomacy.js` · `blocs.js` · `ministers.js` · `ranking.js` | relationer/sanktioner · block + fanor · kabinett · världsrankning |
@@ -70,6 +70,10 @@ sedan går med som vanlig `player` (`state.hosting`). Kompisar går med på kode
 
 **Tron och namnet (V5.12):** fliken LANDET i NATION. `state.solo.faith` = { rel (statens tro), by: {cid: [[tro, andel]]} omvändelsesteg, chaos 0..1 } — `tickFaith` omvänder dagligen och ger incidenter; kaoset går in som egen källa `faith` i `computeStats` och via `setFaith` i statistiken. `religionFor(hemland)` följer statens tro. `state.solo.ident` = { off, short, code, cover, word, emblem, holder, renamed, day } — namnet byts EN gång; kortnamnet skrivs in i `globe.getCountry(cid).name` (`setCountryName`, originalet i `name0`) så det syns överallt. I rum skickas det som `realm` i `nation`-meddelandet (och `rename`), värden lägger det på `player.realm` och alla kör `applyIdent()` i `applyState`.
 
+**Inga gränser (V5.15):** pengar, forskningspoäng, politisk makt och rekryter per dag räknas på `stats.X.raw` (tickDay) — oändlig forskning ger oändlig avkastning. Forskningspoäng = 1 + raw research × 0,08 + rikets verkliga FoU (`s.rdNow`, % av BNP ur `tickIndLag`) × `moneyPerDay()` × 3 + byggnader (`researchIncome`). Flera projekt samtidigt (`researchSlots`: ett till per 80 research), takten `researchSpeed`, en gren en nivå i taget och nivåer väntar på sina förkunskaper (`activeResearch`), slumpade genombrott/bakslag. Förbanden: `battleBoost().up` = `unitUpgrades` — battleA.js läser hälsa (dämpar skadan, `_soak`), räckvidd (`rangeOf`, motanfall bara inom räckvidd), rörlighet och läkning (`_heal` vid varje turstart); `autoResolve` tar boostarna som valfria argument.
+
+**Händelserna (V5.15):** `nextEventGap()` lottar avståndet (ibland tätt, ibland långt), vikterna skakas om vid varje dragning, `eventInstance()` fyller i platshållarna ({rike} {granne} {land} {stad} {huvudstad}, versaler i titlar) och skalar pengarna efter rikets dagsinkomst. Val kan ha `risk` (utfallet lottas och visas i samma ruta) och `next` (följdhändelse om 10–45 dagar i `s.eventQueue`, sparas). `chain: true` = lottas aldrig, kommer bara via next; `rare: true` = väger en fjärdedel.
+
 **Statsskulden (V5.13):** `state.solo.bank` = { debt (💰), plan (år), months kvar, missed, defaultUntil, crisis, log }. Rikets BNP i spelets pengar = `bankY()` (fyra spelår av grundinkomsten). Startskulden = rikets verkliga statsskuld i % av BNP. `tickBank` betalar var 30:e dag; räcker pengarna inte läggs resten på skulden och efter 3 missade månader blir det statsbankrutt (halva skulden struken, betyget D i ett år, kris). Lagarnas och nationsvärdenas skuldeffekt (`s.debtPolicy` från `tickIndLag`) blir ett månadsunderskott eller -överskott (/40 per månad). Statsskuld och Räntekostnader i STATISTIK skrivs över med bankens siffror (`applyBankToIndicators`), och förhandsrutan för lagar visar skuldeffekten som "STATEN LÅNAR X % AV BNP MER PER ÅR".
 
 Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
@@ -86,7 +90,8 @@ Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
 - **Statistiken:** bara skillnaden mot landets STARTLÄGE flyttar måtten (det verkliga
   datat har redan landets politik). Ny data: `node tools/build-indicators.mjs`.
 - **Ny händelse:** minst ett val utan kostnad (annars kan spelaren fastna i rutan),
-  och `node tools/check-events.mjs` ska ge 0 fel.
+  och `node tools/check-events.mjs` ska ge 0 fel. Kedjehändelser (`chain: true`) har inget
+  `when` och måste nås av ett `next`; kontrollen säger till annars.
 
 ## Fällor som redan kostat tid
 

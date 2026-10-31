@@ -128,7 +128,8 @@ export function phaseIndex(pct) {
 // Priset stiger med landets storlek och sjunker med forskningen.
 export function pushCost(pop, pct, researchTier) {
   const size = Math.max(1, Math.sqrt((pop || 5e6) / 1e6) / 3);
-  const disc = 1 - 0.12 * (researchTier || 0);
+  // V5.15: forskningen är oändlig — rabatten slutar vid 85 % (förr blev priset negativt på nivå 9)
+  const disc = Math.max(0.15, 1 - 0.12 * (researchTier || 0));
   const stage = pct < 40 ? 1.6 : pct < 75 ? 1.1 : 0.8; // första fasen kostar mest
   return {
     money: Math.round(120 * size * stage * disc),

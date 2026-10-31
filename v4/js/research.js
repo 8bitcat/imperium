@@ -1,7 +1,11 @@
-// IMPERIUM v5 — forskningsträd: 18 grenar × 9 nivåer (satelliter 10). Allt är data.
+// IMPERIUM v5 — forskningsträd: 27 grenar × 9 namngivna nivåer (satelliter 10)
+// och sedan OÄNDLIGT många nivåer till (V5.15, `tierOf`). Allt är data.
 // Kostnad i forskningspoäng; varje nivå kräver föregående. mods = permanenta
 // effekter på nationsvärden. unlock = specialförmågor (t.ex. kärnvapen).
 // combat = extra stridsskada per enhetstyp (INF/TANK/FLYG).
+// unit (V5.15) = förbandens egenskaper per typ: hp (% mer hälsa), rng (rutor
+// räckvidd), mv (rutor rörlighet), heal (hälsa tillbaka varje tur).
+// NEEDS (V5.15) = förkunskaper i andra grenar.
 //
 // VIKTIGT: nycklarna i `mods` MÅSTE finnas i STATS (stats.js). Nivå 5–6 använde
 // tidigare påhittade nycklar (healthcare, lifespan, education, climate, logistics,
@@ -130,14 +134,14 @@ export const RESEARCH = {
     name: 'Logistik', icon: '\u{1F69B}', group: 'militar',
     tiers: [
       { name: 'Fältkök & förrådslinjer', mods: { readiness: 3 } },
-      { name: 'Järnvägslogistik', mods: { readiness: 5, manpower: 3 } },
+      { name: 'Järnvägslogistik', mods: { readiness: 5, manpower: 3 }, unit: { TANK: { mv: 1 } } },
       { name: 'Lufttransport & konvojer', mods: { readiness: 8, manpower: 5 } },
-      { name: 'Automatiserad försörjningskedja', mods: { readiness: 12, manpower: 8 } },
+      { name: 'Automatiserad försörjningskedja', mods: { readiness: 12, manpower: 8 }, unit: { INF: { heal: 1 }, TANK: { heal: 1 } } },
       { name: 'Continental Rail Backbone', mods: { readiness: 18, income: 10, factory: 8 } },
-      { name: 'Strategic Airlift Command', mods: { readiness: 26, milpower: 12, income: 15 } },
+      { name: 'Strategic Airlift Command', mods: { readiness: 26, milpower: 12, income: 15 }, unit: { INF: { mv: 1 } } },
       { name: 'Orbital Drop Logistics', desc: 'FÖRSÖRJNING FRÅN OMLOPPSBANA — RÄCKVIDDEN EXPLODERAR', mods: { readiness: 34, milpower: 18, income: 20, factory: 12 } },
-      { name: 'Autonomous Supply Swarms', desc: 'FÖRRÅDEN FLYTTAR SIG SJÄLVA TILL FRONTEN', mods: { readiness: 44, milpower: 24, income: 26, manpower: 12 } },
-      { name: 'The Unbroken Chain', desc: 'DINA ARMÉER KAN ALDRIG SVÄLTAS UT', mods: { readiness: 56, milpower: 32, income: 34, factory: 20, manpower: 18 } },
+      { name: 'Autonomous Supply Swarms', desc: 'FÖRRÅDEN FLYTTAR SIG SJÄLVA TILL FRONTEN', mods: { readiness: 44, milpower: 24, income: 26, manpower: 12 }, unit: { INF: { heal: 1 }, TANK: { heal: 1 }, FLYG: { heal: 1 } } },
+      { name: 'The Unbroken Chain', desc: 'DINA ARMÉER KAN ALDRIG SVÄLTAS UT', mods: { readiness: 56, milpower: 32, income: 34, factory: 20, manpower: 18 }, unit: { INF: { mv: 1 }, TANK: { mv: 1 }, FLYG: { mv: 1 } } },
     ],
   },
   climate: {
@@ -157,15 +161,15 @@ export const RESEARCH = {
   infantry: {
     name: 'Infantry', icon: '\u{1FA96}', group: 'militar',
     tiers: [
-      { name: 'Small Arms & Body Armor', mods: { milpower: 5 }, combat: { INF: 1 } },
-      { name: 'Mechanized Battalions', mods: { milpower: 8, readiness: 5 }, combat: { INF: 2 } },
-      { name: 'Special Operations Force', mods: { milpower: 10, readiness: 8 }, combat: { INF: 3 } },
-      { name: 'Exoskeletons & Combat Drones', mods: { milpower: 15, readiness: 10 }, combat: { INF: 5 } },
-      { name: 'Powered Exosuits', mods: { milpower: 20, readiness: 12 }, combat: { INF: 7 } },
-      { name: 'Autonomous Infantry Squads', mods: { milpower: 30, readiness: 15 }, combat: { INF: 10 } },
-      { name: 'Neural-Linked Squads', desc: 'HELA KOMPANIET TÄNKER SOM EN ENDA SOLDAT', mods: { milpower: 40, readiness: 20 }, combat: { INF: 14 } },
-      { name: 'Augmented Shock Troopers', desc: 'BIOLOGISKT FÖRSTÄRKT INFANTERI', mods: { milpower: 52, readiness: 26, manpower: 10 }, combat: { INF: 19 } },
-      { name: 'The Unbreakable Line', desc: 'DITT INFANTERI VIKER INTE — NÅGONSIN', mods: { milpower: 68, readiness: 34, manpower: 18 }, combat: { INF: 26 } },
+      { name: 'Small Arms & Body Armor', mods: { milpower: 5 }, combat: { INF: 1 }, unit: { INF: { hp: 10 } } },
+      { name: 'Mechanized Battalions', mods: { milpower: 8, readiness: 5 }, combat: { INF: 2 }, unit: { INF: { mv: 1 } } },
+      { name: 'Special Operations Force', mods: { milpower: 10, readiness: 8 }, combat: { INF: 3 }, unit: { INF: { hp: 5 } } },
+      { name: 'Exoskeletons & Combat Drones', mods: { milpower: 15, readiness: 10 }, combat: { INF: 5 }, unit: { INF: { rng: 1 } } },
+      { name: 'Powered Exosuits', mods: { milpower: 20, readiness: 12 }, combat: { INF: 7 }, unit: { INF: { hp: 20 } } },
+      { name: 'Autonomous Infantry Squads', mods: { milpower: 30, readiness: 15 }, combat: { INF: 10 }, unit: { INF: { heal: 1 } } },
+      { name: 'Neural-Linked Squads', desc: 'HELA KOMPANIET TÄNKER SOM EN ENDA SOLDAT', mods: { milpower: 40, readiness: 20 }, combat: { INF: 14 }, unit: { INF: { mv: 1, hp: 10 } } },
+      { name: 'Augmented Shock Troopers', desc: 'BIOLOGISKT FÖRSTÄRKT INFANTERI', mods: { milpower: 52, readiness: 26, manpower: 10 }, combat: { INF: 19 }, unit: { INF: { hp: 25, heal: 1 } } },
+      { name: 'The Unbreakable Line', desc: 'DITT INFANTERI VIKER INTE — NÅGONSIN', mods: { milpower: 68, readiness: 34, manpower: 18 }, combat: { INF: 26 }, unit: { INF: { hp: 30, rng: 1 } } },
     ],
   },
   navy: {
@@ -175,39 +179,39 @@ export const RESEARCH = {
       { name: 'Destroyers & Submarines', mods: { milpower: 8 } },
       { name: 'Supercarrier Strike Groups', mods: { milpower: 14, readiness: 6 } },
       { name: 'Stealth Drone Fleets', mods: { milpower: 20, readiness: 10 } },
-      { name: 'Nuclear Carrier Groups', mods: { milpower: 26, readiness: 12 }, combat: { INF: 2, TANK: 2 } },
+      { name: 'Nuclear Carrier Groups', mods: { milpower: 26, readiness: 12 }, combat: { INF: 2, TANK: 2 }, unit: { FLYG: { mv: 1 } } },
       { name: 'Blue-Water Supremacy', mods: { milpower: 36, readiness: 16, income: 8 }, combat: { INF: 4, TANK: 4 } },
-      { name: 'Submerged Arsenal Ships', desc: 'HELA FLOTTAN KAN GÖMMA SIG UNDER YTAN', mods: { milpower: 48, readiness: 22, income: 12 }, combat: { INF: 6, TANK: 6 } },
+      { name: 'Submerged Arsenal Ships', desc: 'HELA FLOTTAN KAN GÖMMA SIG UNDER YTAN', mods: { milpower: 48, readiness: 22, income: 12 }, combat: { INF: 6, TANK: 6 }, unit: { INF: { hp: 10 }, TANK: { hp: 10 } } },
       { name: 'Autonomous Wolfpacks', desc: 'OBEMANNADE UBÅTSFLOCKAR JAGAR SJÄLVSTÄNDIGT', mods: { milpower: 62, readiness: 28, income: 18 }, combat: { INF: 8, TANK: 8, FLYG: 4 } },
-      { name: 'Command of Every Ocean', desc: 'INGEN SEGLAR NÅGONSTANS UTAN DITT MEDGIVANDE', mods: { milpower: 80, readiness: 36, income: 26, statepower: 12 }, combat: { INF: 11, TANK: 11, FLYG: 7 } },
+      { name: 'Command of Every Ocean', desc: 'INGEN SEGLAR NÅGONSTANS UTAN DITT MEDGIVANDE', mods: { milpower: 80, readiness: 36, income: 26, statepower: 12 }, combat: { INF: 11, TANK: 11, FLYG: 7 }, unit: { INF: { rng: 1 }, TANK: { rng: 1 } } },
     ],
   },
   tanks: {
     name: 'Tanks', icon: '\u{1F6E1}\u{FE0F}', group: 'militar',
     tiers: [
-      { name: 'MBT Modernization', mods: { milpower: 5 }, combat: { TANK: 1 } },
-      { name: 'Active Protection Systems', mods: { milpower: 8 }, combat: { TANK: 2 } },
-      { name: 'Unmanned Ground Vehicles', mods: { milpower: 12, manpower: 5 }, combat: { TANK: 3 } },
-      { name: 'Electromagnetic Rail-Tanks', mods: { milpower: 18 }, combat: { TANK: 5 } },
-      { name: 'Active Protection Armour', mods: { milpower: 24, readiness: 8 }, combat: { TANK: 7 } },
-      { name: 'Autonomous Armour Divisions', mods: { milpower: 34, readiness: 12, manpower: 8 }, combat: { TANK: 10 } },
-      { name: 'Reactive Nanoplate Hulls', desc: 'PANSARET LÄKER SIG SJÄLVT MELLAN TRÄFFAR', mods: { milpower: 46, readiness: 16 }, combat: { TANK: 14 } },
-      { name: 'Walker Assault Platforms', desc: 'BEPANSRADE GÅENDE PLATTFORMAR TAR VILKEN TERRÄNG SOM HELST', mods: { milpower: 60, readiness: 22, manpower: 12 }, combat: { TANK: 19 } },
-      { name: 'The Iron Tide', desc: 'INGEN FRONT HÅLLER MOT DITT PANSAR', mods: { milpower: 78, readiness: 30, manpower: 18 }, combat: { TANK: 26 } },
+      { name: 'MBT Modernization', mods: { milpower: 5 }, combat: { TANK: 1 }, unit: { TANK: { hp: 10 } } },
+      { name: 'Active Protection Systems', mods: { milpower: 8 }, combat: { TANK: 2 }, unit: { TANK: { hp: 15 } } },
+      { name: 'Unmanned Ground Vehicles', mods: { milpower: 12, manpower: 5 }, combat: { TANK: 3 }, unit: { TANK: { mv: 1 } } },
+      { name: 'Electromagnetic Rail-Tanks', mods: { milpower: 18 }, combat: { TANK: 5 }, unit: { TANK: { rng: 1 } } },
+      { name: 'Active Protection Armour', mods: { milpower: 24, readiness: 8 }, combat: { TANK: 7 }, unit: { TANK: { hp: 20 } } },
+      { name: 'Autonomous Armour Divisions', mods: { milpower: 34, readiness: 12, manpower: 8 }, combat: { TANK: 10 }, unit: { TANK: { mv: 1 } } },
+      { name: 'Reactive Nanoplate Hulls', desc: 'PANSARET LÄKER SIG SJÄLVT MELLAN TRÄFFAR', mods: { milpower: 46, readiness: 16 }, combat: { TANK: 14 }, unit: { TANK: { heal: 2 } } },
+      { name: 'Walker Assault Platforms', desc: 'BEPANSRADE GÅENDE PLATTFORMAR TAR VILKEN TERRÄNG SOM HELST', mods: { milpower: 60, readiness: 22, manpower: 12 }, combat: { TANK: 19 }, unit: { TANK: { mv: 1, hp: 15 } } },
+      { name: 'The Iron Tide', desc: 'INGEN FRONT HÅLLER MOT DITT PANSAR', mods: { milpower: 78, readiness: 30, manpower: 18 }, combat: { TANK: 26 }, unit: { TANK: { hp: 30, rng: 1 } } },
     ],
   },
   aircraft: {
     name: 'Aircraft', icon: '\u{2708}\u{FE0F}', group: 'militar',
     tiers: [
-      { name: 'Jet Fighter Fleets', mods: { milpower: 5 }, combat: { FLYG: 1 } },
-      { name: 'Stealth Fighters & Bombers', mods: { milpower: 9 }, combat: { FLYG: 2 } },
-      { name: 'Combat Drone Swarms', mods: { milpower: 13, manpower: 4 }, combat: { FLYG: 3 } },
-      { name: 'Hypersonic Strike Aircraft', mods: { milpower: 18 }, combat: { FLYG: 5 } },
-      { name: 'Stealth Air Superiority', mods: { milpower: 26, readiness: 8 }, combat: { FLYG: 8 } },
-      { name: 'Hypersonic Strike Wing', mods: { milpower: 38, readiness: 12 }, combat: { FLYG: 11 } },
-      { name: 'Orbital Bombardment Wing', desc: 'ANFALL FRÅN RYMDEN — INGEN LUFTVÄRN NÅR DIT', mods: { milpower: 50, readiness: 18 }, combat: { FLYG: 15 } },
-      { name: 'Autonomous Air Fleets', desc: 'PILOTLÖSA VINGAR SOM ALDRIG TRÖTTNAR', mods: { milpower: 64, readiness: 24, manpower: 12 }, combat: { FLYG: 20 } },
-      { name: 'Total Air Supremacy', desc: 'INGENTING FIENTLIGT LYFTER FRÅN MARKEN', mods: { milpower: 82, readiness: 32, manpower: 18 }, combat: { FLYG: 27 } },
+      { name: 'Jet Fighter Fleets', mods: { milpower: 5 }, combat: { FLYG: 1 }, unit: { FLYG: { hp: 5 } } },
+      { name: 'Stealth Fighters & Bombers', mods: { milpower: 9 }, combat: { FLYG: 2 }, unit: { FLYG: { hp: 15 } } },
+      { name: 'Combat Drone Swarms', mods: { milpower: 13, manpower: 4 }, combat: { FLYG: 3 }, unit: { FLYG: { rng: 1 } } },
+      { name: 'Hypersonic Strike Aircraft', mods: { milpower: 18 }, combat: { FLYG: 5 }, unit: { FLYG: { mv: 2 } } },
+      { name: 'Stealth Air Superiority', mods: { milpower: 26, readiness: 8 }, combat: { FLYG: 8 }, unit: { FLYG: { hp: 20 } } },
+      { name: 'Hypersonic Strike Wing', mods: { milpower: 38, readiness: 12 }, combat: { FLYG: 11 }, unit: { FLYG: { rng: 1 } } },
+      { name: 'Orbital Bombardment Wing', desc: 'ANFALL FRÅN RYMDEN — INGEN LUFTVÄRN NÅR DIT', mods: { milpower: 50, readiness: 18 }, combat: { FLYG: 15 }, unit: { FLYG: { rng: 1 } } },
+      { name: 'Autonomous Air Fleets', desc: 'PILOTLÖSA VINGAR SOM ALDRIG TRÖTTNAR', mods: { milpower: 64, readiness: 24, manpower: 12 }, combat: { FLYG: 20 }, unit: { FLYG: { heal: 1, mv: 1 } } },
+      { name: 'Total Air Supremacy', desc: 'INGENTING FIENTLIGT LYFTER FRÅN MARKEN', mods: { milpower: 82, readiness: 32, manpower: 18 }, combat: { FLYG: 27 }, unit: { FLYG: { hp: 30 } } },
     ],
   },
   nuclear: {
@@ -229,12 +233,12 @@ export const RESEARCH = {
     tiers: [
       { name: 'Spaningssatelliter', desc: 'SER FRÄMMANDE ARMÉER TVÅ LÄNDER BORT', mods: { research: 3 } },
       { name: 'Satellitkonstellation', desc: 'SER ARMÉER FEM LÄNDER BORT', mods: { research: 5, milpower: 3 } },
-      { name: 'Regional täckning', desc: '40% AV JORDEN BEVAKAS FRÅN HEMLANDET', mods: { research: 8, milpower: 5 } },
+      { name: 'Regional täckning', desc: '40% AV JORDEN BEVAKAS FRÅN HEMLANDET', mods: { research: 8, milpower: 5 }, unit: { FLYG: { rng: 1 } } },
       { name: 'Interkontinental täckning', desc: '70% AV JORDEN BEVAKAS', mods: { research: 10, milpower: 7 } },
       { name: 'Globalt satellitnätverk', desc: 'TOTAL TÄCKNING — HELA JORDEN BEVAKAS', mods: { research: 14, milpower: 10 } },
-      { name: 'Orbitalt varningssystem', desc: 'FRÄMMANDE ANFALL SYNS INNAN DE STARTAR', mods: { research: 18, milpower: 14, safety: 6 } },
+      { name: 'Orbitalt varningssystem', desc: 'FRÄMMANDE ANFALL SYNS INNAN DE STARTAR', mods: { research: 18, milpower: 14, safety: 6 }, unit: { INF: { hp: 5 }, TANK: { hp: 5 }, FLYG: { hp: 5 } } },
       { name: 'Djuprymdsnätverk', desc: 'TOTAL TÄCKNING + FORSKNINGSSPRÅNG', mods: { research: 26, milpower: 18 } },
-      { name: 'Orbital vapenplattform', desc: 'SATELLITERNA KAN SLÅ TILLBAKA SJÄLVA', mods: { research: 34, milpower: 26, safety: 10 } },
+      { name: 'Orbital vapenplattform', desc: 'SATELLITERNA KAN SLÅ TILLBAKA SJÄLVA', mods: { research: 34, milpower: 26, safety: 10 }, unit: { INF: { rng: 1 }, TANK: { rng: 1 }, FLYG: { rng: 1 } } },
       { name: 'Månbas & fjärranalys', desc: 'EN BAS UTANFÖR JORDEN — INGEN KAN SLÅ UT DEN', mods: { research: 44, milpower: 34, statepower: 12, stability: 8 } },
       { name: 'Allseende nätverket', desc: 'VARJE RÖRELSE PÅ JORDEN SYNS I REALTID', mods: { research: 58, milpower: 44, statepower: 20, safety: 18 } },
     ],
@@ -267,16 +271,254 @@ export const RESEARCH = {
       { name: 'Osynliga handen', desc: 'VÄRLDEN STYRS AV BESLUT DU REDAN HAR FATTAT', mods: { safety: 46, research: 36, polpower: 26, statepower: 24, ideopower: 15 } },
     ],
   },
+
+  // ===== V5.15: NIO NYA GRENAR =====
+  energy: {
+    name: 'Energy', icon: '\u{26A1}', group: 'civil',
+    tiers: [
+      { name: 'Grid Modernization', mods: { income: 4, factory: 4 } },
+      { name: 'Wind & Solar Farms', mods: { factory: 5, income: 3, qol: 4 } },
+      { name: 'Nuclear Power Plants', desc: 'STABIL BASKRAFT — KRÄVER UTBILDADE INGENJÖRER', mods: { factory: 10, income: 6, stability: 2 } },
+      { name: 'Smart Grid', mods: { factory: 10, income: 10, stability: 4 } },
+      { name: 'Grid-Scale Batteries', mods: { factory: 16, income: 14, qol: 6 } },
+      { name: 'Thorium Reactors', desc: 'SÄKRARE KÄRNKRAFT SOM KNAPPT GER AVFALL', mods: { factory: 22, income: 20, milpower: 6 } },
+      { name: 'Fusion Ignition', desc: 'SOLENS ELD I EN REAKTOR — ELEN BLIR NÄSTAN GRATIS', mods: { factory: 30, income: 28, qol: 10 } },
+      { name: 'Orbital Solar Arrays', desc: 'SOLPANELER I OMLOPPSBANA STRÅLAR NER ENERGI DYGNET RUNT', mods: { factory: 38, income: 36, research: 10 } },
+      { name: 'Limitless Energy', desc: 'ENERGIBRIST ÄR ETT ORD UR HISTORIEBÖCKERNA', mods: { factory: 50, income: 48, qol: 18, gdp: 20 } },
+    ],
+  },
+  computing: {
+    name: 'Computing & AI', icon: '\u{1F4BB}', group: 'civil',
+    tiers: [
+      { name: 'National Broadband', mods: { research: 4, gdp: 3 } },
+      { name: 'Supercomputer Centers', mods: { research: 8, factory: 2 } },
+      { name: 'E-Government', desc: 'MYNDIGHETERNA FLYTTAR IN I DATORN', mods: { research: 6, polpower: 4, corruption: -6 } },
+      { name: 'Machine Learning Labs', mods: { research: 14, factory: 6 } },
+      { name: 'Quantum Computing', desc: 'RÄKNAR UT PÅ SEKUNDER VAD SOM TOG ÅRHUNDRADEN', mods: { research: 22, safety: 6, gdp: 6 } },
+      { name: 'General AI Assistants', mods: { research: 30, gdp: 14, factory: 10 } },
+      { name: 'Autonomous Economy', desc: 'MASKINERNA SKÖTER PRODUKTIONEN — OCH VISSA JOBB FÖRSVINNER', mods: { research: 38, gdp: 22, factory: 16, unrest: 6 } },
+      { name: 'Machine Superintelligence', desc: 'EN TANKE SNABBARE ÄN HELA MÄNSKLIGHETEN', mods: { research: 50, gdp: 30, statepower: 12 } },
+      { name: 'The Thinking State', desc: 'STATEN LÄR SIG AV VARJE BESLUT DEN FATTAR', mods: { research: 66, gdp: 40, polpower: 14, corruption: -14 } },
+    ],
+  },
+  agriculture: {
+    name: 'Agriculture', icon: '\u{1F33E}', group: 'civil',
+    tiers: [
+      { name: 'Irrigation Networks', mods: { qol: 3, stability: 3 } },
+      { name: 'Fertilizer & Mechanization', mods: { qol: 5, manpower: 4, gdp: 3 } },
+      { name: 'Green Revolution Crops', mods: { qol: 8, stability: 5, approval: 4 } },
+      { name: 'Precision Farming', mods: { qol: 10, gdp: 6, factory: 4 } },
+      { name: 'Vertical Farms', mods: { qol: 16, stability: 8, income: 6 } },
+      { name: 'Lab-Grown Food', desc: 'KÖTT OCH MJÖLK UR TANKAR — UTAN EN ENDA KO', mods: { qol: 22, welfare: 8, income: 10 } },
+      { name: 'Climate-Proof Harvests', desc: 'GRÖDOR SOM TÅL TORKA, FROST OCH ÖVERSVÄMNING', mods: { qol: 28, stability: 12, income: 14 } },
+      { name: 'Food Abundance', mods: { qol: 36, approval: 14, manpower: 10 } },
+      { name: 'Hunger Abolished', desc: 'INGEN I RIKET GÅR HUNGRIG — NÅGONSIN', mods: { qol: 46, hdi: 20, approval: 20, stability: 16 } },
+    ],
+  },
+  space: {
+    name: 'Space', icon: '\u{1F680}', group: 'civil',
+    tiers: [
+      { name: 'Sounding Rockets', mods: { research: 3, ideopower: 3 } },
+      { name: 'Satellite Launchers', desc: 'EGNA RAKETER — EGNA SATELLITER', mods: { research: 6, income: 3 } },
+      { name: 'Crewed Spaceflight', mods: { research: 10, approval: 6, ideopower: 6 } },
+      { name: 'Space Station', mods: { research: 16, statepower: 6 } },
+      { name: 'Moon Landing', desc: 'DIN FLAGGA PÅ MÅNEN — HELA VÄRLDEN TITTAR', mods: { research: 22, approval: 12, ideopower: 12 } },
+      { name: 'Lunar Mining', mods: { research: 20, income: 20, factory: 14 } },
+      { name: 'Mars Expedition', desc: 'MÄNNISKOR PÅ EN ANNAN PLANET', mods: { research: 32, approval: 16, ideopower: 16 } },
+      { name: 'Asteroid Industry', desc: 'ETT ENDA KLOT AV JÄRN ÄR VÄRT MER ÄN HELA JORDENS GRUVOR', mods: { income: 36, factory: 30, gdp: 20 } },
+      { name: 'Interplanetary Nation', desc: 'RIKET SLUTAR INTE VID ATMOSFÄREN', mods: { research: 48, income: 46, ideopower: 24, approval: 20 } },
+    ],
+  },
+  infrastructure: {
+    name: 'Infrastructure', icon: '\u{1F3D7}\u{FE0F}', group: 'civil',
+    tiers: [
+      { name: 'Paved Highways', mods: { income: 4, readiness: 2 } },
+      { name: 'National Rail Network', mods: { income: 6, factory: 4, manpower: 3 } },
+      { name: 'Deep-Water Ports', mods: { income: 10, gdp: 5 } },
+      { name: 'High-Speed Rail', mods: { income: 12, qol: 6, gdp: 6 } },
+      { name: 'Smart Cities', desc: 'TRAFIKLJUS, SOPOR OCH EL STYRS AV SENSORER', mods: { income: 16, qol: 14, safety: 6 } },
+      { name: 'Maglev Corridors', mods: { income: 22, gdp: 14, readiness: 8 } },
+      { name: 'Hyperloop Network', desc: 'HUVUDSTAD TILL GRÄNS PÅ EN KVART', mods: { income: 28, gdp: 20, qol: 10 } },
+      { name: 'Self-Building Cities', desc: 'ROBOTAR BYGGER, LAGAR OCH RIVER — DYGNET RUNT', mods: { income: 36, qol: 18, factory: 20 } },
+      { name: 'The Seamless Nation', desc: 'ALLT I RIKET ÄR NÄRA ALLT ANNAT', mods: { income: 46, gdp: 30, qol: 24, stability: 12 } },
+    ],
+  },
+  artillery: {
+    name: 'Artillery & Rockets', icon: '\u{1F4A5}', group: 'militar',
+    tiers: [
+      { name: 'Towed Howitzers', mods: { milpower: 4 }, combat: { INF: 1 } },
+      { name: 'Self-Propelled Guns', mods: { milpower: 7 }, combat: { INF: 1, TANK: 1 } },
+      { name: 'Multiple Rocket Launchers', desc: 'INFANTERIET KAN KALLA IN ELD PÅ AVSTÅND', mods: { milpower: 10, readiness: 3 }, combat: { INF: 2 }, unit: { INF: { rng: 1 } } },
+      { name: 'Precision-Guided Shells', mods: { milpower: 14 }, combat: { INF: 2, TANK: 2 } },
+      { name: 'Counter-Battery Radar', mods: { milpower: 18, readiness: 6 }, unit: { INF: { hp: 10 }, TANK: { hp: 10 } } },
+      { name: 'Loitering Munitions', desc: 'DRÖNARE SOM VÄNTAR OVANFÖR FRONTEN', mods: { milpower: 24 }, combat: { INF: 3, TANK: 3 }, unit: { TANK: { rng: 1 } } },
+      { name: 'Hypersonic Artillery', mods: { milpower: 32, readiness: 10 }, combat: { INF: 4, TANK: 4, FLYG: 2 } },
+      { name: 'Railgun Batteries', desc: 'PROJEKTILER I SJU GÅNGER LJUDETS HASTIGHET', mods: { milpower: 42 }, unit: { INF: { rng: 1 }, TANK: { rng: 1 } } },
+      { name: 'Rain of Steel', desc: 'INGEN FIENDE STÅR KVAR DÄR DITT ARTILLERI SIKTAR', mods: { milpower: 56, readiness: 16 }, combat: { INF: 6, TANK: 6, FLYG: 4 } },
+    ],
+  },
+  airdefense: {
+    name: 'Air Defense', icon: '\u{1F3AF}', group: 'militar',
+    tiers: [
+      { name: 'Anti-Aircraft Guns', mods: { milpower: 3, safety: 3 }, unit: { INF: { hp: 5 } } },
+      { name: 'Radar Network', mods: { milpower: 5, safety: 4 }, unit: { FLYG: { hp: 10 } } },
+      { name: 'SAM Batteries', mods: { milpower: 8 }, unit: { INF: { hp: 5 }, TANK: { hp: 5 } } },
+      { name: 'Integrated Air Defense', mods: { milpower: 12, safety: 6 }, unit: { FLYG: { rng: 1 } } },
+      { name: 'Missile Shield', mods: { milpower: 16, stability: 4 }, unit: { INF: { hp: 10 }, TANK: { hp: 10 }, FLYG: { hp: 10 } } },
+      { name: 'Laser Point Defense', desc: 'LASRAR SKJUTER NER GRANATER I LUFTEN', mods: { milpower: 22, safety: 8 }, unit: { TANK: { hp: 15 } } },
+      { name: 'Drone Interceptor Swarms', mods: { milpower: 28 }, combat: { FLYG: 3 }, unit: { FLYG: { hp: 20 } } },
+      { name: 'Space-Based Interceptors', desc: 'ROBOTAR STOPPAS REDAN I RYMDEN', mods: { milpower: 36, safety: 12 }, unit: { INF: { hp: 10 }, TANK: { hp: 10 }, FLYG: { hp: 10 } } },
+      { name: 'Impenetrable Sky', desc: 'INGENTING FIENTLIGT TAR SIG IGENOM DIN HIMMEL', mods: { milpower: 46, safety: 18, stability: 8 }, unit: { INF: { hp: 15 }, TANK: { hp: 15 }, FLYG: { hp: 15, heal: 1 } } },
+    ],
+  },
+  medicine: {
+    name: 'Combat Medicine', icon: '\u{26D1}\u{FE0F}', group: 'militar',
+    tiers: [
+      { name: 'Field Medics', desc: 'INFANTERIET LÄKER LITE VARJE TUR', mods: { manpower: 3 }, unit: { INF: { heal: 1 } } },
+      { name: 'Field Hospitals', mods: { manpower: 5, approval: 2 }, unit: { INF: { hp: 5 } } },
+      { name: 'Medevac Helicopters', mods: { manpower: 6 }, unit: { TANK: { heal: 1 } } },
+      { name: 'Trauma Nanogel', mods: { manpower: 8, qol: 2 }, unit: { INF: { heal: 1, hp: 5 } } },
+      { name: 'Battlefield Surgery Robots', mods: { manpower: 10 }, unit: { TANK: { heal: 1 }, FLYG: { heal: 1 } } },
+      { name: 'Combat Stimulants', mods: { manpower: 12, readiness: 6 }, unit: { INF: { hp: 10 } } },
+      { name: 'Regenerative Armor', desc: 'RUSTNINGEN LAGAR BÅDE SIG SJÄLV OCH SOLDATEN', mods: { manpower: 14 }, unit: { INF: { heal: 1 }, TANK: { heal: 1 }, FLYG: { heal: 1 } } },
+      { name: 'Cellular Field Repair', mods: { manpower: 18 }, unit: { INF: { hp: 10 }, TANK: { hp: 10 }, FLYG: { hp: 10 } } },
+      { name: 'No Soldier Left Behind', desc: 'ALLA KOMMER HEM', mods: { manpower: 24, approval: 10 }, unit: { INF: { heal: 2 }, TANK: { heal: 2 }, FLYG: { heal: 2 } } },
+    ],
+  },
+  engineering: {
+    name: 'Combat Engineers', icon: '\u{1F6E0}\u{FE0F}', group: 'militar',
+    tiers: [
+      { name: 'Pontoon Bridges', mods: { readiness: 2 }, unit: { INF: { mv: 1 } } },
+      { name: 'Field Fortifications', mods: { readiness: 4 }, unit: { INF: { hp: 10 } } },
+      { name: 'Mine Clearing', mods: { readiness: 5, milpower: 4 }, unit: { TANK: { mv: 1 } } },
+      { name: 'Rapid Airfields', mods: { readiness: 7 }, unit: { FLYG: { mv: 1 } } },
+      { name: 'Bunker Networks', mods: { readiness: 9, stability: 3 }, unit: { INF: { hp: 10 }, TANK: { hp: 10 } } },
+      { name: 'Mobile Bridging Systems', mods: { readiness: 12 }, unit: { INF: { mv: 1 }, TANK: { mv: 1 } } },
+      { name: 'Terrain Shaping', mods: { readiness: 16, milpower: 8 }, unit: { INF: { hp: 10 }, TANK: { hp: 10 }, FLYG: { hp: 10 } } },
+      { name: 'Self-Building Bases', mods: { readiness: 20, milpower: 12 }, unit: { INF: { heal: 1 }, TANK: { heal: 1 }, FLYG: { heal: 1 } } },
+      { name: 'No Obstacle Stands', desc: 'BERG, FLODER OCH MINFÄLT — INGET STOPPAR DIG', mods: { readiness: 26, milpower: 18 }, unit: { INF: { mv: 1 }, TANK: { mv: 1 }, FLYG: { mv: 1 } } },
+    ],
+  },
 };
 
-// nation.research = { grenId: högsta klara tier }
+// V5.15: forskningen tar aldrig slut. Efter grenens sista namngivna nivå kommer
+// nivåer i all oändlighet — varje ger ungefär en sjättedel av sista nivåns
+// goda effekter till, dyrare och dyrare.
+export const ENDLESS_NAME = {
+  political: 'Statecraft Mastery', economy: 'Economic Breakthrough', corruption: 'Integrity Doctrine',
+  unrest: 'Social Harmony', safety: 'Public Safety Advance', immigration: 'Talent Magnet',
+  healthcare: 'Medical Breakthrough', education: 'Knowledge Frontier', logistics: 'Logistics Perfection',
+  climate: 'Planetary Stewardship', infantry: 'Infantry Doctrine', navy: 'Naval Doctrine',
+  tanks: 'Armour Doctrine', aircraft: 'Air Doctrine', nuclear: 'Strategic Deterrence',
+  satellites: 'Orbital Network', integration: 'Unity Doctrine', espionage: 'Intelligence Edge',
+  energy: 'Energy Frontier', computing: 'Compute Scaling', agriculture: 'Harvest Science',
+  space: 'Deep Space Program', infrastructure: 'Mega-Projects', artillery: 'Fire Doctrine',
+  airdefense: 'Sky Shield', medicine: 'Field Medicine', engineering: 'Engineering Doctrine',
+};
+
+// V5.15: förkunskaper mellan grenar — man bygger inte drönarsvärmar utan datorer.
+// 'gren:nivå' (1-baserat) → { annan gren: nivå som krävs }
+export const NEEDS = {
+  'nuclear:2': { education: 3 }, 'nuclear:5': { energy: 3 },
+  'satellites:1': { education: 2 }, 'satellites:2': { space: 2 },
+  'aircraft:3': { computing: 2 }, 'aircraft:7': { space: 4 },
+  'tanks:3': { computing: 3 }, 'tanks:4': { energy: 4 },
+  'infantry:4': { computing: 2 }, 'infantry:6': { computing: 5 },
+  'navy:8': { computing: 6 }, 'logistics:7': { space: 5 },
+  'healthcare:4': { education: 3 }, 'healthcare:7': { computing: 5 },
+  'economy:8': { computing: 6 }, 'climate:4': { energy: 4 },
+  'espionage:5': { computing: 4 }, 'safety:4': { computing: 4 }, 'unrest:7': { computing: 6 },
+  'computing:5': { education: 4 }, 'space:3': { education: 3 }, 'space:5': { computing: 3 },
+  'energy:3': { education: 2 }, 'energy:7': { education: 6 }, 'energy:8': { space: 6 },
+  'artillery:6': { computing: 4 }, 'artillery:8': { energy: 6 },
+  'airdefense:6': { energy: 5 }, 'airdefense:8': { space: 5 },
+  'medicine:4': { healthcare: 3 }, 'medicine:8': { healthcare: 7 },
+  'agriculture:6': { education: 5 }, 'agriculture:7': { climate: 4 },
+  'infrastructure:5': { computing: 4 }, 'infrastructure:7': { energy: 6 },
+};
+
+// ---------- V5.15: OÄNDLIGA NIVÅER ----------
+// Kostnad och tid för nivå i (0-baserat). Efter tabellen växer priset nästan
+// linjärt (ca +2 600 per nivå) och tiden med 8 dagar — ett exponentiellt pris
+// hade blivit ett tak i praktiken, och taket är det Henry vill bli av med.
+export function tierCost(i) {
+  if (i < TIER_COST.length) return TIER_COST[i];
+  const n = i - TIER_COST.length + 1;
+  return Math.round((TIER_COST[TIER_COST.length - 1] + 2600 * n * (1 + 0.04 * n)) / 100) * 100;
+}
+export function tierDays(i) {
+  if (i < TIER_DAYS.length) return TIER_DAYS[i];
+  return TIER_DAYS[TIER_DAYS.length - 1] + 8 * (i - TIER_DAYS.length + 1);
+}
+
+const ROMAN = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+export function roman(n) {
+  let out = '';
+  for (const [v, r] of ROMAN) while (n >= v) { out += r; n -= v; }
+  return out;
+}
+
+// höjda värden som är BRA (oro och korruption är bra när de sjunker)
+const INVERTED = new Set(['corruption', 'unrest', 'justtime']);
+const UNIT_TYPES3 = ['INF', 'TANK', 'FLYG'];
+const _endless = new Map();
+
+// Nivå i (0-baserat) i en gren — namngiven eller oändlig.
+export function tierOf(bid, i) {
+  const def = RESEARCH[bid];
+  if (!def || i < 0) return null;
+  if (i < def.tiers.length) return def.tiers[i];
+  const n = i - def.tiers.length + 1;          // 1, 2, 3 … bortom kartan
+  const key = bid + ':' + n;
+  if (_endless.has(key)) return _endless.get(key);
+  const last = def.tiers[def.tiers.length - 1];
+  // bara de goda effekterna följer med — oändlig forskning gör aldrig landet sämre
+  const mods = {};
+  for (const [k, v] of Object.entries(last.mods || {})) {
+    if ((v > 0) === INVERTED.has(k)) continue;
+    mods[k] = Math.sign(v) * Math.max(1, Math.round(Math.abs(v) * 0.16));
+  }
+  // militära grenar: förbanden blir starkare i all oändlighet
+  const touched = new Set();
+  for (const t of def.tiers) for (const k of [...Object.keys(t.combat || {}), ...Object.keys(t.unit || {})]) touched.add(k);
+  const combat = {}, unit = {};
+  for (const T of UNIT_TYPES3) {
+    if (!touched.has(T)) continue;
+    const lastAtk = [...def.tiers].reverse().find((t) => t.combat?.[T])?.combat[T] || 0;
+    if (lastAtk) combat[T] = Math.max(1, Math.round(lastAtk * 0.15));
+    const u = { hp: 6 };
+    if (n % 3 === 0) u.heal = 1;
+    if (n % 4 === 0) u.mv = 1;
+    if (n % 5 === 0) u.rng = 1;
+    unit[T] = u;
+  }
+  const t = {
+    name: `${ENDLESS_NAME[bid] || def.name} ${roman(n)}`,
+    desc: `OÄNDLIG FORSKNING — NIVÅ ${i + 1}`,
+    mods, endless: n,
+    ...(Object.keys(combat).length ? { combat } : {}),
+    ...(Object.keys(unit).length ? { unit } : {}),
+  };
+  _endless.set(key, t);
+  return t;
+}
+
+// Saknade förkunskaper för nivå i (0-baserat) — [{ branch, tier }]
+export function missingNeeds(nation, bid, i) {
+  const need = NEEDS[`${bid}:${i + 1}`];
+  if (!need) return [];
+  return Object.entries(need)
+    .filter(([b, t]) => (nation?.research?.[b] || 0) < t)
+    .map(([branch, tier]) => ({ branch, tier }));
+}
+
+// nation.research = { grenId: högsta klara tier } — utan övre gräns (V5.15)
 export function researchMods(nation) {
   const sum = {};
   for (const [branch, tier] of Object.entries(nation?.research || {})) {
-    const def = RESEARCH[branch];
-    if (!def) continue;
-    for (let i = 0; i < tier && i < def.tiers.length; i++) {
-      for (const [k, v] of Object.entries(def.tiers[i].mods || {})) sum[k] = (sum[k] || 0) + v;
+    if (!RESEARCH[branch]) continue;
+    for (let i = 0; i < tier; i++) {
+      for (const [k, v] of Object.entries(tierOf(branch, i).mods || {})) sum[k] = (sum[k] || 0) + v;
     }
   }
   return sum;
@@ -286,13 +528,37 @@ export function researchMods(nation) {
 export function combatBonus(nation) {
   const bonus = { INF: 0, TANK: 0, FLYG: 0 };
   for (const [branch, tier] of Object.entries(nation?.research || {})) {
-    const def = RESEARCH[branch];
-    if (!def) continue;
-    for (let i = 0; i < tier && i < def.tiers.length; i++) {
-      for (const [k, v] of Object.entries(def.tiers[i].combat || {})) bonus[k] += v;
+    if (!RESEARCH[branch]) continue;
+    for (let i = 0; i < tier; i++) {
+      for (const [k, v] of Object.entries(tierOf(branch, i).combat || {})) bonus[k] += v;
     }
   }
   return bonus;
+}
+
+// V5.15: förbandens egenskaper ur forskningen, per typ:
+// atk (extra skada), hp (% mer hälsa), rng (extra rutor räckvidd),
+// mv (extra rutor rörlighet), heal (hälsa tillbaka varje tur)
+export const UNIT_STATS = [
+  { k: 'atk', name: 'ATTACK', icon: '\u{2694}\u{FE0F}', fmt: (v) => `+${v}` },
+  { k: 'hp', name: 'HÄLSA', icon: '\u{2764}\u{FE0F}', fmt: (v) => `+${v} %` },
+  { k: 'rng', name: 'RÄCKVIDD', icon: '\u{1F3AF}', fmt: (v) => `${1 + v} RUT${v ? 'OR' : 'A'}` },
+  { k: 'mv', name: 'RÖRLIGHET', icon: '\u{1F463}', fmt: (v) => `+${v}` },
+  { k: 'heal', name: 'LÄKNING', icon: '\u{271A}', fmt: (v) => `+${v}/TUR` },
+];
+export function unitUpgrades(nation) {
+  const atk = combatBonus(nation);
+  const up = {};
+  for (const T of UNIT_TYPES3) up[T] = { atk: atk[T] || 0, hp: 0, rng: 0, mv: 0, heal: 0 };
+  for (const [branch, tier] of Object.entries(nation?.research || {})) {
+    if (!RESEARCH[branch]) continue;
+    for (let i = 0; i < tier; i++) {
+      for (const [T, u] of Object.entries(tierOf(branch, i).unit || {})) {
+        for (const [k, v] of Object.entries(u)) up[T][k] += v;
+      }
+    }
+  }
+  return up;
 }
 
 // försörjningsräckvidd i radianer från eget territorium — logistikforskning
@@ -318,7 +584,7 @@ export function hasUnlock(nation, key) {
   for (const [branch, tier] of Object.entries(nation?.research || {})) {
     const def = RESEARCH[branch];
     if (!def) continue;
-    for (let i = 0; i < tier && i < def.tiers.length; i++) {
+    for (let i = 0; i < Math.min(tier, def.tiers.length); i++) {
       if (def.tiers[i].unlock === key) return true;
     }
   }

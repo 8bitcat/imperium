@@ -86,6 +86,8 @@ export class BattleA {
       }
     };
     for (const u of this.units) place(u, u.side === 0 ? atkCols : defCols);
+    // V5.15: läkning fyller aldrig på mer än förbandet hade när striden började
+    for (const u of this.units) u.max = u.hp;
 
     // PvP: båda spelarna styr sin egen sida — ingen AI spelar åt någon.
     // opts.pvp = { role: 'att' | 'def', send(action) }
@@ -164,6 +166,25 @@ export class BattleA {
   unitAt(tx, ty) { return this.units.find((u) => u.tx === tx && u.ty === ty && u.hp > 0); }
   terrDef(u) { return u.type === 'FLYG' ? 0 : DEF_BONUS[this.terr[u.ty][u.tx]]; }
 
+  // V5.15: forskningen ger förbanden hälsa (hp %), räckvidd (rng), rörlighet (mv)
+  // och läkning (heal) — boost.up[typ] från anfallarens/försvararens forskning
+  up(u) { return ((u.side === 0 ? this.o.atkBoost : this.o.defBoost)?.up?.[u.type]) || {}; }
+  rangeOf(u) { return 1 + (this.up(u).rng || 0); }
+  // skada efter mottagarens hälsa: +100 % hälsa = hälften så stor skada
+  _soak(dmg, u) { return Math.max(1, Math.round(dmg / (1 + (this.up(u).hp || 0) / 100))); }
+
+  _heal(side) {
+    for (const u of this.units) {
+      if (u.side !== side || u.hp <= 0) continue;
+      const h = this.up(u).heal || 0;
+      const room = (u.max ?? u.hp) - u.hp;
+      if (!h || room <= 0) continue;
+      const add = Math.min(h, room);
+      u.hp += add;
+      this.floats.push({ x: u.tx, y: u.ty, txt: '+' + add, ttl: 1100, heal: true });
+    }
+  }
+
   moveCost(type, terr) {
     if (type === 'FLYG') return 1;
     switch (terr) {
@@ -201,7 +222,7 @@ export class BattleA {
   _computeReach(u) {
     this.reach.clear();
     this.attackFrom.clear();
-    const mv = UNIT_TYPES[u.type].mv;
+    const mv = UNIT_TYPES[u.type].mv + (this.up(u).mv || 0);   // V5.15: +rörlighet
     const dist = new Map([[u.tx + ',' + u.ty, 0]]);
     const q = [[u.tx, u.ty, 0]];
     while (q.length) {
@@ -220,12 +241,14 @@ export class BattleA {
       }
     }
     for (const key of dist.keys()) this.reach.set(key, true);
+    // V5.15: räckvidden ur forskningen — förbandet kan slå från längre håll
+    const R = this.rangeOf(u);
     for (const e of this.units) {
       if (e.side === u.side || e.hp <= 0) continue;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const fx = e.tx + dx, fy = e.ty + dy;
-        const key = fx + ',' + fy;
-        if (!this.reach.has(key)) continue;
+      for (const key of this.reach.keys()) {
+        const [fx, fy] = key.split(',').map(Number);
+        const d = Math.abs(fx - e.tx) + Math.abs(fy - e.ty);
+        if (d < 1 || d > R) continue;
         const occ = this.unitAt(fx, fy);
         if (occ && occ !== u) continue;
         const prev = this.attackFrom.get(e);
@@ -307,6 +330,7 @@ export class BattleA {
   _beginTurn(side) {
     this.turn = side;
     for (const u of this.units) u.moved = false;
+    this._heal(side);   // V5.15
     this._deselect();
     this._status(this.mySide < 0
       ? (side === 0 ? 'ANFALLARENS TUR' : 'FÖRSVARARENS TUR')
@@ -328,7 +352,8 @@ export class BattleA {
   _selStatus(u) {
     const t = TERR_NAME[this.terr[u.ty][u.tx]];
     const d = this.terrDef(u);
-    this._status(`${UNIT_TYPES[u.type].name} HP ${u.hp} • ${t}${d ? ` (FÖRSVAR +${d})` : ''} — VÄLJ RUTA/FIENDE`);
+    const R = this.rangeOf(u);   // V5.15
+    this._status(`${UNIT_TYPES[u.type].name} HP ${u.hp} • ${t}${d ? ` (FÖRSVAR +${d})` : ''}${R > 1 ? ` • RÄCKVIDD ${R}` : ''} — VÄLJ RUTA/FIENDE`);
   }
 
   _deselect() { this.sel = null; this.reach.clear(); this.attackFrom.clear(); if (this.turn === this.mySide) this._status('DIN TUR'); }
@@ -378,11 +403,12 @@ export class BattleA {
     const bonus = (u) => ((u.side === 0 ? b0 : b1)[u.type] || 0);
     // stora förband (sammanslagna armékårer) slår proportionellt hårdare —
     // skadan kan aldrig överstiga vad motståndaren har kvar
-    const dA = Math.min(def.hp, attackDamage(att, def, this.terrDef(def)) + bonus(att));
+    const dA = Math.min(def.hp, this._soak(attackDamage(att, def, this.terrDef(def)) + bonus(att), def));
     const hpAfter = def.hp - dA;
-    const adjacent = Math.abs(att.tx - def.tx) + Math.abs(att.ty - def.ty) === 1;
-    const dD = hpAfter > 0 && adjacent
-      ? Math.min(att.hp, attackDamage({ ...def, hp: hpAfter }, att, this.terrDef(att)) + bonus(def))
+    // V5.15: motanfall bara om försvararen når fram (dess egen räckvidd)
+    const dist = Math.abs(att.tx - def.tx) + Math.abs(att.ty - def.ty);
+    const dD = hpAfter > 0 && dist <= this.rangeOf(def)
+      ? Math.min(att.hp, this._soak(attackDamage({ ...def, hp: hpAfter }, att, this.terrDef(att)) + bonus(def), att))
       : 0;
     await this._playKlinch(att, def, dA, dD);
     def.hp = Math.max(0, def.hp - dA);
@@ -421,6 +447,7 @@ export class BattleA {
 
   async _enemyTurn() {
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    this._heal(1);   // V5.15
     await sleep(500);
     for (const u of [...this.units]) {
       if (this.done) return;
@@ -457,6 +484,7 @@ export class BattleA {
     }
     this.turn = 0;
     for (const u of this.units) u.moved = false;
+    this._heal(0);   // V5.15
     // Ingen strid får pågå i evighet (t.ex. om båda sidor sitter fast bakom en
     // flod) — efter 30 rundor avgörs resten på styrkeförhållandet.
     this.round = (this.round || 0) + 1;
@@ -802,7 +830,7 @@ export class BattleA {
       f.ttl -= 16;
       c.font = '9px "Press Start 2P", monospace';
       c.textAlign = 'center';
-      c.fillStyle = '#ff6b5e';
+      c.fillStyle = f.heal ? '#4ae37a' : '#ff6b5e';   // V5.15: läkning i grönt
       c.fillText(f.txt, f.x * TILE + TILE / 2, f.y * TILE - 2 - (1100 - f.ttl) / 90);
     }
     this.floats = this.floats.filter((f) => f.ttl > 0);

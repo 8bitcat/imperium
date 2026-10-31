@@ -35,6 +35,14 @@ import { money, people } from './real.js';
 //   unmod 'modifierare-id'        tar bort en modifierare
 //   rel  tal                      förändrar relationen till hela omvärlden
 //   law  ['kategori', 'alternativ'] byter en lag (inte om ideologin förbjuder den)
+//   risk { chance, win: {text, …}, lose: {text, …} }  V5.15: utfallet lottas när
+//                                 man väljer — win/lose bär res/temp/perm/mod/unmod/rel/law
+//   next 'id' | ['id', 'id2', null]  V5.15: en följdhändelse kommer om 10–45 dagar
+//                                 (null i listan = det kanske inte blir någon)
+//
+// V5.15: `chain: true` = händelsen lottas aldrig, den kommer bara via `next`.
+// `rare: true` = sällsynt (väger en fjärdedel). Texterna får ha platshållarna
+// {rike} {granne} {land} {stad} {huvudstad} — de fylls i när rutan öppnas.
 //
 // V5.6: över 500 nya händelser ligger i events/<tema>.js och läggs till efter
 // de ursprungliga. Kontrollera nya med  node tools/check-events.mjs
@@ -52,6 +60,16 @@ import { EVENTS as SAMHALLE } from './events/samhalle.js';
 import { EVENTS as OMVARLD } from './events/omvarld.js';
 import { EVENTS as KALLA_KRIGET } from './events/kallakriget.js';   // V5.8
 import { EVENTS as NYA_LAGAR_58 } from './events/nyalagar58.js';    // V5.8
+// V5.15 OFÖRUTSÄGBART: nio nya teman, kedjor och sällsynta händelser
+import { EVENTS as VARDAG } from './events/vardag.js';
+import { EVENTS as KATASTROF } from './events/katastrof.js';
+import { EVENTS as AFFARER } from './events/affarer.js';
+import { EVENTS as DIPLOMATI } from './events/diplomati.js';
+import { EVENTS as INTRIGER } from './events/intriger.js';
+import { EVENTS as FRAMTID } from './events/framtid.js';
+import { EVENTS as KURIOSA } from './events/kuriosa.js';
+import { EVENTS as KEDJOR } from './events/kedjor.js';
+import { EVENTS as RIKET } from './events/riket.js';
 
 export const BASE_EVENTS = [
 
@@ -1060,29 +1078,67 @@ export const BASE_EVENTS = [
 export const EVENTS = [
   ...BASE_EVENTS, ...EKONOMI, ...HALSA, ...MILJO, ...RATT, ...POLITIK, ...IDEOLOGI,
   ...NYA_IDEOLOGIER, ...MILITAR, ...VETENSKAP, ...SAMHALLE, ...OMVARLD, ...KALLA_KRIGET, ...NYA_LAGAR_58,
+  ...VARDAG, ...KATASTROF, ...AFFARER, ...DIPLOMATI, ...INTRIGER, ...FRAMTID, ...KURIOSA, ...KEDJOR, ...RIKET,
 ];
+
+export const EVENT_BY_ID = Object.fromEntries(EVENTS.map((e) => [e.id, e]));
 
 // ---------- MOTOR ----------
 
 // Vilka händelser kan inträffa just nu? (villkoret sant + inte redan sedd nyligen)
+// V5.15: kedjehändelser (chain: true) lottas aldrig — de kommer bara som följd av ett val.
 export function eligible(c, seen = {}) {
   return EVENTS.filter((e) => {
+    if (e.chain) return false;
     if (seen[e.id] && c.day - seen[e.id] < (e.cooldown || 400)) return false;
     try { return !e.when || !!e.when(c); } catch (err) { return false; }
   });
 }
 
 // Väg och lotta fram en händelse. Returnerar null om ingenting passar.
+// V5.15: sällsynta händelser väger en fjärdedel, och varje vikt skakas om vid
+// varje dragning — samma läge ger inte samma sorts händelse två gånger i rad.
 export function pickEvent(c, seen = {}) {
   const pool = eligible(c, seen);
   if (!pool.length) return null;
-  const total = pool.reduce((a, e) => a + (e.weight || 1), 0);
-  let r = Math.random() * total;
-  for (const e of pool) {
-    r -= (e.weight || 1);
-    if (r <= 0) return e;
+  const w = pool.map((e) => (e.rare ? 0.25 : (e.weight || 1)) * (0.4 + Math.random() * 1.2));
+  let r = Math.random() * w.reduce((a, x) => a + x, 0);
+  for (let i = 0; i < pool.length; i++) {
+    r -= w[i];
+    if (r <= 0) return pool[i];
   }
   return pool[pool.length - 1];
+}
+
+// V5.15: dagar till nästa händelse. Oftast en månad, ibland flera i rad,
+// ibland en lång tystnad — man ska aldrig kunna räkna ut när nästa kommer.
+export function nextEventGap() {
+  const r = Math.random();
+  if (r < 0.15) return 3 + Math.floor(Math.random() * 6);     // flera i rad
+  if (r < 0.85) return 10 + Math.floor(Math.random() * 31);   // det vanliga
+  return 40 + Math.floor(Math.random() * 36);                 // en lång tystnad
+}
+
+// V5.15: platshållare i texterna. {rike} = ditt land, {granne} = ett grannland,
+// {land} = ett främmande land, {stad} = en stad i ditt rike, {huvudstad}.
+// I titlar (VERSALER) skrivs de med versaler: {GRANNE}, {STAD} …
+export const PLACEHOLDERS = ['rike', 'granne', 'land', 'stad', 'huvudstad'];
+export function fillText(str, vars) {
+  if (typeof str !== 'string' || !str.includes('{')) return str;
+  return str.replace(/\{(\w+)\}/g, (m, k) => {
+    const v = vars?.[k.toLowerCase()];
+    if (v == null) return m;
+    return k === k.toUpperCase() ? String(v).toUpperCase() : v;   // {GRANNE} i titlar
+  });
+}
+
+// V5.15: följdhändelse ur ett val — `next: 'id'` eller `next: ['a', 'b', null]`
+// (null = ingenting händer). Returnerar id:t eller null.
+export function rollNext(next) {
+  if (!next) return null;
+  const list = Array.isArray(next) ? next : [next];
+  const id = list[Math.floor(Math.random() * list.length)];
+  return id && EVENT_BY_ID[id] ? id : null;
 }
 
 // Går valet att välja med nuvarande resurser?
