@@ -87,6 +87,40 @@ export const MODIFIERS = {
       { text: 'DECENTRALISERA — GE REGIONERNA MAKTEN', cost: { pp: 30 }, temp: { stability: 12, approval: 8, statepower: -12 }, tip: 'Lugnare, men du får aldrig tillbaka greppet helt.' },
     ],
   },
+  // V5.16 VERKLIGHETEN: underskott, kreditstopp och invandring som går fortare än integrationen
+  deficit_state: {
+    name: 'STATEN LEVER PÅ KREDIT', icon: '\u{1F3E6}', kind: 'assigned', tone: 'bad', power: 2,
+    desc: 'Statskassan är under noll. Löner och bidrag betalas med lånade pengar, räntan tickar varje dag och leverantörerna får vänta.',
+    fix: 'Få upp statskassan över noll — höj Income eller dra ner på utgifterna.',
+    when: (c) => c.deficit,
+    mods: { approval: -3, stability: -4, statepower: -2 },
+    actions: [
+      { text: 'SPARPAKET I HELA STATEN', cost: { pp: 25 }, temp: { income: 15, welfare: -8, approval: -6 }, tip: 'Kassan återhämtar sig. Folket märker det.' },
+      { text: 'SÄLJ STATLIGA FÖRETAG', cost: { pp: 35 }, res: { money: 900 }, temp: { factory: -6, income: -4 }, tip: 'Pengar på en gång — och en inkomst mindre för alltid.' },
+    ],
+  },
+  credit_stop: {
+    name: 'BANKEN HAR STÄNGT KRANEN', icon: '\u{1F6AB}', kind: 'assigned', tone: 'bad', power: 4,
+    desc: 'Underskottet har vuxit förbi vad banken lånar ut. Lärare, poliser och soldater får inte sin lön i tid och varje månad räknas som en missad betalning.',
+    fix: 'Få underskottet inom bankens kredit — eller kassan över noll.',
+    when: (c) => c.deficit && c.spend <= 0,
+    mods: { approval: -10, stability: -12, unrest: 10, factory: -8, readiness: -10 },
+    actions: [
+      { text: 'NÖDSKATT PÅ ALLA INKOMSTER', cost: { pp: 40 }, temp: { income: 25, approval: -12, unrest: 8 }, tip: 'Det enda som fungerar snabbt. Ingen tackar dig.' },
+      { text: 'BE OMVÄRLDEN OM ETT NÖDLÅN', cost: { pp: 30 }, res: { money: 1200 }, temp: { statepower: -10, income: -5 }, tip: 'Pengarna kommer med villkor.' },
+    ],
+  },
+  migration_strain: {
+    name: 'INTEGRATIONEN HINNER INTE MED', icon: '\u{1F6C2}', kind: 'assigned', tone: 'bad', power: 3,
+    desc: 'Fler flyttar hit än bostäderna, skolorna, språkkurserna och jobben räcker till. Köerna växer, segregationen ökar och spänningarna med dem.',
+    fix: 'Få ner nettoinvandringen under 1,5 % per år eller upp integrationen över noll.',
+    when: (c) => c.migRate > 1.8 && c.st.integration < 0,
+    mods: { safety: -8, unrest: 8, stability: -6, welfare: -6, approval: -4 },
+    actions: [
+      { text: 'STORSATSNING PÅ SPRÅK, BOSTÄDER OCH JOBB', cost: { money: 900 }, temp: { integration: 20, welfare: 4 }, tip: 'Dyrt. Det enda som löser själva problemet.' },
+      { text: 'TILLFÄLLIGT INVANDRINGSSTOPP', cost: { pp: 30 }, temp: { immigration: -25, freedom: -6, safety: 4 }, tip: 'Köper tid. Arbetsgivarna och omvärlden protesterar.' },
+    ],
+  },
   brain_drain: {
     name: 'KUNSKAPSTAPP', icon: '\u{1F393}', kind: 'assigned', tone: 'bad', power: 2,
     desc: 'Forskare, läkare och ingenjörer lämnar landet. De som är kvar undervisar allt färre.',

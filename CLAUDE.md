@@ -32,12 +32,12 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 
 | Fil | Innehåll |
 |---|---|
-| `stats.js` | 22 nationsvärden + `computeStats`. Nya stat-nycklar MÅSTE finnas här, annars noll effekt utan fel. V5.15: varje värde har `total` (−100…100, det statistiken och allt gammalt läser) och `raw` (inget tak uppåt); `UNCAPPED` = de som producerar och visas med raw |
+| `stats.js` | 22 nationsvärden + `computeStats` (V5.16: källan `protest` = missnöjet). Nya stat-nycklar MÅSTE finnas här, annars noll effekt utan fel. V5.15: varje värde har `total` (−100…100, det statistiken och allt gammalt läser) och `raw` (inget tak uppåt); `UNCAPPED` = de som producerar och visas med raw |
 | `laws.js` · `ideologies.js` · `research.js` | lagar (85 kategorier, 802 alternativ) · 19 ideologier/doktriner + axlar + sidogrenar · 27 grenar × 9 namngivna nivåer + OÄNDLIGT många till (`tierOf`, `tierCost`, `tierDays`), förkunskaper mellan grenar (`NEEDS`), förbandens egenskaper (`unit`: hp/rng/mv/heal → `unitUpgrades`) |
 | `laws-extra.js` | V5.7: nya alternativ i befintliga lagar (`after`-position, `locks`, `effects`), splitsas in i LAWS vid laddning |
 | `laws-more.js` | V5.8: helt nya lagkategorier som bär sin egen `axis`/`dir`, `locks` och `effects` — läses av laws.js, ideologies.js och statistics.js |
 | `laws-511.js` + `laws511/part1–11.js` | V5.11 LAGARNAS MAKT: tre nya val i varje lag (`EXTRAS` → laws-extra.js), fyra nya lagar (`NEW` → laws-more.js) och en stark statistikuppsättning för VARJE alternativ (`FX` → statistics.js, läggs sist och vinner per mått) |
-| `events.js` · `modifiers.js` · `development.js` | 1 743 händelser med villkor (V5.15: +1 044 i nio nya teman, 220 kedjehändelser, 615 med chansval) · 45 modifierare · stadsnivå/infrastruktur 0–100 |
+| `events.js` · `modifiers.js` · `development.js` | 2 528 händelser med villkor (V5.15: +1 044 i nio nya teman; V5.16: +785 i sju teman som följer av vad spelaren gör — reaktioner, protester, migration, statsfinanser, demokrati, samhällsliv, konsekvenser) · 48 modifierare · stadsnivå/infrastruktur 0–100 |
 | `war.js` · `integration.js` · `stance.js` | casus belli/krav/historiska riken (32 st — BARA grundlandet `core` kan utropa sitt rike, och ALLA `lands` krävs helt annekterade: lydstater och delvis tagna länder räknas inte, se `empireOwnedIds` i main.js) · integration av erövrat land · ländernas hållning |
 | `geopolitics.js` | V5.8: VÄRLDSLÄGET — kalla krig (spänning 0–100, incidenter, kris → ibland varmt krig), val i demokratier, revolutioner/kupper som river upp lagarna. Ren logik; main.js kopplar in den via `geoApi(ctx)` i `aiWorldTick` |
 | `diplomacy.js` · `blocs.js` · `ministers.js` · `ranking.js` | relationer/sanktioner · block + fanor · kabinett · världsrankning |
@@ -46,7 +46,7 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | `globe.js` · `globe3d.js` | pixelglob (d3) · WebGL-planet. All ritning går via `_project`/`_front` så den funkar i båda |
 | `net.js` · `data.js` · `names.js` | PeerJS (värden äger världen) · kartdata · svenska landsnamn |
 | `real.js` | V5.6: allt som VISAS i riktiga tal — 1 💰 = 100 miljoner $, 1 🧍 = 1 000 människor, förband i soldater. Spelet räknar internt i gamla enheter |
-| `statistics.js` | 316 verkliga mått i 15 grupper (V5.14: +37 Världsbanksmått `RAW_KEYS_514`, +18 brott i `model3`, lagarnas effekter på dem i `LAW_EFFECTS_514`) per land (data/indicators.json; brott är modeller, märkta ~) som nationsvärden + lagar (`LAW_EFFECTS`) flyttar; rikes-ihopräkning, rankningar, befolkningspyramid (`realmPyramid`, Världsbankens 5-årsgrupper per kön; `T = null` = startläget) |
+| `statistics.js` | V5.16: 391 verkliga mått i 19 grupper (tidigare 316 i 15) (V5.14: +37 Världsbanksmått `RAW_KEYS_514`, +18 brott i `model3`, lagarnas effekter på dem i `LAW_EFFECTS_514`) per land (data/indicators.json; brott är modeller, märkta ~) som nationsvärden + lagar (`LAW_EFFECTS`) flyttar; rikes-ihopräkning, rankningar, befolkningspyramid (`realmPyramid`, Världsbankens 5-årsgrupper per kön; `T = null` = startläget) |
 | `events/*.js` | V5.6: händelser per tema, ihopslagna i `events.js` |
 | `faith.js` · `country-data.js` | V5.12 TRON: folkets tro per land (`RELIGION_SHARES`, ungefär Pew 2020), statens tro via religionslagen (`faithKind`: state/neutral/none), omvändelse i steg per land och kaos när staten och folket tror olika (`chaosOf`, `chaosMods`) |
 | `bank.js` | V5.13 BANKEN: kreditbetyg AAA–D (`ratingOf`: skuld delat med välstånd + stabilitet, oro, korruption, krig, skuldbroms, missade betalningar), ränta/längsta plan/lånetak per betyg, annuitet (`annuity`), bankruttkris (`crisisMods`) |
@@ -74,6 +74,15 @@ sedan går med som vanlig `player` (`state.hosting`). Kompisar går med på kode
 
 **Händelserna (V5.15):** `nextEventGap()` lottar avståndet (ibland tätt, ibland långt), vikterna skakas om vid varje dragning, `eventInstance()` fyller i platshållarna ({rike} {granne} {land} {stad} {huvudstad}, versaler i titlar) och skalar pengarna efter rikets dagsinkomst. Val kan ha `risk` (utfallet lottas och visas i samma ruta) och `next` (följdhändelse om 10–45 dagar i `s.eventQueue`, sparas). `chain: true` = lottas aldrig, kommer bara via next; `rare: true` = väger en fjärdedel.
 
+**Verkligheten (V5.16, `realism.js`):** saker tar tid.
+- **Tröghet:** varje statistikmått glider mot sitt mål i verklig takt (`lagStep`: halveringstid i spelår + ibland ett tak per år, `SPEED`/`GROUP_HL`). Ett nytt parti börjar i verkligheten (`indLag` = 0), inte vid målet. Invandrarandelen kan inte växa fortare än nettoinvandringen (`migrantCap`). Härledda mått (BNP, demokratiindex, skuld i dollar) räknas om efter trögheten med `refreshDerived` (statistics.js), och de står i `NO_LAG`.
+- **Lagar och ideologi glider in:** nationsvärdenas lag- och ideologikällor är `s.lawFx`/`s.ideoFx` (`tickPolicyPhase`, ungefär en månad). Målet visas med pilar i ÖVERSIKT (`policyGoalStats`).
+- **Underskott:** `s.res.money` får gå under noll. `creditLine()` = min(bankens lånetak, ett halvårs inkomster), och bara när Income ≥ `DEFICIT_FLOOR` (-70). Alla köp går via `canAfford`/`spendable`, och händelserna läser `c.spend`. Underskottet kostar ränta (bankens + 2 %) och räknas in i kreditbetyget. Går det förbi krediten blir varje månad en missad betalning. En lag som pressar Income under -70 stoppas när kassan är under noll.
+- **Missnöje:** `s.griev` = {slag: 0–100}, `GRIEV_KINDS`. Varje lagändring betygsätts (`lawPopularity`/`grievFromChange`) och loggas i `s.lawLog` (`noteLawChange` — anropa den vid VARJE lagändring). Underskott, kris och invandring som går fortare än integrationen fyller på (`tickGriev`). Missnöjet blir egen källa `protest` i `computeStats` (`protestMods`).
+- **Demokratiindex:** EIU 2024 (`democracy-data.js`, 167 länder). Övriga skattas ur Världsbankens styrningsmått (`DEMO_FIT`). Fem delindex (`DEMO_SUBS`) som lagarna drar mot nivåer med operatorn `['~', nivå, styrka]` (`LAW_EFFECTS_516`).
+- **Statistiken:** 391 mått i 19 grupper, varav 75 nya: DEMOKRATI & STYRE, STATSFINANSER, MIGRATION & INTEGRATION, VARDAG & PLÅNBOK, plus hälsa, skola och el. Verkliga tabeller ligger i `T516`, modellerna i `model516`.
+- Nya fält i `state.solo`: lawFx, ideoFx, griev, lawLog, indHist (bilder var 30:e dag för `c.trend`).
+
 **Statsskulden (V5.13):** `state.solo.bank` = { debt (💰), plan (år), months kvar, missed, defaultUntil, crisis, log }. Rikets BNP i spelets pengar = `bankY()` (fyra spelår av grundinkomsten). Startskulden = rikets verkliga statsskuld i % av BNP. `tickBank` betalar var 30:e dag; räcker pengarna inte läggs resten på skulden och efter 3 missade månader blir det statsbankrutt (halva skulden struken, betyget D i ett år, kris). Lagarnas och nationsvärdenas skuldeffekt (`s.debtPolicy` från `tickIndLag`) blir ett månadsunderskott eller -överskott (/40 per månad). Statsskuld och Räntekostnader i STATISTIK skrivs över med bankens siffror (`applyBankToIndicators`), och förhandsrutan för lagar visar skuldeffekten som "STATEN LÅNAR X % AV BNP MER PER ÅR".
 
 Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
@@ -92,6 +101,12 @@ Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
 - **Ny händelse:** minst ett val utan kostnad (annars kan spelaren fastna i rutan),
   och `node tools/check-events.mjs` ska ge 0 fel. Kedjehändelser (`chain: true`) har inget
   `when` och måste nås av ett `next`; kontrollen säger till annars.
+- **V5.16-händelser:** `kind` (missnöjets slag) och `react: true` (en reaktion som väger fem
+  gånger mer). Valen kan ha `undo` (true = lagen händelsen handlar om), `griev` (±40) och
+  `ind` (chocker i statistiken, bara mått i `SHOCKS`). `{lag}`/`undo: true` kräver att `when`
+  frågar `c.cut`/`c.raised`/`c.changed`. Villkoren har också `c.griev`, `c.grievOf`, `c.deficit`,
+  `c.spend`, `c.debt`, `c.rating(Idx)`, `c.migRate`, `c.demo` och `c.trend(id)` (se events.js).
+- **Ny lagändring i koden:** anropa `noteLawChange(cat, från, till)`, annars märker folket inget.
 
 ## Fällor som redan kostat tid
 

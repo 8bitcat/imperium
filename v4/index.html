@@ -771,6 +771,16 @@
   .sval.pos { color: #4ae37a; }
   .sval.neg { color: var(--red); }
   .sval.zero { color: var(--holo-dim); }
+  /* V5.16 VERKLIGHETEN: vart värdet är på väg, underskott i rött, LÄGET I LANDET */
+  .sval .sto { display: block; font-size: 6px; opacity: 0.85; }
+  .sval .sto.pos { color: #4ae37a; } .sval .sto.neg { color: var(--red); }
+  #rmoney.neg, #natres b.neg { color: var(--red); }
+  .reality .rline { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-size: 8px; margin: 6px 0 3px; }
+  .reality .rline span { color: var(--holo-dim); min-width: 120px; }
+  .reality .rline small { font-size: 6px; }
+  .reality .rsub { font-size: 6px; color: var(--holo-dim); line-height: 1.9; margin: 2px 0 4px; }
+  .reality .gbar { height: 6px; background: rgba(0, 12, 20, 0.8); border: 1px solid rgba(55,224,255,0.2); }
+  .reality .gbar div { height: 100%; }
   /* V5.6: STATISTIK-fliken — namn, värde i dag, vart det är på väg, plats i världen */
   .indgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; }
   @media (max-width: 820px) { .indgrid { grid-template-columns: minmax(0, 1fr); } }

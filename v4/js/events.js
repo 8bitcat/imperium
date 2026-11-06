@@ -46,6 +46,26 @@ import { money, people } from './real.js';
 //
 // V5.6: över 500 nya händelser ligger i events/<tema>.js och läggs till efter
 // de ursprungliga. Kontrollera nya med  node tools/check-events.mjs
+//
+// V5.16 VERKLIGHETEN (realism.js) — händelser som hänger ihop med vad du gjort:
+//   c.griev            samlat missnöje 0–100
+//   c.grievOf(kind)    missnöjet av ett slag (GRIEV_KINDS: valfard, skatt, frihet,
+//                      migration, miljo, ekonomi, forsvar, underskott, kris)
+//   c.cut(...cats)     någon av lagarna ändrad till något folket gillar MINDRE senaste spelåret
+//   c.raised(...cats)  … till något folket gillar MER
+//   c.changed(...cats) … ändrad alls
+//   c.deficit, c.spend statskassan under noll · vad du kan lägga (kassan + bankens kredit)
+//   c.debt, c.rating, c.ratingIdx   statsskuld % av BNP · kreditbetyg 'AAA'…'D' · 0…8
+//   c.migRate          nettoinvandring i % av befolkningen per år
+//   c.demo             demokratiindex 0–10 (EIU-skalan)
+//   c.trend(id)        hur mycket ett mått ändrats senaste spelåret (måttets enhet)
+// Händelsen: `kind` = vilket missnöje den handlar om, `react: true` = en reaktion
+// som går före andra när den kan inträffa. Platshållaren {lag} = lagen som senast
+// ändrats av händelsens slag (svenska, bestämd form). Valen kan också ha:
+//   undo true | 'kategori'   lagen återställs till hur den var före ändringen
+//   griev tal                missnöjet (händelsens slag) ökar/minskar
+//   ind { mått: tal }        en chock i statistiken (SHOCKS i realism.js) som sedan
+//                            glider tillbaka i måttets egen takt
 
 import { EVENTS as EKONOMI } from './events/ekonomi.js';
 import { EVENTS as HALSA } from './events/halsa.js';
@@ -70,6 +90,15 @@ import { EVENTS as FRAMTID } from './events/framtid.js';
 import { EVENTS as KURIOSA } from './events/kuriosa.js';
 import { EVENTS as KEDJOR } from './events/kedjor.js';
 import { EVENTS as RIKET } from './events/riket.js';
+// V5.16 VERKLIGHETEN: händelser som följer av vad du gör — reaktioner på lagar,
+// protester, invandring, statsfinanser, demokrati, samhällsliv och långa följder
+import { EVENTS as REAKTIONER } from './events/reaktioner.js';
+import { EVENTS as PROTESTER } from './events/protester.js';
+import { EVENTS as MIGRATION } from './events/migration.js';
+import { EVENTS as STATSFINANS } from './events/statsfinans.js';
+import { EVENTS as DEMOKRATI } from './events/demokrati.js';
+import { EVENTS as SAMHALLSLIV } from './events/samhallsliv.js';
+import { EVENTS as KONSEKVENSER } from './events/konsekvenser.js';
 
 export const BASE_EVENTS = [
 
@@ -1079,6 +1108,7 @@ export const EVENTS = [
   ...BASE_EVENTS, ...EKONOMI, ...HALSA, ...MILJO, ...RATT, ...POLITIK, ...IDEOLOGI,
   ...NYA_IDEOLOGIER, ...MILITAR, ...VETENSKAP, ...SAMHALLE, ...OMVARLD, ...KALLA_KRIGET, ...NYA_LAGAR_58,
   ...VARDAG, ...KATASTROF, ...AFFARER, ...DIPLOMATI, ...INTRIGER, ...FRAMTID, ...KURIOSA, ...KEDJOR, ...RIKET,
+  ...REAKTIONER, ...PROTESTER, ...MIGRATION, ...STATSFINANS, ...DEMOKRATI, ...SAMHALLSLIV, ...KONSEKVENSER,
 ];
 
 export const EVENT_BY_ID = Object.fromEntries(EVENTS.map((e) => [e.id, e]));
@@ -1099,8 +1129,12 @@ export function eligible(c, seen = {}) {
 // V5.15: sällsynta händelser väger en fjärdedel, och varje vikt skakas om vid
 // varje dragning — samma läge ger inte samma sorts händelse två gånger i rad.
 export function pickEvent(c, seen = {}) {
-  const pool = eligible(c, seen);
+  let pool = eligible(c, seen);
   if (!pool.length) return null;
+  // V5.16: en reaktion på något du just gjort går före — finns det en som kan
+  // inträffa blir det en reaktion sex gånger av tio
+  const react = pool.filter((e) => e.react);
+  if (react.length && Math.random() < 0.6) pool = react;
   const w = pool.map((e) => (e.rare ? 0.25 : (e.weight || 1)) * (0.4 + Math.random() * 1.2));
   let r = Math.random() * w.reduce((a, x) => a + x, 0);
   for (let i = 0; i < pool.length; i++) {
@@ -1122,7 +1156,8 @@ export function nextEventGap() {
 // V5.15: platshållare i texterna. {rike} = ditt land, {granne} = ett grannland,
 // {land} = ett främmande land, {stad} = en stad i ditt rike, {huvudstad}.
 // I titlar (VERSALER) skrivs de med versaler: {GRANNE}, {STAD} …
-export const PLACEHOLDERS = ['rike', 'granne', 'land', 'stad', 'huvudstad'];
+// V5.16: {lag} = lagen som senast ändrats (händelsens slag), t.ex. 'pensionerna'.
+export const PLACEHOLDERS = ['rike', 'granne', 'land', 'stad', 'huvudstad', 'lag'];
 export function fillText(str, vars) {
   if (typeof str !== 'string' || !str.includes('{')) return str;
   return str.replace(/\{(\w+)\}/g, (m, k) => {
@@ -1144,7 +1179,8 @@ export function rollNext(next) {
 // Går valet att välja med nuvarande resurser?
 export function affordable(choice, c) {
   const need = choice.cost || {};
-  if ((need.money || 0) > c.money) return `KRÄVER ${money(need.money)}`;
+  // V5.16: banken lånar ut — det som räcker är kassan plus krediten (c.spend)
+  if ((need.money || 0) > (c.spend ?? c.money)) return `KRÄVER ${money(need.money)}`;
   if ((need.pp || 0) > c.pp) return `KRÄVER ${need.pp} \u{2696}\u{FE0F}`;
   if ((need.rp || 0) > c.rp) return `KRÄVER ${need.rp} \u{1F52C}`;
   if ((need.man || 0) > c.man) return `KRÄVER ${people(need.man)} \u{1FA96}`;

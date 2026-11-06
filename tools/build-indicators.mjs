@@ -106,6 +106,13 @@ const WB = [
   ['girlsschool', 'SE.ENR.PRSC.FM.ZS'], ['lowsec', 'SE.SEC.CMPT.LO.ZS'], ['litfem', 'SE.ADT.LITR.FE.ZS'],
   ['trainedteach', 'SE.PRM.TCAQ.ZS'], ['patentsfor', 'IP.PAT.NRES'], ['elecloss', 'EG.ELC.LOSS.ZS'],
   ['ghg', 'EN.GHG.ALL.MT.CE.AR5'], ['n2o', 'EN.GHG.N2O.MT.CE.AR5'], ['disasters', 'EN.CLC.MDAT.ZS'],
+  // V5.16 VERKLIGHETEN: statsfinanser, migration, hälsa, företag, el och fattigdom
+  ['suicide', 'SH.STA.SUIC.P5'], ['govhealth', 'SH.XPD.GHED.GD.ZS'], ['uhc', 'SH.UHC.SRVS.CV.XD'],
+  ['revenue', 'GC.REV.XGRT.GD.ZS'], ['budgetbal', 'GC.NLD.TOTL.GD.ZS'], ['migstock', 'SM.POP.TOTL'],
+  ['startdays', 'IC.REG.DURS'], ['taxrate', 'IC.TAX.TOTL.CP.ZS'], ['depositrate', 'FR.INR.DPST'],
+  ['firmbribe', 'IC.FRM.BRIB.ZS'], ['femown', 'IC.FRM.FEMO.ZS'], ['fossilelec', 'EG.ELC.FOSL.ZS'],
+  ['gaselec', 'EG.ELC.NGAS.ZS'], ['poverty365', 'SI.POV.LMIC'], ['poverty685', 'SI.POV.UMIC'],
+  ['natpov', 'SI.POV.NAHC'], ['learnpov', 'SE.LPV.PRIM'], ['tertfem', 'SE.TER.ENRR.FE'],
 ];
 
 // Bara vissa nycklar:  node tools/build-indicators.mjs gdppcppp savings …

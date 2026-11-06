@@ -24,17 +24,34 @@ const { MODIFIERS } = await imp(join(JS, 'modifiers.js'));
 const { IDEOLOGIES } = await imp(join(JS, 'ideologies.js'));
 const { RESEARCH } = await imp(join(JS, 'research.js'));
 const S = await imp(join(JS, 'statistics.js'));
+const R = await imp(join(JS, 'realism.js'));   // V5.16
 S.setIndicatorData(JSON.parse(readFileSync(join(ROOT, 'v4/data/indicators.json'), 'utf8')),
   JSON.parse(readFileSync(join(ROOT, 'v4/data/facts.json'), 'utf8')));
 
 const STAT_IDS = Object.keys(STATS);
-const IND_IDS = new Set(S.INDICATORS.map((d) => d.id));
+// V5.16: de nya måtten — rimliga värden om statistics.js ännu inte räknar dem
+const FAKE_516 = { demo: [0.5, 9.8], regime: [0, 3], demo_el: [0, 10], demo_gov: [0, 10], demo_part: [1, 10], demo_cult: [1, 10],
+  demo_civ: [0.5, 10], turnout: [35, 90], trustgov: [8, 80], trustparl: [8, 75], trustcourt: [10, 85], griev: [0, 100],
+  protests: [0, 3000], strikes: [0, 400], polprisoners: [0, 5000], parties: [1, 12], unionrate: [2, 70],
+  treasury: [-2e11, 5e11], budgetbal: [-12, 5], deficitusd: [-2e11, 5e10], revenue: [8, 55], debtusd: [0, 5e12], debtpc: [0, 1e5],
+  rating: [0, 8], bondrate: [0.5, 25], interestusd: [0, 2e11], pensionx: [1, 15], socialx: [2, 25], corptax: [0, 40],
+  incometax: [0, 60], vat: [0, 27], immig: [1e3, 1.5e6], emig: [1e3, 1e6], asylum: [0, 3e5],
+  newcitizens: [0, 8e5], migemp: [30, 80], integ: [10, 90], segreg: [10, 80], exclusion: [0, 15], xenophobia: [5, 60],
+  secondgen: [0, 30], migstock: [1e4, 5e7], medinc: [500, 60000], wage: [100, 7000], minwage: [0, 3500], houseprice: [3, 15],
+  rentshare: [15, 50], homeless: [1e3, 2e6], housingshort: [0, 2e6], foodprice: [80, 220], fuelprice: [0.2, 2.5], elprice: [0.04, 0.5],
+  hhdebt: [10, 220], retireage: [50, 72], workweek: [30, 52], vacationdays: [0, 40], parentalweeks: [0, 70], cars: [10, 850],
+  commute: [15, 90], carewait: [5, 200], sickleave: [1, 10], mentalill: [5, 25], suicide: [1, 30], govhealth: [0.5, 10],
+  pisa: [330, 560], learnpov: [3, 95], tertfem: [2, 130],
+  depositrate: [0, 15], firmbribe: [0, 50], femown: [5, 60], fossilelec: [0, 100], gaselec: [0, 100],
+  poverty365: [0, 80], poverty685: [0, 95], natpov: [3, 70] };
+const IND_IDS = new Set([...S.INDICATORS.map((d) => d.id), ...Object.keys(FAKE_516)]);
 const RES_KEYS = new Set(['money', 'pp', 'rp', 'man']);
-const CHOICE_KEYS = new Set(['text', 'tip', 'cost', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'risk', 'next']);
-const EVENT_KEYS = new Set(['id', 'icon', 'weight', 'cooldown', 'title', 'text', 'when', 'choices', 'rare', 'chain']);
+const CHOICE_KEYS = new Set(['text', 'tip', 'cost', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'risk', 'next', 'undo', 'griev', 'ind']);
+const EVENT_KEYS = new Set(['id', 'icon', 'weight', 'cooldown', 'title', 'text', 'when', 'choices', 'rare', 'chain', 'kind', 'react']);
 // V5.15: utfallen i ett chansval (risk.win / risk.lose)
-const OUTCOME_KEYS = new Set(['text', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law']);
-const PLACEHOLDERS = new Set(['rike', 'granne', 'land', 'stad', 'huvudstad']);
+const OUTCOME_KEYS = new Set(['text', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'undo', 'griev', 'ind']);   // V5.16: + undo/griev/ind
+const EFFECT_KEYS = ['res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'undo', 'griev', 'ind'];
+const PLACEHOLDERS = new Set(['rike', 'granne', 'land', 'stad', 'huvudstad', 'lag']);
 const nextRefs = [];   // [var, id] — kontrolleras när alla filer är lästa
 const CAPS = { money: 2500, pp: 60, rp: 150, man: 25 };
 
@@ -62,10 +79,20 @@ function sampleCtx(emptyInd = false) {
   for (const b of Object.keys(RESEARCH)) research[b] = Math.floor(rnd(0, 7));
   const cid = pick(countries);
   const indRaw = emptyInd ? {} : (S.realmIndicators([{ cid }], {}) || {});
+  if (!emptyInd) for (const [k, [lo, hi]] of Object.entries(FAKE_516)) if (!Number.isFinite(indRaw[k])) indRaw[k] = rnd(lo, hi);
+  // V5.16: missnöje, lagändringar, statskassa, bank, invandring, demokrati
+  const griev = {};
+  for (const k of R.GRIEV_IDS) griev[k] = Math.random() < 0.55 ? 0 : Math.round(rnd(0, 70) * Math.random());
+  const lawCheck = (name, cats) => {
+    for (const cat of cats) if (!LAWS[cat]) unknown.add('c.' + name + "('" + cat + "')");
+    if (!cats.length) unknown.add('c.' + name + '() utan lag');
+  };
+  const money = Math.floor(rnd(-1500, 4000));
+  const rIdx = Math.min(8, Math.floor(Math.random() ** 1.6 * 9));
   return {
     st: strictProxy(st, 'c.st', new Set(STAT_IDS)),
     day: Math.floor(rnd(1, 2500)),
-    money: Math.floor(rnd(0, 4000)), pp: Math.floor(rnd(0, 400)), rp: Math.floor(rnd(0, 500)), man: Math.floor(rnd(0, 200)),
+    money, pp: Math.floor(rnd(0, 400)), rp: Math.floor(rnd(0, 500)), man: Math.floor(rnd(0, 200)),
     ideo, doc: docs.length ? pick(docs) : null,
     harmony: Math.random(),
     law: (cat) => { if (!LAWS[cat]) unknown.add(`c.law('${cat}')`); return laws[cat]; },
@@ -80,6 +107,16 @@ function sampleCtx(emptyInd = false) {
     res: (b) => { if (!RESEARCH[b]) unknown.add(`c.res('${b}')`); return research[b] || 0; },
     mod: (id) => { if (!MODIFIERS[id]) unknown.add(`c.mod('${id}')`); return Math.random() < 0.15; },
     ind: strictProxy(indRaw, 'c.ind', IND_IDS),
+    griev: Math.min(100, Object.values(griev).reduce((a, b) => a + b, 0)),
+    grievOf: (k) => { if (!R.GRIEV_KINDS[k]) unknown.add("c.grievOf('" + k + "')"); return griev[k] || 0; },
+    cut: (...cats) => { lawCheck('cut', cats); return Math.random() < 0.15; },
+    raised: (...cats) => { lawCheck('raised', cats); return Math.random() < 0.12; },
+    changed: (...cats) => { lawCheck('changed', cats); return Math.random() < 0.2; },
+    deficit: money < 0, spend: Math.max(0, money + 2000),
+    debt: Math.round(rnd(5, 220)), rating: ['AAA', 'AA', 'A', 'BBB', 'BB', 'B', 'CCC', 'CC', 'D'][rIdx], ratingIdx: rIdx,
+    migRate: Math.random() < 0.5 ? rnd(-0.5, 0.8) : rnd(0, 4) * Math.random(),
+    demo: Number.isFinite(indRaw.demo) ? indRaw.demo : rnd(0.5, 9.8),
+    trend: (id) => { if (!IND_IDS.has(id)) unknown.add("c.trend('" + id + "')"); return (Math.random() - 0.5) * 2 * Math.abs(indRaw[id] || 1) * 0.08; },
   };
 }
 const SAMPLES = Array.from({ length: 400 }, () => sampleCtx());
@@ -100,6 +137,17 @@ function effects(c, P, E) {
     const [cat, opt] = Array.isArray(c.law) ? c.law : [];
     if (!LAWS[cat]?.options.some((o) => o.id === opt)) E(`${P}: law ['${cat}', '${opt}'] finns inte`);
   }
+  // V5.16
+  if (c.undo != null && c.undo !== true && !LAWS[c.undo]) E(P + ': undo = true eller en lagkategori');
+  if (c.griev != null && (!Number.isInteger(c.griev) || !c.griev || Math.abs(c.griev) > 40)) E(P + ': griev heltal ±40 (inte 0)');
+  if (c.ind != null) {
+    if (typeof c.ind !== 'object' || !Object.keys(c.ind).length) E(P + ': ind = { mått: tal }');
+    for (const [k, v] of Object.entries(c.ind || {})) {
+      const sh = R.SHOCKS[k];
+      if (!sh) E(P + ': ind.' + k + ' går inte att chocka (finns: ' + Object.keys(R.SHOCKS).join(' ') + ')');
+      else if (!Number.isFinite(v) || !v || Math.abs(v) > sh.max) E(P + ': ind.' + k + ' = ' + v + ' (högst ±' + sh.max + ' ' + sh.unit + ')');
+    }
+  }
 }
 
 // ---------- kontroll av en händelse ----------
@@ -119,6 +167,12 @@ function checkEvent(ev, where) {
   if (/\bundefined\b|\bNaN\b/.test(JSON.stringify(ev))) E('innehåller undefined/NaN');
   for (const m of JSON.stringify(ev).matchAll(/\{(\w*)\}/g)) if (!PLACEHOLDERS.has(m[1].toLowerCase()) || (m[1] !== m[1].toLowerCase() && m[1] !== m[1].toUpperCase())) E(`okänd platshållare {${m[1]}} (finns: ${[...PLACEHOLDERS].join(', ')})`);
   if (ev.rare != null && ev.rare !== true) E('rare ska vara true eller utelämnas');
+  if (ev.react != null && ev.react !== true) E('react ska vara true eller utelämnas');
+  if (ev.kind != null && !R.GRIEV_KINDS[ev.kind]) E('kind "' + ev.kind + '" finns inte (' + R.GRIEV_IDS.join(', ') + ')');
+  // {lag} och undo: true betyder "lagen som just ändrats" — då måste villkoret fråga efter en ändring
+  const undoTrue = (o) => o?.undo === true;
+  const usesLag = /\{lag\}/i.test(JSON.stringify(ev)) || (ev.choices || []).some((c) => undoTrue(c) || undoTrue(c.risk?.win) || undoTrue(c.risk?.lose));
+  if (usesLag && !ev.chain && !/c\.(cut|raised|changed)\(/.test(String(ev.when))) E('{lag} / undo: true kräver att when frågar c.cut(…), c.raised(…) eller c.changed(…)');
   if (ev.chain != null && ev.chain !== true) E('chain ska vara true eller utelämnas');
   // villkoret (en kedjehändelse lottas aldrig — den behöver inget villkor)
   if (ev.chain) {
@@ -164,7 +218,7 @@ function checkEvent(ev, where) {
         if (typeof o.text !== 'string' || o.text.length < 10 || o.text.length > 120) E(`${P}: risk.${side}.text 10–120 tecken`);
         else if (o.text === o.text.toUpperCase()) E(`${P}: risk.${side}.text ska vara vanlig skrift`);
         effects(o, `${P} risk.${side}`, E);
-        if (!['res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law'].some((k) => o[k] != null)) E(`${P}: risk.${side} gör ingenting`);
+        if (!EFFECT_KEYS.some((k) => o[k] != null)) E(`${P}: risk.${side} gör ingenting`);
       }
       for (const k of Object.keys(r || {})) if (!['chance', 'win', 'lose'].includes(k)) E(`${P}: risk: okänt fält "${k}"`);
     }
@@ -175,7 +229,7 @@ function checkEvent(ev, where) {
     }
     const isFree = !c.cost || Object.values(c.cost).every((v) => !v);
     if (isFree) free++;
-    const hasEffect = ['cost', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'risk', 'next'].some((k) => c[k] != null && (typeof c[k] !== 'object' || Array.isArray(c[k]) || Object.keys(c[k]).length));
+    const hasEffect = ['cost', 'risk', 'next', ...EFFECT_KEYS].some((k) => c[k] != null && (typeof c[k] !== 'object' || Array.isArray(c[k]) || Object.keys(c[k]).length));
     if (!hasEffect) E(`${P}: valet gör ingenting`);
   });
   if (!free) E('inget val är gratis — spelaren kan fastna');

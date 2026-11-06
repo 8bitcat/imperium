@@ -23,16 +23,23 @@ import { LAW_EXTRAS } from './laws-extra.js';
 import { NEW_LAWS } from './laws-more.js';
 import { FX_511 } from './laws-511.js';
 import { FAITHS, FAITH_KEYS, sharesOf, compositionOf } from './faith.js';
+import { DEMOCRACY } from './democracy-data.js';     // V5.16: EIU:s demokratiindex
+import { regimeOf, DEMO_SUBS } from './realism.js';
+import { RATINGS } from './bank.js';
 
 export const IND_GROUPS = [
   { id: 'eko', name: 'EKONOMI', icon: '\u{1F4B0}' },
+  { id: 'fin', name: 'STATSFINANSER', icon: '\u{1F3E6}' },              // V5.16
   { id: 'arb', name: 'ARBETE', icon: '\u{1F477}' },
+  { id: 'var', name: 'VARDAG & PLÅNBOK', icon: '\u{1F6D2}' },           // V5.16
   { id: 'hal', name: 'VÄLFÄRD & HÄLSA', icon: '\u{1F3E5}' },
   { id: 'jor', name: 'JORDBRUK & MAT', icon: '\u{1F33E}' },
   { id: 'bef', name: 'BEFOLKNING', icon: '\u{1F465}' },
+  { id: 'mig', name: 'MIGRATION & INTEGRATION', icon: '\u{1F6C2}' },    // V5.16
   { id: 'dem', name: 'DEMOGRAFI & FAMILJ', icon: '\u{1F46A}' },
   { id: 'rel', name: 'TRO & RELIGION', icon: '\u{1F64F}' },   // V5.12
   { id: 'kun', name: 'KUNSKAP & TEKNIK', icon: '\u{1F4DA}' },
+  { id: 'dmk', name: 'DEMOKRATI & STYRE', icon: '\u{1F5F3}\u{FE0F}' },   // V5.16
   { id: 'sam', name: 'SAMHÄLLE & RÄTT', icon: '\u{2696}\u{FE0F}' },
   { id: 'brt', name: 'BROTT & SÄKERHET', icon: '\u{1F6A8}' },
   { id: 'ekb', name: 'EKOBROTT & MILJÖBROTT', icon: '\u{1F575}\u{FE0F}' },
@@ -60,11 +67,11 @@ export const INDICATORS = [
     fx: { income: 3, stability: -3, corruption: 2, unrest: 2, statepower: 1 }, desc: 'Hur snabbt priserna stiger per år' },
   { id: 'lendrate', name: 'Utlåningsränta', group: 'eko', fmt: 'pct', better: 'low', mode: 'add', min: 0, max: 80,
     fx: { stability: -2, corruption: 2, gdp: -1 }, desc: 'Vad det kostar att låna pengar' },
-  { id: 'debt', name: 'Statsskuld', group: 'eko', fmt: 'pctgdp', better: 'low', mode: 'add', min: 0, max: 1000, agg: 'gdp',
+  { id: 'debt', name: 'Statsskuld', group: 'fin', fmt: 'pctgdp', better: 'low', mode: 'add', min: 0, max: 1000, agg: 'gdp',
     fx: { welfare: 15, income: -20, milpower: 8, stability: -5 }, desc: 'Statens skulder i procent av BNP' },
-  { id: 'tax', name: 'Skatteintäkter', group: 'eko', fmt: 'pctgdp', better: null, mode: 'add', min: 3, max: 60, agg: 'gdp',
+  { id: 'tax', name: 'Skatteintäkter', group: 'fin', fmt: 'pctgdp', better: null, mode: 'add', min: 3, max: 60, agg: 'gdp',
     fx: { income: 12, welfare: 6, gdp: -3 }, desc: 'Skatter i procent av BNP' },
-  { id: 'taxrev', name: 'Statens skatteintäkter', group: 'eko', fmt: 'usdbig', better: 'high', agg: 'derived', desc: 'Skatter som staten tar in på ett år' },
+  { id: 'taxrev', name: 'Statens skatteintäkter', group: 'fin', fmt: 'usdbig', better: 'high', agg: 'derived', desc: 'Skatter som staten tar in på ett år' },
   { id: 'exports', name: 'Export', group: 'eko', fmt: 'pctgdp', better: null, mode: 'mul', agg: 'gdp',
     fx: { factory: 0.25, gdp: 0.10, research: 0.10 }, desc: 'Varor och tjänster som säljs utomlands' },
   { id: 'imports', name: 'Import', group: 'eko', fmt: 'pctgdp', better: null, mode: 'mul', agg: 'gdp',
@@ -81,7 +88,7 @@ export const INDICATORS = [
   { id: 'services', name: 'Tjänster', group: 'eko', fmt: 'pctgdp', better: null, mode: 'add', min: 10, max: 90, agg: 'gdp',
     fx: { gdp: 4, factory: -6, research: 2 }, desc: 'Tjänstesektorns del av ekonomin' },
   // V5.7
-  { id: 'govspend', name: 'Statens utgifter', group: 'eko', fmt: 'pctgdp', better: null, mode: 'add', min: 8, max: 70, agg: 'gdp',
+  { id: 'govspend', name: 'Statens utgifter', group: 'fin', fmt: 'pctgdp', better: null, mode: 'add', min: 8, max: 70, agg: 'gdp',
     fx: { welfare: 10, statepower: 6, income: 4, milpower: 3 }, desc: 'Statens utgifter i procent av BNP' },
   { id: 'curacc', name: 'Bytesbalans', group: 'eko', fmt: 'pp', better: 'high', mode: 'add', min: -30, max: 30, agg: 'gdp',
     fx: { factory: 4, gdp: 1 }, desc: 'Vad landet tjänar mot omvärlden, procent av BNP' },
@@ -145,7 +152,7 @@ export const INDICATORS = [
     fx: { qol: -2, welfare: -1.5, safety: -0.5 }, desc: 'Döda per 1 000 invånare och år' },
   { id: 'urban', name: 'Andel i städer', group: 'bef', fmt: 'pct', better: null, mode: 'add', min: 10, max: 100,
     fx: { factory: 6, gdp: 4 }, desc: 'Andel som bor i städer' },
-  { id: 'netmig', name: 'Nettoinvandring per år', group: 'bef', fmt: 'scount', better: null, agg: 'sum', desc: 'Invandrare minus utvandrare på ett år' },
+  { id: 'netmig', name: 'Nettoinvandring per år', group: 'mig', fmt: 'scount', better: null, agg: 'sum', desc: 'Invandrare minus utvandrare på ett år' },
   { id: 'births', name: 'Födda per år', group: 'bef', fmt: 'count', better: null, agg: 'sum', desc: 'Barn som föds på ett år' },
   { id: 'deaths', name: 'Döda per år', group: 'bef', fmt: 'count', better: null, agg: 'sum', desc: 'Människor som dör på ett år' },
   { id: 'popchange', name: 'Befolkningsförändring per år', group: 'bef', fmt: 'scount', better: null, agg: 'sum',
@@ -357,7 +364,7 @@ export const INDICATORS = [
     fx: { factory: 5, gdp: 2, stability: 2, corruption: -2 }, desc: 'Pengar som läggs på nya fabriker, hus, vägar och maskiner' },
   { id: 'industry', name: 'Industri och byggen', group: 'eko', fmt: 'pctgdp', better: null, mode: 'add', min: 0, max: 85, agg: 'gdp',
     fx: { factory: 8 }, desc: 'Fabriker, gruvor, kraftverk och byggen — deras del av ekonomin' },
-  { id: 'interestpay', name: 'Räntekostnader', group: 'eko', fmt: 'pct', better: 'low', mode: 'add', min: 0, max: 90,
+  { id: 'interestpay', name: 'Räntekostnader', group: 'fin', fmt: 'pct', better: 'low', mode: 'add', min: 0, max: 90,
     fx: { income: -3, stability: -2 }, desc: 'Del av statens inkomster som går till räntor på statsskulden' },
   { id: 'realrate', name: 'Realränta', group: 'eko', fmt: 'pct', better: null, mode: 'add', min: -90, max: 60,
     fx: { stability: 1, corruption: 1 }, desc: 'Räntan när man räknat bort inflationen' },
@@ -457,7 +464,7 @@ export const INDICATORS = [
   // ---------- BEFOLKNING ----------
   { id: 'urbgrowth', name: 'Städernas tillväxt', group: 'bef', fmt: 'pct', better: null, mode: 'add', min: -5, max: 8,
     fx: { factory: 1, gdp: 0.5, immigration: 1 }, desc: 'Hur snabbt befolkningen i städerna växer per år' },
-  { id: 'migrants', name: 'Födda utomlands', group: 'bef', fmt: 'pct', better: null, mode: 'add', min: 0, max: 90,
+  { id: 'migrants', name: 'Födda utomlands', group: 'mig', fmt: 'pct', better: null, mode: 'add', min: 0, max: 90,
     fx: { immigration: 4 }, desc: 'Andel av invånarna som är födda i ett annat land' },
 
   // ---------- KUNSKAP & TEKNIK ----------
@@ -725,6 +732,151 @@ export const INDICATORS = [
     fx: { freedom: 0.3, corruption: -0.2 }, desc: 'Advokater per 100 000 invånare' },
   { id: 'judges', name: 'Domare', group: 'rtt', fmt: 'per100k', better: null, mode: 'mul',
     fx: { statepower: 0.2, freedom: 0.1 }, desc: 'Domare per 100 000 invånare' },
+
+  // ========== V5.16 VERKLIGHETEN: 75 nya mått ==========
+  // ---------- DEMOKRATI & STYRE (The Economists demokratiindex, EIU 2024) ----------
+  { id: 'demo', name: 'Demokratiindex', group: 'dmk', fmt: 'score10', better: 'high', agg: 'derived',
+    desc: 'The Economists demokratiindex, medel av de fem delarna. Över 8 = full demokrati, 6–8 bristfällig, 4–6 hybridregim, under 4 auktoritär' },
+  { id: 'regime', name: 'Styrelseskick', group: 'dmk', fmt: 'regime', better: 'high', agg: 'derived', desc: 'Vad demokratiindexet säger om landet' },
+  { id: 'demo_el', name: 'Val och mångfald', group: 'dmk', fmt: 'score10', better: 'high', mode: 'add', min: 0, max: 10,
+    fx: { freedom: 2.5, statepower: -1.2, ideopower: -0.6 }, desc: 'Fria och rättvisa val, flera partier och en opposition som får verka (0–10)' },
+  { id: 'demo_gov', name: 'Regeringens funktion', group: 'dmk', fmt: 'score10', better: 'high', mode: 'add', min: 0, max: 10,
+    fx: { corruption: -1.5, stability: 1, freedom: 0.8, statepower: -0.5 }, desc: 'Om de valda styr på riktigt — med insyn, kontroll och utan korruption (0–10)' },
+  { id: 'demo_part', name: 'Politiskt deltagande', group: 'dmk', fmt: 'score10', better: 'high', mode: 'add', min: 0, max: 10,
+    fx: { freedom: 1.8, approval: 0.6, statepower: -0.6 }, desc: 'Valdeltagande, partier, föreningar och engagemang (0–10)' },
+  { id: 'demo_cult', name: 'Politisk kultur', group: 'dmk', fmt: 'score10', better: 'high', mode: 'add', min: 0, max: 10,
+    fx: { freedom: 1, stability: 0.8, ideopower: -0.8, unrest: -0.6 }, desc: 'Folkets stöd för demokratin och viljan att kompromissa (0–10)' },
+  { id: 'demo_civ', name: 'Fri- och rättigheter', group: 'dmk', fmt: 'score10', better: 'high', mode: 'add', min: 0, max: 10,
+    fx: { freedom: 3, safety: 0.3, statepower: -1.2 }, desc: 'Yttrandefrihet, pressfrihet, rättssäkerhet och skydd för minoriteter (0–10)' },
+  { id: 'turnout', name: 'Valdeltagande', group: 'dmk', fmt: 'pct', better: 'high', mode: 'add', min: 0, max: 99,
+    fx: { freedom: 6, approval: 4, unrest: -2 }, desc: 'Andel av de röstberättigade som röstade i senaste valet (~)' },
+  { id: 'trustgov', name: 'Förtroende för regeringen', group: 'dmk', fmt: 'pct', better: 'high', mode: 'add', min: 3, max: 95,
+    fx: { approval: 25, corruption: -8, unrest: -6, stability: 5 }, desc: 'Andel som litar på regeringen (~)' },
+  { id: 'trustparl', name: 'Förtroende för parlamentet', group: 'dmk', fmt: 'pct', better: 'high', mode: 'add', min: 3, max: 92,
+    fx: { approval: 18, corruption: -8, freedom: 4 }, desc: 'Andel som litar på parlamentet (~)' },
+  { id: 'trustcourt', name: 'Förtroende för domstolarna', group: 'dmk', fmt: 'pct', better: 'high', mode: 'add', min: 3, max: 95,
+    fx: { corruption: -10, freedom: 5, statepower: -4, safety: 3 }, desc: 'Andel som litar på domstolarna (~)' },
+  { id: 'griev', name: 'Missnöje', group: 'dmk', fmt: 'score100', better: 'low', mode: 'add', min: 0, max: 100,
+    fx: { unrest: 50, approval: -20, stability: -10 }, desc: 'Hur mycket folket har att klaga på: nedskärningar, skatter, kriser och inskränkt frihet (0–100)' },
+  { id: 'protests', name: 'Demonstrationer per år', group: 'dmk', fmt: 'count', better: null, mode: 'mul', agg: 'sum',
+    fx: { unrest: 1.2, freedom: 0.4, statepower: -0.3 }, desc: 'Demonstrationer och protestmöten på ett år (~)' },
+  { id: 'strikes', name: 'Strejkdagar', group: 'dmk', fmt: 'per1000', better: 'low', mode: 'mul',
+    fx: { unrest: 1.5, welfare: -0.3, statepower: -0.3 }, desc: 'Arbetsdagar som går förlorade i strejker, per 1 000 anställda och år (~)' },
+  { id: 'polprisoners', name: 'Politiska fångar', group: 'dmk', fmt: 'count', better: 'low', agg: 'sum', desc: 'Människor som sitter fängslade för sina åsikter (~)' },
+  { id: 'parties', name: 'Partier i parlamentet', group: 'dmk', fmt: 'index', better: null, agg: 'max', desc: 'Hur många partier som har platser i parlamentet (~)' },
+  { id: 'unionrate', name: 'Fackligt anslutna', group: 'arb', fmt: 'pct', better: null, mode: 'add', min: 0, max: 95,
+    fx: { welfare: 8, freedom: 3, statepower: -3 }, desc: 'Andel av de anställda som är med i ett fackförbund (~)' },
+
+  // ---------- STATSFINANSER ----------
+  { id: 'treasury', name: 'Statskassan', group: 'fin', fmt: 'susd', better: 'high', agg: 'derived', desc: 'Pengarna i statskassan just nu — under noll lever staten på bankens kredit' },
+  { id: 'budgetbal', name: 'Budgetsaldo', group: 'fin', fmt: 'pp', better: 'high', mode: 'add', min: -40, max: 25, agg: 'gdp',
+    fx: { income: 3, welfare: -2, milpower: -1, gdp: 1 }, desc: 'Statens inkomster minus utgifter, procent av BNP (minus = underskott)' },
+  { id: 'deficitusd', name: 'Över- eller underskott', group: 'fin', fmt: 'susd', better: 'high', agg: 'derived', desc: 'Budgetsaldot i pengar på ett år' },
+  { id: 'revenue', name: 'Statens inkomster', group: 'fin', fmt: 'pctgdp', better: null, mode: 'add', min: 5, max: 75, agg: 'gdp',
+    fx: { income: 10, welfare: 5, gdp: -2 }, desc: 'Skatter, avgifter och andra inkomster i procent av BNP' },
+  { id: 'debtusd', name: 'Statsskulden', group: 'fin', fmt: 'usdbig', better: 'low', agg: 'derived', desc: 'Hela statsskulden i dollar' },
+  { id: 'debtpc', name: 'Statsskuld per invånare', group: 'fin', fmt: 'usd', better: 'low', agg: 'derived', desc: 'Statsskulden delad på alla invånare' },
+  { id: 'rating', name: 'Kreditbetyg', group: 'fin', fmt: 'rating', better: 'low', mode: 'add', min: 0, max: 8, agg: 'gdp',
+    fx: { stability: -1.5, corruption: 1.5, unrest: 1, income: -1 }, desc: 'Vad långivarna tror om statens förmåga att betala (AAA bäst — D = statsbankrutt)' },
+  { id: 'bondrate', name: 'Ränta på statslån', group: 'fin', fmt: 'pct', better: 'low', agg: 'derived', desc: 'Vad staten betalar i ränta när den lånar' },
+  { id: 'interestusd', name: 'Räntor per år', group: 'fin', fmt: 'usdbig', better: 'low', agg: 'derived', desc: 'Vad statsskulden kostar i ränta på ett år' },
+  { id: 'pensionx', name: 'Pensionsutgifter', group: 'fin', fmt: 'pctgdp', better: null, mode: 'add', min: 0, max: 25, agg: 'gdp',
+    fx: { welfare: 3, income: -1 }, desc: 'Allmänna pensioner i procent av BNP (~)' },
+  { id: 'socialx', name: 'Sociala transfereringar', group: 'fin', fmt: 'pctgdp', better: null, mode: 'add', min: 0, max: 35, agg: 'gdp',
+    fx: { welfare: 8, income: -2 }, desc: 'Bidrag, försäkringar och stöd utom pensioner, procent av BNP (~)' },
+  { id: 'corptax', name: 'Bolagsskatt', group: 'fin', fmt: 'pct', better: null, mode: 'add', min: 0, max: 60, agg: 'gdp',
+    fx: { income: 6 }, desc: 'Skattesatsen på företagens vinster' },
+  { id: 'incometax', name: 'Högsta inkomstskatt', group: 'fin', fmt: 'pct', better: null, mode: 'add', min: 0, max: 80, agg: 'gdp',
+    fx: { income: 8, welfare: 4 }, desc: 'Högsta marginalskatten på lön' },
+  { id: 'vat', name: 'Moms', group: 'fin', fmt: 'pct', better: null, mode: 'add', min: 0, max: 30, agg: 'gdp',
+    fx: { income: 4 }, desc: 'Mervärdesskatten på det mesta man köper (USA: delstaternas försäljningsskatt)' },
+
+  // ---------- MIGRATION & INTEGRATION ----------
+  { id: 'immig', name: 'Invandrare per år', group: 'mig', fmt: 'count', better: null, agg: 'sum', desc: 'Människor som flyttar till landet på ett år (~)' },
+  { id: 'emig', name: 'Utvandrare per år', group: 'mig', fmt: 'count', better: null, mode: 'mul', agg: 'sum',
+    fx: { qol: -0.3, freedom: -0.2, unrest: 0.3, gdp: -0.2 }, desc: 'Människor som flyttar från landet på ett år (~)' },
+  { id: 'asylum', name: 'Asylsökande per år', group: 'mig', fmt: 'count', better: null, mode: 'mul', agg: 'sum',
+    fx: { immigration: 0.8, freedom: 0.2 }, desc: 'Människor som söker skydd i landet på ett år (~)' },
+  { id: 'newcitizens', name: 'Nya medborgare per år', group: 'mig', fmt: 'count', better: null, mode: 'mul', agg: 'sum',
+    fx: { integration: 0.4, immigration: 0.2 }, desc: 'Invandrare som blir medborgare på ett år (~)' },
+  { id: 'migstock', name: 'Utrikes födda', group: 'mig', fmt: 'count', better: null, agg: 'sum', desc: 'Invånare som är födda i ett annat land' },
+  { id: 'secondgen', name: 'Andra generationen', group: 'mig', fmt: 'pct', better: null, mode: 'add', min: 0, max: 60,
+    fx: {}, desc: 'Andel födda i landet med två föräldrar födda utomlands (~)' },
+  { id: 'migemp', name: 'Utrikes födda i arbete', group: 'mig', fmt: 'pct', better: 'high', mode: 'add', min: 15, max: 90,
+    fx: { integration: 12, gdp: 4, unrest: -3 }, desc: 'Sysselsättningen bland utrikes födda (~)' },
+  { id: 'integ', name: 'Integrationsindex', group: 'mig', fmt: 'score100', better: 'high', mode: 'add', min: 0, max: 100,
+    fx: { integration: 30, welfare: 4, unrest: -6, immigration: -6 }, desc: 'Hur väl nya invånare kommer in i språk, jobb och samhälle (~)' },
+  { id: 'segreg', name: 'Boendesegregation', group: 'mig', fmt: 'score100', better: 'low', mode: 'add', min: 0, max: 100,
+    fx: { integration: -18, welfare: -5, immigration: 6, safety: -3 }, desc: 'Hur uppdelade städerna är efter inkomst och ursprung (~)' },
+  { id: 'exclusion', name: 'Bor i utanförskapsområden', group: 'mig', fmt: 'pct', better: 'low', desc: 'Andel som bor i områden med låg sysselsättning, hög brottslighet och svag skola (~)' },
+  { id: 'xenophobia', name: 'Främlingsfientlighet', group: 'mig', fmt: 'pct', better: 'low', mode: 'add', min: 1, max: 90,
+    fx: { integration: -15, unrest: 8, freedom: -4, immigration: 5 }, desc: 'Andel som inte vill ha invandrare som grannar (~)' },
+
+  // ---------- VARDAG & PLÅNBOK ----------
+  { id: 'medinc', name: 'Medianinkomst', group: 'var', fmt: 'usd', better: 'high', desc: 'Hälften tjänar mer, hälften mindre — per invånare och år efter skatt (~)' },
+  { id: 'wage', name: 'Medellön', group: 'var', fmt: 'usdmo', better: 'high', desc: 'Genomsnittlig lön före skatt (~)' },
+  { id: 'minwage', name: 'Minimilön', group: 'var', fmt: 'usdmo', better: null, desc: 'Lägsta lön enligt lag — 0 betyder att lönerna sätts i avtal eller inte alls (~)' },
+  { id: 'houseprice', name: 'Bostadspriser', group: 'var', fmt: 'ratio', better: 'low', mode: 'mul',
+    fx: { gdp: 0.25, immigration: 0.15, factory: -0.05 }, desc: 'Vad en vanlig bostad kostar, räknat i årsinkomster (~)' },
+  { id: 'rentshare', name: 'Boendekostnad', group: 'var', fmt: 'pct', better: 'low', mode: 'add', min: 8, max: 70,
+    fx: { welfare: -3 }, desc: 'Andel av inkomsten som går till hyra eller bolån (~)' },
+  { id: 'homeless', name: 'Hemlösa', group: 'var', fmt: 'count', better: 'low', mode: 'mul', agg: 'sum',
+    fx: { welfare: -0.4, qol: -0.2, gdp: -0.1 }, desc: 'Människor utan eget boende (~)' },
+  { id: 'housingshort', name: 'Bostadsbrist', group: 'var', fmt: 'count', better: 'low', agg: 'sum', desc: 'Bostäder som saknas för att alla ska få ett eget hem (~)' },
+  { id: 'foodprice', name: 'Matpriser', group: 'var', fmt: 'index', better: 'low', mode: 'mul',
+    fx: { factory: -0.08, income: 0.04, unrest: 0.06 }, desc: 'Vad maten kostar i förhållande till inkomsterna (100 = när du tog makten)' },
+  { id: 'fuelprice', name: 'Bensinpris', group: 'var', fmt: 'usdl', better: 'low', mode: 'mul',
+    fx: { factory: -0.05 }, desc: 'En liter bensin vid pumpen' },
+  { id: 'elprice', name: 'Elpris', group: 'var', fmt: 'usdkwh', better: 'low', mode: 'mul',
+    fx: { factory: -0.05, research: -0.03 }, desc: 'En kilowattimme el för hushållen' },
+  { id: 'hhdebt', name: 'Hushållens skulder', group: 'var', fmt: 'pct', better: 'low', mode: 'mul',
+    fx: { gdp: 0.2, freedom: 0.05 }, desc: 'Hushållens lån i procent av deras årsinkomst (~)' },
+  { id: 'retireage', name: 'Pensionsålder', group: 'var', fmt: 'years', better: null, mode: 'add', min: 45, max: 80,
+    fx: {}, desc: 'När man normalt går i pension' },
+  { id: 'workweek', name: 'Arbetsvecka', group: 'var', fmt: 'hours', better: null, mode: 'add', min: 25, max: 65,
+    fx: { factory: 2, qol: -2 }, desc: 'Arbetade timmar i veckan för den som jobbar heltid' },
+  { id: 'vacationdays', name: 'Semester', group: 'var', fmt: 'days', better: 'high', mode: 'add', min: 0, max: 50,
+    fx: {}, desc: 'Lagstadgade semesterdagar per år' },
+  { id: 'parentalweeks', name: 'Föräldraledighet', group: 'var', fmt: 'weeks', better: 'high', mode: 'add', min: 0, max: 160,
+    fx: {}, desc: 'Betalda veckor för föräldrarna tillsammans när ett barn föds' },
+  { id: 'cars', name: 'Bilar', group: 'var', fmt: 'per1000', better: null, mode: 'mul',
+    fx: { gdp: 0.25 }, desc: 'Personbilar per 1 000 invånare (~)' },
+  { id: 'commute', name: 'Restid till jobbet', group: 'var', fmt: 'minutes', better: 'low', mode: 'add', min: 10, max: 120,
+    fx: { factory: 1, gdp: -1 }, desc: 'Genomsnittlig resa till jobbet, enkel väg (~)' },
+
+  // ---------- VÄLFÄRD & HÄLSA, KUNSKAP, EKONOMI, ENERGI ----------
+  { id: 'carewait', name: 'Väntetid i vården', group: 'hal', fmt: 'days', better: 'low', mode: 'mul',
+    fx: { welfare: -0.35, hdi: -0.1, income: 0.05 }, desc: 'Väntan på att få träffa en specialistläkare (~)' },
+  { id: 'sickleave', name: 'Sjukfrånvaro', group: 'hal', fmt: 'pct', better: 'low', mode: 'add', min: 0.5, max: 15,
+    fx: { welfare: 1, qol: -0.8, unrest: 0.5 }, desc: 'Andel av arbetstiden som försvinner i sjukdom (~)' },
+  { id: 'mentalill', name: 'Psykisk ohälsa', group: 'hal', fmt: 'pct', better: 'low', mode: 'add', min: 3, max: 40,
+    fx: { qol: -4, unrest: 2, welfare: -1.5, freedom: -1 }, desc: 'Andel med ångest, depression eller annan psykisk sjukdom (~)' },
+  { id: 'suicide', name: 'Självmord', group: 'hal', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { qol: -0.25, welfare: -0.15, unrest: 0.1 }, desc: 'Självmord per 100 000 invånare och år' },
+  { id: 'govhealth', name: 'Statens vårdutgifter', group: 'hal', fmt: 'pctgdp', better: 'high', mode: 'add', min: 0, max: 15, agg: 'gdp',
+    fx: { welfare: 3, income: -1 }, desc: 'Vård som staten betalar, procent av BNP' },
+  { id: 'poverty365', name: 'Fattiga (under 3,65 $)', group: 'hal', fmt: 'pct', better: 'low', mode: 'mul',
+    fx: { welfare: -0.4, gdp: -0.4, corruption: 0.25 }, desc: 'Andel som lever på under 3,65 $ om dagen' },
+  { id: 'poverty685', name: 'Fattiga (under 6,85 $)', group: 'hal', fmt: 'pct', better: 'low', mode: 'mul',
+    fx: { welfare: -0.35, gdp: -0.35, corruption: 0.2 }, desc: 'Andel som lever på under 6,85 $ om dagen' },
+  { id: 'natpov', name: 'Under fattigdomsgränsen', group: 'hal', fmt: 'pct', better: 'low', mode: 'mul',
+    fx: { welfare: -0.4, gdp: -0.25 }, desc: 'Andel som lever under landets egen fattigdomsgräns' },
+  { id: 'pisa', name: 'Skolresultat', group: 'kun', fmt: 'index', better: 'high', mode: 'add', min: 250, max: 620,
+    fx: { research: 30, welfare: 15, hdi: 10 }, desc: 'Femtonåringarnas kunskaper i matte, läsning och naturvetenskap (PISA-skalan, 500 = OECD-snitt) (~)' },
+  { id: 'learnpov', name: 'Kan inte läsa vid tio', group: 'kun', fmt: 'pct', better: 'low', mode: 'add', min: 1, max: 99,
+    fx: { welfare: -10, research: -8, hdi: -6 }, desc: 'Andel tioåringar som inte kan läsa och förstå en enkel text' },
+  { id: 'tertfem', name: 'Kvinnor på högskolan', group: 'kun', fmt: 'pct', better: 'high', mode: 'add', min: 0, max: 160,
+    fx: { research: 8, freedom: 6, hdi: 4 }, desc: 'Kvinnor som studerar på högskola i förhållande till åldersgruppen' },
+  { id: 'depositrate', name: 'Sparränta', group: 'eko', fmt: 'pct', better: null, mode: 'add', min: 0, max: 60,
+    fx: { stability: -1.5, corruption: 1.5 }, desc: 'Räntan bankerna ger på sparpengar' },
+  { id: 'femown', name: 'Företag med kvinnliga ägare', group: 'eko', fmt: 'pct', better: 'high', mode: 'add', min: 1, max: 80,
+    fx: { freedom: 8 }, desc: 'Andel företag där en kvinna är med och äger' },
+  { id: 'firmbribe', name: 'Företag som fått mutkrav', group: 'ekb', fmt: 'pct', better: 'low', mode: 'add', min: 0, max: 80,
+    fx: { corruption: 12, statepower: 2 }, desc: 'Andel företag som blivit ombedda att betala en muta' },
+  { id: 'fossilelec', name: 'Fossil el', group: 'inf', fmt: 'pct', better: 'low', mode: 'add', min: 0, max: 100,
+    fx: { factory: 5, research: -4 }, desc: 'Andel av elen från kol, olja och gas' },
+  { id: 'gaselec', name: 'Gaskraft', group: 'inf', fmt: 'pct', better: null, mode: 'add', min: 0, max: 100,
+    fx: { factory: 2 }, desc: 'Andel av elen från naturgas' },
 ];
 
 export const IND = Object.fromEntries(INDICATORS.map((d) => [d.id, d]));
@@ -1322,6 +1474,285 @@ for (const [cat, opts] of Object.entries(LAW_EFFECTS_514)) {
   for (const [opt, fx] of Object.entries(opts)) addLawFx(cat, opt, fx);
 }
 
+// V5.16 VERKLIGHETEN: lagarnas effekter på de nya måtten. ['~', nivå, styrka] drar
+// måttet mot en nivå oavsett var landet började — helt fria val ger ett högt valindex
+// även i ett land som aldrig haft det, och ett enpartisystem river det.
+const pull = (n, k = 0.6) => ['~', n, k];
+const LAW_EFFECTS_516 = {
+  elections: {
+    entirelyfree: { demo_el: pull(9.8, 0.7), demo_part: ['+', 0.6], turnout: ['+', 4] },
+    publicfund: { demo_el: pull(9.6), demo_part: ['+', 0.5] }, free: { demo_el: pull(9.2), demo_part: ['+', 0.3] },
+    compulsory: { demo_el: pull(9, 0.5), demo_part: ['+', 0.4], turnout: pull(91, 0.8) }, mostlyfree: { demo_el: pull(7.5, 0.5) },
+    hybrid: { demo_el: pull(4.5), demo_part: ['+', -0.8], turnout: ['+', -8] },
+    restricted: { demo_el: pull(3, 0.7), demo_part: ['+', -1.5], turnout: ['+', -12] },
+    unfair: { demo_el: pull(1.8, 0.75), demo_gov: ['+', -1], turnout: ['+', -15] },
+    oneparty: { demo_el: pull(0.3, 0.9), demo_part: pull(2), turnout: ['=', 98] },
+    plebiscite: { demo_el: pull(0.9, 0.85), turnout: ['=', 95] },
+    no: { demo_el: ['=', 0], demo_part: pull(1.2, 0.7), turnout: ['=', 0] },
+  },
+  government: {
+    commune: { demo_part: pull(8.5, 0.5), demo_gov: ['+', -1.5] }, directdemo: { demo_part: pull(9.6), demo_el: ['+', 0.3], turnout: ['+', 6] },
+    strongdemo: { demo_el: ['+', 0.4], demo_gov: ['+', 0.5], demo_cult: ['+', 0.3] }, democracy: { demo_el: ['+', 0.3], demo_gov: ['+', 0.3] },
+    constmonarchy: { demo_cult: ['+', 0.2] },
+    technocratic: { demo_gov: pull(5.5, 0.4), demo_part: ['+', -1.5], demo_el: ['+', -1] },
+    hybrid: { demo_el: pull(4.5, 0.5), demo_gov: pull(4, 0.5), demo_civ: ['+', -1] },
+    absmonarchy: { demo_el: pull(0.5, 0.8), demo_gov: pull(2.5), demo_part: pull(2), demo_civ: pull(2.5, 0.5) },
+    authoritarian: { demo_el: pull(0.8, 0.8), demo_gov: pull(2.2), demo_part: pull(2.5, 0.5), demo_civ: pull(2) },
+    partystate: { demo_el: pull(0.2, 0.85), demo_gov: pull(3, 0.5), demo_part: pull(2.8, 0.5), demo_civ: pull(1.5) },
+    junta: { demo_el: ['=', 0], demo_gov: pull(0.5, 0.8), demo_part: pull(1.2, 0.7), demo_civ: pull(1, 0.7), demo_cult: ['+', -1] },
+    totalitarian: { demo_el: ['=', 0], demo_gov: pull(0.5, 0.8), demo_part: pull(0.8, 0.8), demo_civ: pull(0.2, 0.9), demo_cult: pull(2) },
+  },
+  press: {
+    transparency: { demo_civ: ['+', 0.6], demo_gov: ['+', 0.5] }, full: { demo_civ: ['+', 0.5] }, free: { demo_civ: ['+', 0.3] },
+    publicservice: { demo_civ: ['+', 0.3], demo_part: ['+', 0.2] }, libel: { demo_civ: ['+', -0.4] },
+    oligarch: { demo_civ: ['+', -0.7], demo_gov: ['+', -0.4] }, licensed: { demo_civ: ['+', -1] },
+    state: { demo_civ: ['+', -1.5], demo_el: ['+', -0.8] }, censorboard: { demo_civ: pull(3, 0.5), demo_el: ['+', -1] },
+    highstate: { demo_civ: pull(2), demo_el: ['+', -1.5] }, propaganda: { demo_civ: pull(1, 0.7), demo_el: ['+', -2], demo_cult: ['+', -1] },
+  },
+  speech: {
+    absolute: { demo_civ: ['+', 0.5] }, broad: { demo_civ: ['+', 0.4] }, whistleblower: { demo_civ: ['+', 0.3], demo_gov: ['+', 0.3] },
+    hatelaws: { demo_civ: ['+', -0.2] }, fakenews: { demo_civ: ['+', -0.8] }, lesemajeste: { demo_civ: ['+', -1.2] },
+    foreignagent: { demo_civ: ['+', -1.5], demo_part: ['+', -0.6] }, criminalized: { demo_civ: pull(1.5), demo_part: ['+', -1] },
+  },
+  protest: {
+    disobedience: { demo_part: ['+', 0.6], demo_civ: ['+', 0.2], protests: ['*', 1.5] }, free: { demo_part: ['+', 0.5], demo_civ: ['+', 0.3], protests: ['*', 1.3] },
+    notice: { demo_part: ['+', 0.2], protests: ['*', 1.1] }, zones: { demo_civ: ['+', -0.4], protests: ['*', 0.8] },
+    liability: { demo_civ: ['+', -0.6], demo_part: ['+', -0.3], protests: ['*', 0.7] },
+    restricted: { demo_civ: ['+', -1.2], demo_part: ['+', -0.8], protests: ['*', 0.4] },
+    banned: { demo_civ: ['+', -2], demo_part: pull(2, 0.5), protests: ['*', 0.1] },
+    staterallies: { demo_civ: ['+', -2.2], demo_part: pull(1.5), demo_cult: ['+', -0.8], protests: ['*', 0.15] },
+  },
+  civil_rights: {
+    extremelyhigh: { demo_civ: pull(9.8) }, veryhigh: { demo_civ: pull(9.4, 0.5) }, ombudsman: { demo_civ: ['+', 0.5], demo_gov: ['+', 0.3] },
+    high: { demo_civ: ['+', 0.4] }, antidiscrim: { demo_civ: ['+', 0.3] }, limited: { demo_civ: ['+', -1] },
+    emergency: { demo_civ: ['+', -1.8], demo_el: ['+', -0.8] }, verylimited: { demo_civ: pull(2.5) }, passports: { demo_civ: pull(2) },
+    socialcredit: { demo_civ: pull(1.2, 0.7), demo_part: ['+', -1] }, norights: { demo_civ: ['=', 0] },
+  },
+  surveillance: {
+    none: { demo_civ: ['+', 0.3] }, encryption: { demo_civ: ['+', 0.3] }, warrant: { demo_civ: ['+', 0.2] },
+    retention: { demo_civ: ['+', -0.3] }, facial: { demo_civ: ['+', -0.6] }, mass: { demo_civ: ['+', -1.2] },
+    total: { demo_civ: ['+', -2], demo_cult: ['+', -0.5] }, informant: { demo_civ: ['+', -2.5], demo_cult: ['+', -1] },
+  },
+  internet: {
+    charter: { demo_civ: ['+', 0.3], demo_part: ['+', 0.2] }, free: { demo_civ: ['+', 0.2] }, open: { demo_civ: ['+', 0.1] },
+    ageverify: { demo_civ: ['+', -0.1] }, realname: { demo_civ: ['+', -0.6] }, censored: { demo_civ: ['+', -1.2], demo_part: ['+', -0.3] },
+    shutdowns: { demo_civ: ['+', -1.8], demo_part: ['+', -0.5] }, firewall: { demo_civ: ['+', -2], demo_part: ['+', -0.5] },
+    intranet: { demo_civ: ['+', -2.5], demo_part: ['+', -0.8] },
+  },
+  party_loyalty: {
+    neutral: { demo_gov: ['+', 0.4] }, none: { demo_gov: ['+', 0.3] }, minimum: { demo_gov: ['+', 0.2] }, low: { demo_gov: ['+', 0.1] },
+    proporz: { demo_gov: ['+', -0.3] }, spoils: { demo_gov: ['+', -0.8] }, high: { demo_gov: ['+', -0.6], demo_el: ['+', -0.4] },
+    maximum: { demo_gov: ['+', -1.2], demo_el: ['+', -0.8] }, commissars: { demo_gov: ['+', -1.6], demo_el: ['+', -1.2] },
+    onlyrep: { demo_el: pull(0.5, 0.7) }, purges: { demo_el: pull(0.3, 0.7), demo_civ: ['+', -1.5] },
+  },
+  trials: {
+    long: { demo_civ: ['+', 0.3] }, jury: { demo_civ: ['+', 0.3], trustcourt: ['+', 4] }, extended: { demo_civ: ['+', 0.2] },
+    legalaid: { demo_civ: ['+', 0.3], trustcourt: ['+', 3] }, plea: { demo_civ: ['+', -0.1] }, speedup: { demo_civ: ['+', -0.3] },
+    quick: { demo_civ: ['+', -0.6], trustcourt: ['+', -4] }, tribunals: { demo_civ: ['+', -1.5], trustcourt: ['+', -12] },
+    notrial: { demo_civ: pull(1), trustcourt: ['+', -25] },
+  },
+  lobbying: {
+    publiconly: { demo_gov: ['+', 0.5], trustparl: ['+', 5] }, smallmatch: { demo_gov: ['+', 0.4] }, nocorporate: { demo_gov: ['+', 0.3] },
+    register: { demo_gov: ['+', 0.2] }, revolving: { demo_gov: ['+', -0.4], trustparl: ['+', -4] },
+    anonymous: { demo_gov: ['+', -0.6], trustparl: ['+', -6] }, superpac: { demo_gov: ['+', -0.6], trustparl: ['+', -6] },
+    unlimited: { demo_gov: ['+', -0.9], trustparl: ['+', -9] },
+  },
+  anti_corruption: {
+    agency: { demo_gov: ['+', 0.6], trustgov: ['+', 4] }, opengov: { demo_gov: ['+', 0.7], trustgov: ['+', 5] },
+    whistle: { demo_gov: ['+', 0.4] }, assetdecl: { demo_gov: ['+', 0.3] }, gifts: { demo_gov: ['+', -0.3] },
+    immunity: { demo_gov: ['+', -0.8], trustgov: ['+', -6] }, purges: { demo_gov: ['+', -0.5], demo_civ: ['+', -0.8] },
+    patronage: { demo_gov: ['+', -1.2], trustgov: ['+', -8] },
+  },
+  voting_age: {
+    proxykids: { demo_part: ['+', 0.2] }, age16: { demo_part: ['+', 0.3] }, local16: { demo_part: ['+', 0.15] },
+    residents: { demo_part: ['+', 0.3] }, age21: { demo_part: ['+', -0.2] }, age25: { demo_part: ['+', -0.5] },
+    taxpayers: { demo_part: ['+', -1.5], demo_el: ['+', -1.5] }, approved: { demo_el: pull(1, 0.7) },
+  },
+  policing: {
+    abolished: { demo_civ: ['+', 0.2], demo_gov: ['+', -1] }, unarmed: { demo_civ: ['+', 0.2] }, community: { demo_civ: ['+', 0.3] },
+    oversight: { demo_civ: ['+', 0.3] }, tough: { demo_civ: ['+', -0.3] }, militarized: { demo_civ: ['+', -0.8] },
+    predictive: { demo_civ: ['+', -0.6] }, secretpolice: { demo_civ: ['+', -2.5], demo_cult: ['+', -1] },
+  },
+  religion: {
+    banned: { demo_civ: ['+', -1.5] }, atheism: { demo_civ: ['+', -0.6] }, religiouslaw: { demo_civ: ['+', -1.5] },
+    clergyrule: { demo_el: pull(2, 0.5), demo_civ: ['+', -2] },
+  },
+  unions: {
+    banned: { demo_civ: ['+', -0.8], demo_part: ['+', -0.6], unionrate: ['=', 0], strikes: ['*', 0.1] },
+    stateunions: { unionrate: pull(80, 0.8), demo_part: ['+', -0.4], strikes: ['*', 0.2] }, mandatory: { unionrate: pull(88, 0.8) },
+    ghent: { unionrate: pull(70, 0.7) }, strong: { unionrate: ['+', 8], strikes: ['*', 1.3] }, codetermination: { unionrate: ['+', 5], strikes: ['*', 0.6] },
+    selfmanaged: { unionrate: pull(75) }, righttowork: { unionrate: ['*', 0.6], strikes: ['*', 0.7] }, weak: { unionrate: ['*', 0.55], strikes: ['*', 0.6] },
+  },
+  // statsfinanserna
+  taxes: {
+    haven: { incometax: ['=', 0], corptax: pull(0, 0.9), vat: pull(5), revenue: pull(12) },
+    t0: { incometax: ['=', 0], vat: pull(18), revenue: pull(14) }, t10: { incometax: pull(10, 0.9), revenue: pull(18) },
+    consumption: { incometax: pull(15), vat: ['+', 7] }, flat: { incometax: pull(20, 0.8) }, landtax: { incometax: pull(22, 0.4) },
+    progressive: { incometax: ['+', 5] }, t30: { incometax: pull(35, 0.8), revenue: ['+', 3] },
+    t40: { incometax: pull(50, 0.8), revenue: ['+', 6] }, t60: { incometax: pull(65, 0.9), revenue: ['+', 10] },
+  },
+  corporate_tax: {
+    excess: { corptax: pull(45, 0.8) }, veryhigh: { corptax: pull(38, 0.8) }, high: { corptax: pull(32, 0.7) }, raised: { corptax: ['+', 4] },
+    patentbox: { corptax: ['+', -3] }, low: { corptax: pull(15, 0.7) }, payout: { corptax: pull(20, 0.5) },
+    verylow: { corptax: pull(9, 0.8) }, none: { corptax: ['=', 0] },
+  },
+  pensions: {
+    early: { pensionx: ['+', 3], retireage: ['+', -3] }, generous: { pensionx: ['+', 2] }, public: { pensionx: ['+', 1] },
+    notional: { pensionx: ['+', -0.3] }, age70: { pensionx: ['+', -1.5], retireage: pull(70, 0.8) }, mandatory: { pensionx: ['+', -0.5] },
+    private: { pensionx: ['*', 0.45] }, none: { pensionx: ['*', 0.15] }, filial: { pensionx: ['*', 0.1] },
+  },
+  retirement_age: {
+    age50: { retireage: ['=', 50], pensionx: ['+', 4] }, age55: { retireage: ['=', 55], pensionx: ['+', 2.8] },
+    age60: { retireage: ['=', 60], pensionx: ['+', 1.5] }, age62: { retireage: ['=', 62], pensionx: ['+', 0.6] },
+    hardjobs: { retireage: ['+', -1], pensionx: ['+', 0.3] }, age67: { retireage: ['=', 67], pensionx: ['+', -0.6] },
+    lifeexp: { retireage: pull(68, 0.9), pensionx: ['+', -0.9] }, age70: { retireage: ['=', 70], pensionx: ['+', -1.5] },
+    none: { retireage: ['=', 74], pensionx: ['*', 0.3] },
+  },
+  welfare: {
+    extreme: { socialx: ['+', 10], homeless: ['*', 0.4] }, ubi: { socialx: ['+', 9], homeless: ['*', 0.45] },
+    huge: { socialx: ['+', 6], homeless: ['*', 0.6] }, flexicurity: { socialx: ['+', 4], homeless: ['*', 0.75] },
+    coverage: { socialx: ['+', 3], homeless: ['*', 0.8] }, jobguarantee: { socialx: ['+', 2.5], homeless: ['*', 0.85] },
+    cct: { socialx: ['+', -1] }, workfare: { socialx: ['+', -2], homeless: ['*', 1.1] }, little: { socialx: ['+', -4], homeless: ['*', 1.4] },
+    none: { socialx: ['*', 0.3], homeless: ['*', 2] }, independent: { socialx: ['*', 0.5], homeless: ['*', 1.5] },
+  },
+  debt_brake: {
+    debtban: { budgetbal: pull(1, 0.7) }, surplus: { budgetbal: pull(2) }, brake: { budgetbal: pull(-0.5) }, rules: { budgetbal: pull(-2, 0.4) },
+    countercyclical: { budgetbal: ['+', -0.5] }, invest: { budgetbal: ['+', -1.5] }, deficit: { budgetbal: ['+', -3] }, unlimited: { budgetbal: ['+', -5] },
+  },
+  monetary: {
+    printing: { hhdebt: ['*', 1.1], houseprice: ['*', 1.15], depositrate: ['+', 6] }, repression: { depositrate: pull(0.5, 0.8) },
+    qe: { houseprice: ['*', 1.12], hhdebt: ['*', 1.08], depositrate: ['*', 0.5] }, loose: { houseprice: ['*', 1.07], hhdebt: ['*', 1.05], depositrate: ['*', 0.7] },
+    tight: { houseprice: ['*', 0.92], hhdebt: ['*', 0.95], depositrate: ['*', 1.4] }, dollarization: { depositrate: ['*', 0.8] },
+    gold: { houseprice: ['*', 0.95], depositrate: ['*', 1.2] }, freebanking: { hhdebt: ['*', 1.15] },
+  },
+  banking: {
+    monobank: { hhdebt: ['*', 0.6] }, nationalized: { hhdebt: ['*', 0.8] }, coop: { hhdebt: ['*', 0.9] },
+    strict: { hhdebt: ['*', 0.85], houseprice: ['*', 0.95] }, light: { hhdebt: ['*', 1.1], houseprice: ['*', 1.05] },
+    none: { hhdebt: ['*', 1.25], houseprice: ['*', 1.1] },
+  },
+  // migrationen
+  immigration: {
+    noborders: { asylum: ['*', 3], migemp: ['+', -7], integ: ['+', -12], segreg: ['+', 8], xenophobia: ['+', 6] },
+    open: { asylum: ['*', 2], migemp: ['+', -4], integ: ['+', -7], segreg: ['+', 5], xenophobia: ['+', 4] },
+    humanitarian: { asylum: ['*', 2.5], migemp: ['+', -5], integ: ['+', -4], segreg: ['+', 3], xenophobia: ['+', 2] },
+    freemove: { asylum: ['*', 1.1], migemp: ['+', 3], integ: ['+', -2] },
+    guestworker: { asylum: ['*', 0.6], migemp: ['+', 9], integ: ['+', -6], segreg: ['+', 4] },
+    relaxed: { asylum: ['*', 1.3], migemp: ['+', -1], integ: ['+', -2] }, managed: { asylum: ['*', 0.7], migemp: ['+', 2], integ: ['+', 2] },
+    points: { asylum: ['*', 0.5], migemp: ['+', 7], integ: ['+', 4] }, goldenvisa: { asylum: ['*', 0.6], migemp: ['+', 2] },
+    restricted: { asylum: ['*', 0.4], migemp: ['+', 2], integ: ['+', 2], xenophobia: ['+', 2] },
+    closed: { asylum: ['*', 0.15], xenophobia: ['+', 5], newcitizens: ['*', 0.6] }, exitban: { asylum: ['*', 0.5], emig: ['*', 0.1] },
+    deportation: { asylum: ['*', 0.05], xenophobia: ['+', 10], migemp: ['+', -5], integ: ['+', -8], newcitizens: ['*', 0.2] },
+  },
+  citizenship: {
+    residency: { newcitizens: ['*', 2.5], integ: ['+', 3] }, birthright: { newcitizens: ['*', 1.6], integ: ['+', 4] },
+    easy: { newcitizens: ['*', 1.8], integ: ['+', 2] }, investment: { newcitizens: ['*', 0.8] }, testsoath: { newcitizens: ['*', 0.7], integ: ['+', 1] },
+    bloodline: { newcitizens: ['*', 0.25], integ: ['+', -5], xenophobia: ['+', 4] }, loyalty: { newcitizens: ['*', 0.3], integ: ['+', -3], xenophobia: ['+', 3] },
+    denaturalize: { newcitizens: ['*', 0.1], integ: ['+', -8], xenophobia: ['+', 6] },
+  },
+  language: {
+    manyofficial: { integ: ['+', 3] }, mothertongue: { integ: ['+', 2] }, regional: { integ: ['+', 1] },
+    langtests: { integ: ['+', 4], migemp: ['+', 2] }, publiconly: { integ: ['+', -2] },
+    assimilation: { integ: ['+', -4], xenophobia: ['+', 3] }, banned: { integ: ['+', -8], xenophobia: ['+', 5] },
+  },
+  culture: {
+    multi: { integ: ['+', 5], xenophobia: ['+', -4], segreg: ['+', -2] }, minority: { integ: ['+', 3], xenophobia: ['+', -2] },
+    bilingual: { integ: ['+', 2] }, heritage: { xenophobia: ['+', 1] }, corecult: { integ: ['+', -1], xenophobia: ['+', 3] },
+    mono: { integ: ['+', -4], xenophobia: ['+', 6] }, assimilation: { integ: ['+', -2], xenophobia: ['+', 8], segreg: ['+', -2] },
+  },
+  emigration: {
+    laborexport: { emig: ['*', 1.8] }, dualcitizen: { emig: ['*', 1.1] }, exittax: { emig: ['*', 0.8] }, bonded: { emig: ['*', 0.6] },
+    exitvisa: { emig: ['*', 0.3] }, approved: { emig: ['*', 0.4] }, banned: { emig: ['*', 0.1] },
+  },
+  // vardagen
+  housing: {
+    allocated: { houseprice: ['*', 0.6], homeless: ['*', 0.6], segreg: ['+', -6], rentshare: ['+', -6] },
+    public: { houseprice: ['*', 0.85], homeless: ['*', 0.7], segreg: ['+', -4], rentshare: ['+', -4] },
+    rentcontrol: { houseprice: ['*', 1.05], rentshare: ['+', -5], homeless: ['*', 1.05] }, coop: { houseprice: ['*', 0.9], rentshare: ['+', -2] },
+    landtax: { houseprice: ['*', 0.85] }, righttobuy: { houseprice: ['*', 1.05], homeless: ['*', 1.1] },
+    upzoning: { houseprice: ['*', 0.8], homeless: ['*', 0.85], segreg: ['+', -2] },
+    market: { houseprice: ['*', 1.08], rentshare: ['+', 2], segreg: ['+', 3] },
+    deregulated: { houseprice: ['*', 1.12], rentshare: ['+', 4], homeless: ['*', 1.2], segreg: ['+', 5] },
+  },
+  urban_planning: {
+    newtowns: { houseprice: ['*', 0.85], commute: ['+', 5] }, regional: { houseprice: ['*', 0.92] }, masterplan: { commute: ['+', -3] },
+    upzoning: { houseprice: ['*', 0.85], commute: ['+', -2] }, developer: { houseprice: ['*', 0.95], segreg: ['+', 2] },
+    minimal: { houseprice: ['*', 0.9], commute: ['+', 3] }, nozoning: { houseprice: ['*', 0.8], commute: ['+', 4], segreg: ['+', 3] },
+  },
+  workhours: {
+    minimum: { workweek: ['=', 30], sickleave: ['+', -0.4] }, fourday: { workweek: ['=', 32], sickleave: ['+', -0.5], mentalill: ['+', -1] },
+    week35: { workweek: ['=', 35] }, limited: { workweek: pull(38, 0.7) }, disconnect: { workweek: ['+', -0.5], mentalill: ['+', -0.8] },
+    optout: { workweek: ['+', 1.5] }, extended: { workweek: pull(44, 0.7), sickleave: ['+', 0.4] },
+    sixday: { workweek: pull(48, 0.8), sickleave: ['+', 0.8], mentalill: ['+', 1.5] },
+    maximum: { workweek: pull(56, 0.8), sickleave: ['+', 1.5], mentalill: ['+', 3] },
+  },
+  vacation: {
+    eightweeks: { vacationdays: ['=', 40] }, sixweeks: { vacationdays: ['=', 30] }, fiveweeks: { vacationdays: ['=', 25] },
+    twoweeks: { vacationdays: ['=', 10] }, employer: { vacationdays: pull(5, 0.8) }, none: { vacationdays: ['=', 0], mentalill: ['+', 1.5] },
+  },
+  parental_leave: {
+    homecare: { parentalweeks: ['=', 150] }, generous: { parentalweeks: pull(70, 0.8) }, equal: { parentalweeks: pull(60, 0.8) },
+    long: { parentalweeks: pull(52, 0.8) }, paid: { parentalweeks: pull(30, 0.7) }, employer: { parentalweeks: ['*', 0.6] },
+    unpaid: { parentalweeks: ['*', 0.3] }, none: { parentalweeks: ['=', 0] },
+  },
+  healthcare_quality: {
+    minimal: { carewait: ['*', 1.6] }, low: { carewait: ['*', 1.3] }, barefoot: { carewait: ['*', 1.2] }, primary: { carewait: ['*', 1.05] },
+    prevention: { carewait: ['*', 0.9], sickleave: ['+', -0.3] }, digital: { carewait: ['*', 0.8] }, modern: { carewait: ['*', 0.75] },
+    extra: { carewait: ['*', 0.7] }, frontier: { carewait: ['*', 0.8] },
+  },
+  healthcare: {
+    statemed: { carewait: ['*', 1.15], govhealth: ['+', 2.5] }, fullyfree: { carewait: ['*', 1.2], govhealth: ['+', 2] },
+    free: { carewait: ['*', 1.1], govhealth: ['+', 1.2] }, socialins: { carewait: ['*', 0.95], govhealth: ['+', 0.5] },
+    mandate: { carewait: ['*', 0.9] }, employer: { carewait: ['*', 0.9], govhealth: ['+', -0.8] },
+    savings: { carewait: ['*', 0.85], govhealth: ['+', -1.2] }, mostlyunfree: { carewait: ['*', 0.8], govhealth: ['+', -2] },
+    unfree: { carewait: ['*', 0.7], govhealth: ['*', 0.3] },
+  },
+  education: {
+    free: { pisa: ['+', 5] }, strict: { pisa: ['+', 8] }, verystrict: { pisa: ['+', 10], mentalill: ['+', 1] }, stem: { pisa: ['+', 8] },
+    dual: { pisa: ['+', 3] }, vouchers: { pisa: ['+', -2] }, freewill: { pisa: ['+', -12] }, nonecomp: { pisa: ['+', -40] },
+    patriotic: { pisa: ['+', -8] }, authority: { pisa: ['+', -3] }, boarding: { pisa: ['+', 2] },
+  },
+  school_choice: {
+    busing: { segreg: ['+', -4], pisa: ['+', 2] }, stateonly: { segreg: ['+', -2] }, assigned: { segreg: ['+', -1] },
+    selective: { segreg: ['+', 3], pisa: ['+', 3] }, vouchers: { segreg: ['+', 4], pisa: ['+', 1] }, esa: { segreg: ['+', 5] },
+    feepaying: { segreg: ['+', 6], pisa: ['+', 2] },
+  },
+  energy: {
+    rationing: { elprice: ['*', 1.5], fuelprice: ['*', 1.6] }, renewable: { elprice: ['*', 1.1], fuelprice: ['*', 1.1], fossilelec: ['*', 0.5] },
+    green: { elprice: ['*', 1.15], fuelprice: ['*', 1.15], fossilelec: ['*', 0.65] },
+    carbontax: { elprice: ['*', 1.2], fuelprice: ['*', 1.25], fossilelec: ['*', 0.75] }, gasbridge: { gaselec: ['*', 1.4] },
+    nuclear: { elprice: ['*', 0.88], fossilelec: ['*', 0.6] }, fossil: { elprice: ['*', 0.9], fuelprice: ['*', 0.88], fossilelec: ['*', 1.3] },
+    fuelsubsidy: { elprice: ['*', 0.75], fuelprice: ['*', 0.5] }, dominance: { elprice: ['*', 0.85], fuelprice: ['*', 0.8], fossilelec: ['*', 1.25] },
+  },
+  price_controls: {
+    stateprices: { foodprice: ['*', 0.8], elprice: ['*', 0.6], fuelprice: ['*', 0.7] }, margincap: { foodprice: ['*', 0.92] },
+    freeze: { foodprice: ['*', 0.85], fuelprice: ['*', 0.85] }, caps: { foodprice: ['*', 0.9] },
+    energycap: { elprice: ['*', 0.75], fuelprice: ['*', 0.85] }, gouging: { foodprice: ['*', 0.97] },
+    free: { foodprice: ['*', 1.05], elprice: ['*', 1.08] },
+  },
+  agriculture: {
+    requisition: { foodprice: ['*', 1.4] }, collective: { foodprice: ['*', 1.2] }, landreform: { foodprice: ['*', 1.05] },
+    subsidized: { foodprice: ['*', 0.9] }, organic: { foodprice: ['*', 1.15] }, freemarket: { foodprice: ['*', 1.02] },
+    biotech: { foodprice: ['*', 0.92] }, agribusiness: { foodprice: ['*', 0.9] },
+  },
+  globalism: {
+    tradehub: { foodprice: ['*', 0.9], fuelprice: ['*', 0.95] }, union: { foodprice: ['*', 0.95] }, protectionism: { foodprice: ['*', 1.08] },
+    importsub: { foodprice: ['*', 1.12] }, disengagement: { foodprice: ['*', 1.15] },
+    isolationist: { foodprice: ['*', 1.25], fuelprice: ['*', 1.2] }, autarky: { foodprice: ['*', 1.4], fuelprice: ['*', 1.35] },
+  },
+  transport: {
+    carfree: { cars: ['*', 0.35], commute: ['+', 4] }, freetransit: { cars: ['*', 0.8], commute: ['+', 1] },
+    transitfirst: { cars: ['*', 0.85], commute: ['+', -2] }, highspeed: { cars: ['*', 0.95], commute: ['+', -3] },
+    roads: { cars: ['*', 1.1], commute: ['+', -1] }, carnation: { cars: ['*', 1.25], commute: ['+', 4] },
+    private: { commute: ['+', 1] }, deregulated: { commute: ['+', 2] },
+  },
+};
+for (const [cat, opts] of Object.entries(LAW_EFFECTS_516)) {
+  if (!LAWS[cat]) continue;
+  for (const [opt, fx] of Object.entries(opts)) {
+    if (LAWS[cat].options.some((o) => o.id === opt)) addLawFx(cat, opt, fx);
+  }
+}
+
 // startläget per lagkategori (det verkliga datat har redan landets politik)
 const DEFAULT_LAW = Object.fromEntries(Object.entries(LAWS).map(([cat, L]) =>
   [cat, (L.options.find((o) => o.default) || L.options[Math.floor(L.options.length / 2)]).id]));
@@ -1374,6 +1805,16 @@ export function fmtInd(id, v) {
     // V5.10
     case 'ratio100': return `${dec(v * 100, 1)} / 100`;
     case 'persons': return `${dec(v, 1)} PERSONER`;
+    // V5.16
+    case 'regime': return regimeOf(v >= 3 ? 9 : v >= 2 ? 7 : v >= 1 ? 5 : 2)?.name || '–';
+    case 'rating': return RATINGS[Math.max(0, Math.min(RATINGS.length - 1, Math.round(v)))].id;
+    case 'susd': return (v > 0 ? '+' : '') + dollars(v);
+    case 'usdmo': return `${dollars(v)} / MÅNAD`;
+    case 'usdl': return `${dec(v, 2)}\u{00A0}$ / LITER`;
+    case 'usdkwh': return `${dec(v, 2)}\u{00A0}$ / KWH`;
+    case 'hours': return `${dec(v, 1)} TIMMAR`;
+    case 'weeks': return `${dec(v, 0)} VECKOR`;
+    case 'ratio': return `${dec(v, 1)} ÅRSINKOMSTER`;
     case 'dbl': {   // värdet är tillväxten i % per år — visas som fördubblings- eller halveringstid
       const g = Math.max(-50, v) / 100;
       const y = Math.abs(g) > 1e-9 ? Math.LN2 / Math.abs(Math.log(1 + g)) : Infinity;
@@ -1417,6 +1858,78 @@ const RAW_KEYS_514 = ['gnipc', 'fuelexp', 'foodimp', 'oresexp', 'manufexp', 'ict
   'broadmoney', 'tourspend', 'atms', 'bankbranch', 'parttime', 'wagework', 'unempfem', 'unempmale', 'unempedu',
   'childlabor', 'femmanagers', 'healthpc', 'birthcare', 'hepb', 'handwash', 'cleanfuel', 'neonatal', 'commdeath',
   'injurydeath', 'girlsschool', 'lowsec', 'litfem', 'trainedteach', 'patentsfor', 'elecloss', 'ghg', 'n2o', 'disasters'];
+// V5.16: Världsbankens statsfinanser, hälsa, företag, el och fattigdom
+const RAW_KEYS_516 = ['suicide', 'govhealth', 'revenue', 'budgetbal', 'depositrate', 'firmbribe', 'femown', 'gaselec',
+  'fossilelec', 'poverty365', 'poverty685', 'natpov', 'learnpov', 'tertfem'];
+
+// V5.16: verkliga siffror där Världsbanken inte har dem (OECD, ILO, KPMG, skatteverk,
+// PISA 2022, avrundade). Övriga länder uppskattas ur sina andra mått och märks ~.
+const T516 = {
+  // fackligt anslutna %
+  unionrate: { 752: 65, 246: 58, 208: 67, 578: 50, 352: 91, '056': 49, 380: 33, '040': 26, 124: 26, 826: 22, 372: 26,
+    276: 16, 528: 15, 392: 17, '036': 13, 840: 10, 250: 9, 724: 12, 410: 12, 616: 13, 203: 11, 348: 8, 233: 5,
+    440: 7, 792: 9, 484: 12, 152: 18, 554: 17, 756: 14, 620: 15, 300: 20, 703: 11, 705: 24, 442: 31, 376: 25,
+    643: 27, 156: 44, 710: 26, '032': 28, '076': 11, 356: 10 },
+  // strejkdagar per 1 000 anställda och år (snitt flera år)
+  strikes: { 752: 3, 578: 30, 208: 40, 246: 50, 250: 100, '056': 90, 724: 50, 380: 40, 826: 20, 276: 18, 840: 8,
+    124: 80, 392: 0.5, 410: 30, '036': 15, 554: 15, 528: 15, '040': 5, 756: 2, 372: 10, 620: 25, 300: 40,
+    616: 2, 348: 2, 203: 1, 356: 30, '076': 40, 710: 150, '032': 80, 152: 30, 484: 5, 792: 20, 376: 40, 156: 1, 643: 1 },
+  // bolagsskatt %
+  corptax: { 752: 20.6, 208: 22, 578: 22, 246: 20, 826: 25, 276: 29.9, 250: 25, 724: 25, 380: 24, 528: 25.8,
+    '056': 25, '040': 23, 756: 19.6, 372: 12.5, 348: 9, 616: 19, 203: 21, 840: 21, 124: 26.5, 392: 30.6, 410: 24,
+    156: 25, 356: 25.2, 643: 25, '076': 34, 484: 30, '032': 35, 710: 27, 566: 30, 818: 22.5, '036': 30, 554: 28,
+    784: 9, 682: 20, 634: 10, 702: 17, 344: 16.5, 158: 20, 792: 25, 376: 23, 360: 22, 764: 20, 704: 20, 608: 25, 458: 24 },
+  // högsta marginalskatt på lön %
+  incometax: { 752: 52, 208: 55.9, 578: 47.4, 246: 51, 826: 45, 276: 45, 250: 45, 724: 47, 380: 43, 528: 49.5,
+    '056': 50, '040': 55, 756: 40, 372: 40, 348: 15, 616: 32, 203: 23, 840: 37, 124: 33, 392: 45, 410: 45, 156: 45,
+    356: 39, 643: 22, '076': 27.5, 484: 35, '032': 35, 710: 45, 566: 24, 818: 27.5, '036': 45, 554: 39, 784: 0,
+    682: 0, 634: 0, 414: 0, '048': 0, 512: 0, 702: 24, 344: 17, 158: 40, 792: 40, 376: 50, 360: 35, 764: 35, 704: 35 },
+  // moms (USA: snittet för försäljningsskatt)
+  vat: { 752: 25, 208: 25, 578: 25, 246: 25.5, 348: 27, 826: 20, 276: 19, 250: 20, 724: 21, 380: 22, 528: 21,
+    '056': 21, '040': 20, 756: 8.1, 372: 23, 616: 23, 203: 21, 840: 6.6, 124: 13, 392: 10, 410: 10, 156: 13, 356: 18,
+    643: 20, '076': 17, 484: 16, '032': 21, 710: 15, 566: 7.5, 818: 14, '036': 10, 554: 15, 784: 5, 682: 15, 634: 0,
+    414: 0, 702: 9, 344: 0, 158: 5, 792: 20, 376: 18, 360: 11, 764: 7, 704: 10, 608: 12, 458: 8 },
+  // bensin $/liter (2024)
+  fuelprice: { 752: 1.85, 578: 2.1, 208: 2.05, 246: 1.9, 276: 1.9, 250: 1.95, 826: 1.85, 528: 2.2, 380: 1.95,
+    724: 1.7, 840: 0.93, 124: 1.2, 392: 1.15, 156: 1.1, 356: 1.25, 643: 0.6, '076': 1.15, 682: 0.62, 364: 0.03,
+    862: 0.035, 566: 0.65, 818: 0.32, 360: 0.65, 484: 1.25, 792: 1.25, '036': 1.25, 410: 1.3, 710: 1.3, '032': 1.0,
+    616: 1.6, 804: 1.3, 398: 0.5, 634: 0.5, 784: 0.75, 414: 0.34, 434: 0.03, '012': 0.34, 458: 0.44 },
+  // el för hushåll $/kWh (2024)
+  elprice: { 752: 0.2, 208: 0.38, 276: 0.4, 826: 0.35, 250: 0.27, 380: 0.35, 724: 0.28, 578: 0.13, 246: 0.17,
+    840: 0.17, 124: 0.13, 392: 0.22, 156: 0.08, 356: 0.08, 643: 0.06, '076': 0.15, 682: 0.05, 818: 0.03, 566: 0.06,
+    710: 0.17, '036': 0.25, 410: 0.11, 484: 0.09, 792: 0.1, '032': 0.04, 616: 0.25, 804: 0.06, 634: 0.03, 414: 0.01, 784: 0.08 },
+  // hushållens skulder % av disponibel inkomst
+  hhdebt: { 752: 180, 208: 230, 578: 230, 528: 190, 756: 200, '036': 190, 124: 180, 840: 100, 826: 130, 276: 90,
+    250: 120, 392: 110, 410: 170, 156: 100, 380: 80, 724: 90, 246: 130, 554: 160, 372: 90, '056': 105 },
+  // pensionsålder
+  retireage: { 752: 66, 208: 67, 578: 67, 246: 65, 826: 66, 276: 66, 250: 64, 724: 66, 380: 67, 528: 67, 840: 67,
+    124: 65, 392: 65, 410: 63, 156: 61, 356: 60, 643: 63, '076': 63, '036': 67, 554: 65, 484: 65, 792: 60, 710: 60 },
+  // lagstadgade semesterdagar
+  vacationdays: { 752: 25, 208: 25, 578: 25, 246: 25, 250: 25, 276: 20, 826: 28, 380: 20, 724: 22, 528: 20, 840: 0,
+    124: 10, 392: 10, 410: 15, 156: 5, 356: 12, 643: 28, '076': 30, '036': 20, 554: 20, 484: 12, 792: 14, 710: 15 },
+  // betald föräldraledighet, veckor för båda föräldrarna
+  parentalweeks: { 752: 69, 578: 49, 208: 52, 246: 58, 276: 58, 250: 42, 826: 39, 380: 34, 724: 32, 528: 26,
+    840: 0, 124: 52, 392: 58, 410: 52, 156: 14, 356: 26, 643: 156, '076': 17, '036': 24, 554: 26, 484: 13, 792: 16, 710: 17 },
+  // PISA 2022 (snitt av matte, läsning och naturvetenskap)
+  pisa: { 702: 560, 392: 533, 410: 523, 158: 533, 344: 520, 446: 535, 233: 516, 372: 504, 124: 507, 756: 498,
+    528: 482, 246: 490, 208: 489, 752: 487, 276: 479, 826: 494, 840: 478, '036': 494, 554: 488, 616: 488, 203: 487,
+    '040': 487, '056': 489, 250: 478, 578: 471, 620: 474, 380: 471, 724: 477, 348: 475, 440: 474, 428: 482,
+    705: 487, 352: 449, 376: 457, 792: 456, 300: 438, 152: 431, 484: 410, '076': 390, 170: 398, '032': 398,
+    604: 397, 764: 397, 458: 405, 360: 369, 608: 353, 504: 356, 400: 360, 682: 383, 784: 422, 634: 413, 398: 412,
+    704: 505, 156: 560, 643: 482, 804: 441, 688: 440, 642: 428, 100: 418, '008': 363, 807: 370, 268: 380,
+    496: 420, 214: 345, 591: 375, 600: 347, 320: 360, 222: 360, 188: 400, 858: 420, 388: 400 },
+};
+// demokratiindexets delar ur Världsbankens styrningsmått (minsta kvadrat över EIU:s 166 länder):
+// [konstant, voice, goveff, polstab, rulelaw, corruptgov] per delindex i DEMO_SUBS-ordning
+const DEMO_FIT = [[6.02, 4.34, 1.25, 0.38, -1.56, -1.05], [4.73, 1.43, 1.66, 0.24, -0.40, -0.31],
+  [5.49, 1.84, 1.10, -0.58, -0.33, -0.63], [5.65, 0.18, -0.60, -0.06, 1.41, 0.46], [5.92, 2.51, 0.27, 0.23, 0.09, -0.51]];
+// minimilönen i andel av medellönen per lagalternativ (collective/none = ingen lagstadgad)
+const MINWAGE_SHARE = { statewages: 0.75, veryhigh: 0.65, high: 0.55, indexed: 0.5, collective: 0, youth: 0.4,
+  sector: 0.35, low: 0.3, none: 0 };
+// länder utan lagstadgad minimilön (lönerna sätts i kollektivavtal)
+const NO_MINWAGE = new Set(['752', '208', '578', '246', '380', '040', '352', '756', '702']);
+// länder med röstplikt
+const COMPULSORY_VOTE = new Set(['036', '056', '076', '032', '604', '218', '068', '858', '442', '702']);
 // räknas per invånare — uppskattas som andel och skalas sedan med folkmängden
 const PER_CAPITA_SUMS = { tourists: 1, airpax: 1, patents: 1, netmig: 1, articles: 1, armsexp: 1, labor: 1,
   tourrcpt: 1, listed: 1, cerealprod: 1, fishcatch: 1, aquaculture: 1, outofschool: 1, co2total: 1, methane: 1,
@@ -1484,8 +1997,8 @@ export function setIndicatorData(raw, facts) {
     BASE[cid].gdppc = median(gdps);
   }
   const lg = (cid) => Math.log(Math.max(100, BASE[cid].gdppc));
-  const robust = new Set([...RAW_KEYS_58, ...RAW_KEYS_510, ...RAW_KEYS_514]);
-  for (const key of [...RAW_KEYS, ...RAW_KEYS_58, ...RAW_KEYS_510, ...RAW_KEYS_514]) {
+  const robust = new Set([...RAW_KEYS_58, ...RAW_KEYS_510, ...RAW_KEYS_514, ...RAW_KEYS_516]);
+  for (const key of [...RAW_KEYS, ...RAW_KEYS_58, ...RAW_KEYS_510, ...RAW_KEYS_514, ...RAW_KEYS_516]) {
     if (NO_IMPUTE[key]) continue;
     let missing = ids.filter((c) => !Number.isFinite(BASE[c][key]));
     if (!missing.length) continue;
@@ -1628,6 +2141,72 @@ export function setIndicatorData(raw, facts) {
       b[k] = v;
       (EST[cid] ||= new Set()).add(k);
     }
+    // V5.16 VERKLIGHETEN: demokratiindexet (EIU 2024). Saknas landet räknas det fram
+    // ur Världsbankens styrningsmått med samma samband som för de 166 länder som har det.
+    const dem = DEMOCRACY[cid];
+    DEMO_SUBS.forEach((k, i) => {
+      if (Number.isFinite(b[k])) return;
+      if (dem) { b[k] = dem[i + 1]; return; }
+      const c = DEMO_FIT[i];
+      b[k] = clampV(c[0] + c[1] * V + c[2] * Ge + c[3] * Ps + c[4] * Rl + c[5] * Cg, 0, 10);
+      (EST[cid] ||= new Set()).add(k);
+    });
+    if (!dem) for (const k of ['demo', 'regime', 'parties', 'polprisoners']) (EST[cid] ||= new Set()).add(k);
+    // … och resten av de nya måtten: verkliga siffror ur T516 där de finns, annars uppskattade
+    const tab = (k) => T516[k]?.[cid];
+    const pop = b.pop || 1, mig = b.migrants ?? 5, hdi = b.hdi ?? 0.7;
+    const lgp = Math.log10(Math.max(300, b.gdppc) / 1000);
+    const tg = clampV(18 + 7 * Ge + 5 * Cg + 4 * Ps, 8, 85);
+    const penx = clampV(0.32 * (b.old ?? 8) + (P > 20000 ? 1.5 : 0), 0.5, 16);
+    const hp = clampV(4 + 0.04 * Ur + 1.4 * Math.log10(Math.max(5, b.density || 50)) + (P < 8000 ? 2 : 0), 3, 20);
+    const model516 = {
+      turnout: COMPULSORY_VOTE.has(cid) ? 88 : clampV(30 + 5.5 * b.demo_part, 25, 85),
+      trustgov: tg,
+      trustparl: clampV(tg * 0.85 + 3, 5, 85),
+      trustcourt: clampV(28 + 13 * Rl, 8, 90),
+      griev: clampV(12 - 8 * Ps, 0, 60),
+      protests: 30 * (pop / 1e6) ** 0.7 * clampV(0.4 + 0.3 * (V + 2.5), 0.2, 2) * (1 + unst),
+      strikes: tab('strikes') ?? clampV(8 + 14 * Math.max(0, V) + 25 * unst, 1, 250),
+      unionrate: tab('unionrate') ?? clampV(6 + 8 * Math.max(0, V) + 4 * Math.max(0, Ge), 2, 60),
+      rating: clampV(Math.round(3 - 1.4 * Ge - 0.35 * Ps + (b.debt ?? 60) / 120 - (P > 30000 ? 1 : 0)), 0, 7),
+      pensionx: penx,
+      socialx: clampV((b.govspend ?? 25) * 0.42 - 0.5 * penx, 1, 30),
+      corptax: tab('corptax') ?? 24,
+      incometax: tab('incometax') ?? clampV(20 + 6 * lgp, 10, 45),
+      vat: tab('vat') ?? 15,
+      emig: pop * clampV((0.0042 + 0.008 * Math.max(0, 0.8 - hdi)) * Math.max(1, pop / 1e7) ** -0.25, 0.001, 0.015),
+      asylum: Math.max(0, b.netmig || 0) * 0.25 * (hdi > 0.8 ? 1 : 0.3),
+      newcitizens: mig / 100 * pop * 0.03 * (hdi > 0.8 ? 1 : 0.4),
+      secondgen: mig * 0.5 * (hdi > 0.85 ? 1 : 0.6),
+      migemp: clampV((b.emprate ?? 58) * 0.95 + 3 * Rq, 25, 85),
+      integ: clampV(50 + 12 * Ge + 6 * Rl - 0.25 * Math.max(0, mig - 15), 10, 95),
+      segreg: clampV(25 + 0.6 * mig + 0.3 * G - 6 * Ge, 5, 85),
+      xenophobia: clampV(30 - 7 * V + 3 * unst - 0.1 * mig, 3, 75),
+      houseprice: hp,
+      rentshare: clampV(15 + 1.7 * hp, 10, 60),
+      homeless: pop * 0.0012 * (hp / 8) * (1 + Math.max(0, G - 30) / 20) * clampV(1.5 - 0.3 * Ge, 0.6, 2.3),
+      foodprice: 100,
+      fuelprice: tab('fuelprice') ?? clampV(0.55 + 0.012 * (b.tax ?? 15) + 0.12 * lgp - ((b.oilrent ?? 0) > 8 ? 0.35 : 0), 0.05, 2.4),
+      elprice: tab('elprice') ?? clampV(0.05 + 0.04 * lgp, 0.02, 0.4),
+      hhdebt: tab('hhdebt') ?? clampV((b.credit ?? 40) * 0.9, 5, 250),
+      retireage: tab('retireage') ?? clampV(48 + 0.22 * (b.life ?? 72), 55, 67),
+      workweek: clampV(50 - 7 * lgp, 30, 52),
+      vacationdays: tab('vacationdays') ?? (P > 30000 ? 20 : 15),
+      parentalweeks: tab('parentalweeks') ?? 14,
+      cars: clampV(650 * (1 - Math.exp(-P / 25000)), 3, 800),
+      commute: clampV(15 + 0.2 * Ur + 0.15 * (b.megacity ?? 0), 15, 70),
+      carewait: clampV(10 + 120 / Math.sqrt(Math.max(0.05, (b.beds ?? 2) * (b.doctors ?? 1.5))), 5, 220),
+      sickleave: clampV(1.5 + 0.25 * (b.healthx ?? 6) + 0.05 * Math.max(0, (b.old ?? 8) - 15), 0.8, 8),
+      mentalill: clampV(11 + 0.03 * Ur + 0.15 * Math.max(0, (b.unemp ?? 6) - 5) - (hdi > 0.85 ? 0.5 : 0), 6, 25),
+      pisa: tab('pisa') ?? clampV(250 + 330 * (b.hci ?? 0.55), 300, 560),
+    };
+    for (const [k, v] of Object.entries(model516)) {
+      if (Number.isFinite(b[k])) continue;
+      b[k] = v;
+      if (k !== 'foodprice' && tab(k) == null) (EST[cid] ||= new Set()).add(k);
+    }
+    b.minshare = NO_MINWAGE.has(cid) ? 0 : 0.45;
+    for (const k of ['exclusion', 'medinc', 'wage', 'minwage', 'housingshort', 'immig']) (EST[cid] ||= new Set()).add(k);
     // räknas fram ur andra mått — uppskattat om källan är det
     if (EST[cid]?.has('gdppcppp')) EST[cid].add('gdpppp');
     (EST[cid] ||= new Set()).add('crimeidx');
@@ -1790,6 +2369,36 @@ function followers(v, b, pop) {
   const dg = (v.gini ?? b0('gini')) - b0('gini');
   set('top10', v.top10 + dg * 0.45);
   set('bottom20', v.bottom20 - dg * 0.12);
+  // V5.16: de nya måtten följer sina föräldrar
+  const d0 = (id) => (Number.isFinite(v[id]) && Number.isFinite(b0(id)) ? v[id] - b0(id) : 0);
+  const dVoice = d0('voice');
+  set('demo_civ', v.demo_civ + 1.2 * dVoice);
+  set('demo_el', v.demo_el + 0.8 * dVoice);
+  set('demo_part', v.demo_part + 0.5 * dVoice);
+  set('trustcourt', v.trustcourt + 8 * d0('rulelaw'));
+  set('trustgov', v.trustgov + 4 * d0('goveff'));
+  set('revenue', v.revenue + d0('tax'));
+  set('socialx', v.socialx + 0.3 * d0('govspend'));
+  if (v.old > 0 && b0('old') > 0) set('pensionx', v.pensionx * v.old / b0('old'));
+  const dMig = d0('migrants');
+  set('segreg', v.segreg + 0.4 * dMig);
+  set('xenophobia', v.xenophobia + 0.4 * dMig);
+  set('integ', v.integ - 0.3 * Math.max(0, dMig));
+  set('secondgen', v.secondgen + 0.15 * dMig);
+  set('migemp', v.migemp + 0.5 * d0('emprate'));
+  set('houseprice', v.houseprice * popR ** 1.2 * gdpR ** 0.4);
+  set('rentshare', v.rentshare + 1.6 * d0('houseprice'));
+  set('homeless', v.homeless * ratio('houseprice') ** 1.3 * Math.max(0.3, 1 + 0.04 * d0('unemp')) * popR);
+  set('foodprice', v.foodprice * (1 + Math.max(0, d0('infl')) * 0.01));
+  set('carewait', v.carewait * ratio('doctors') ** -0.5 * ratio('beds') ** -0.3 * ratio('old') ** 0.4);
+  set('mentalill', v.mentalill + 0.15 * d0('unemp'));
+  set('suicide', v.suicide * ratio('mentalill'));
+  set('govhealth', v.govhealth + 0.8 * d0('healthx'));
+  set('cars', v.cars * gdpR ** 0.6);
+  set('strikes', v.strikes * (1 + Math.max(0, d0('unionrate')) / 40));
+  for (const k of ['poverty365', 'poverty685', 'natpov']) set(k, v[k] * ratio('poverty') ** 0.6);
+  set('fossilelec', v.fossilelec - d0('renewelec') - d0('nuclear'));
+  set('commute', v.commute + 0.1 * d0('urban'));
   // Brottslighet: brotten jämförda med medianlandet, vägda ihop (geometriskt medel)
   let s = 0, n = 0;
   for (const k of CRIME_KEYS) {
@@ -1847,9 +2456,10 @@ export function countryIndicators(cid, T, T0 = null, laws = null) {
   for (const cat in laws || {}) {
     const opt = laws[cat];
     if (opt === DEFAULT_LAW[cat]) continue;
-    for (const [id, [op, n]] of lawFxOf(cat, opt)) {
+    for (const [id, [op, n, k]] of lawFxOf(cat, opt)) {
       if (!Number.isFinite(v[id])) continue;
-      v[id] = op === '+' ? v[id] + n : op === '*' ? v[id] * n : op === '=' ? n : op === '%pop' ? (LIVE?.[cid]?.p || b.pop) * n : v[id];
+      v[id] = op === '+' ? v[id] + n : op === '*' ? v[id] * n : op === '=' ? n : op === '%pop' ? (LIVE?.[cid]?.p || b.pop) * n
+        : op === '~' ? v[id] + (n - v[id]) * (k ?? 0.6) : v[id];   // V5.16: '~' drar måttet mot en nivå
       if (IND[id]) v[id] = clampV(v[id], IND[id].min, IND[id].max);
     }
   }
@@ -1869,6 +2479,21 @@ export function countryIndicators(cid, T, T0 = null, laws = null) {
   // befolkningen faktiskt ändras med (main.js: tickPopulation).
   const resid = (b.popgrowth || 0) / 100 - ((b.birth || 0) - (b.death || 0)) / 1000 - (b.netmig || 0) / b.pop;
   v.popchange = v.births - v.deaths + (v.netmig || 0) + resid * pop;
+  // V5.16: mått som räknas fram ur andra
+  if (Number.isFinite(v.demo_civ)) v.polprisoners = pop / 1e6 * 60 * Math.max(0, (4.5 - v.demo_civ) / 4.5) ** 2;
+  if (Number.isFinite(v.demo_el)) v.parties = v.demo_el < 0.8 ? 1 : Math.round(clampV(1 + 0.75 * v.demo_el, 1, 12));
+  if (Number.isFinite(v.segreg)) v.exclusion = clampV((v.segreg - 15) * 0.12 * Math.sqrt((v.migrants ?? 5) / 10 + 0.1), 0, 30);
+  if (Number.isFinite(v.gdppc)) {
+    v.medinc = v.gdppc * clampV(0.75 - 0.006 * (v.gini ?? 35), 0.3, 0.6);
+    v.wage = 0.065 * v.gdppc * (Math.max(300, v.gdppc) / 30000) ** -0.08;
+    const mw = laws?.minimum_wage && laws.minimum_wage !== DEFAULT_LAW.minimum_wage ? MINWAGE_SHARE[laws.minimum_wage] : undefined;
+    v.minwage = v.wage * (mw ?? b.minshare ?? 0.45);
+  }
+  if (Number.isFinite(v.migrants)) v.migstock = v.migrants / 100 * pop;
+  if (Number.isFinite(v.emig)) v.immig = Math.max(0, (v.netmig || 0) + v.emig);
+  if (v.households > 0 && Number.isFinite(v.houseprice)) {
+    v.housingshort = Math.max(0, v.households * (0.01 + 0.004 * (v.houseprice - 5)) * (1 + Math.max(0, v.popchange / pop * 100) * 0.8));
+  }
   // HDI: verkligt utgångsvärde × hur mycket delarna rört sig
   const h0 = hdiCalc(b.life, b.schoolyears, b.gdppc);
   v.hdi = clampV((b.hdi || h0) * (hdiCalc(v.life, v.schoolyears, v.gdppc) / h0), 0.2, 1);
@@ -2024,6 +2649,33 @@ export function realmIndicators(parts, T, extra = {}, t0Of = null, laws = null, 
   out.pressfree = clampV(52 + (out.voice || 0) * 18 + effect({ freedom: 10, statepower: -6 }, D), 0, 100);
   out.soldiers = extra.soldiers ?? 0;
   out.reserve = extra.reserve ?? 0;
+  if (Number.isFinite(extra.treasury)) out.treasury = extra.treasury;   // V5.16: statskassan i dollar
+  return refreshDerived(out);
+}
+
+// V5.16: det som räknas fram ur andra mått för ett helt rike — körs också igen i
+// main.js efter att trögheten och banken har ändrat delarna (demokratiindexet är
+// medlet av sina fem delar, statsskulden i dollar följer BNP osv.)
+export function refreshDerived(out) {
+  if (!out) return out;
+  const pop = out.pop || 0;
+  if (Number.isFinite(out.gdppc) && pop) out.gdp = out.gdppc * pop;
+  const gdp = out.gdp || 0;
+  if (Number.isFinite(out.gdppcppp) && pop) out.gdpppp = out.gdppcppp * pop;
+  out.taxrev = gdp * (out.tax || 0) / 100;
+  out.milbudget = gdp * (out.milx || 0) / 100;
+  out.tradebal = (out.exports || 0) - (out.imports || 0);
+  if (DEMO_SUBS.every((k) => Number.isFinite(out[k]))) {
+    out.demo = DEMO_SUBS.reduce((s, k) => s + out[k], 0) / 5;
+    out.regime = regimeOf(out.demo).id;
+  }
+  if (Number.isFinite(out.debt)) { out.debtusd = gdp * out.debt / 100; out.debtpc = pop ? out.debtusd / pop : 0; }
+  if (Number.isFinite(out.budgetbal)) out.deficitusd = gdp * out.budgetbal / 100;
+  if (Number.isFinite(out.rating)) {
+    const R = RATINGS[clampV(Math.round(out.rating), 0, RATINGS.length - 1)];
+    out.bondrate = R.rate + Math.max(0, (out.infl || 0) - 2) * 0.5;
+    if (Number.isFinite(out.debtusd)) out.interestusd = out.debtusd * out.bondrate / 100;
+  }
   return out;
 }
 
@@ -2042,6 +2694,10 @@ function noticeable(fmt, a, b) {
     case 'score5': return d / 0.125;
     case 'index': return d / 2.5;
     case 'dbl': return d * 0.5;         // V5.10: tillväxt i % — halv vikt, Befolkningstillväxt visar samma sak
+    case 'regime': return d * 6;        // V5.16: ett steg i styrelseskick är stort
+    case 'rating': return d * 3;
+    case 'hours': return d / 2;
+    case 'weeks': return d / 4;
     default: return (d / Math.max(Math.abs(a), 1e-9)) * 10;
   }
 }
@@ -2070,7 +2726,7 @@ export const RANKINGS = [
   { id: 'soldiers', name: 'STÖRSTA ARMÉER' },
   { id: 'life', name: 'MEDELLIVSLÄNGD' },
   { id: 'happiness', name: 'LYCKLIGAST' },
-  { id: 'voice', name: 'DEMOKRATI' },
+  { id: 'demo', name: 'DEMOKRATI' },   // V5.16: The Economists demokratiindex
   { id: 'corruptgov', name: 'MINST KORRUPTION' },
   { id: 'homicide', name: 'TRYGGAST' },
   { id: 'rnd', name: 'FORSKNING' },
@@ -2098,6 +2754,15 @@ export const RANKINGS = [
   { id: 'fert', name: 'FLEST BARN PER KVINNA' },
   { id: 'bigcity', name: 'STÖRST STAD' },
   { id: 'pop25', name: 'STÖRST OM 25 ÅR' },
+  // V5.16
+  { id: 'trustgov', name: 'MEST FÖRTROENDE FÖR REGERINGEN' },
+  { id: 'pisa', name: 'BÄST SKOLA' },
+  { id: 'carewait', name: 'KORTAST VÅRDKÖ' },
+  { id: 'vacationdays', name: 'LÄNGST SEMESTER' },
+  { id: 'houseprice', name: 'BILLIGAST BOSTÄDER' },
+  { id: 'medinc', name: 'HÖGST MEDIANINKOMST' },
+  { id: 'integ', name: 'BÄST INTEGRATION' },
+  { id: 'budgetbal', name: 'STARKAST STATSFINANSER' },
 ];
 
 // V5.10: rankningar som läser ett annat mått åt andra hållet (yngst = lägst medianålder)

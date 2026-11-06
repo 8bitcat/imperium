@@ -28,7 +28,9 @@ import { relLabel, naturalRelation, REL_EVENTS, sanctionFor, ALLY_MIN_REL, TRUCE
 import { scoreCountry, medalFor } from './ranking.js';
 import { money, people, soldiersOf, soldiersText, PEOPLE_PER_MAN } from './real.js';
 import { INDICATORS, IND, IND_GROUPS, RANKINGS, fmtInd, setIndicatorData, hasIndicatorData, isEstimated,
-  baseOf as baseOfInd, countryIndicators, realmIndicators, biggestChanges, rankBy, realmPyramid, setFaith } from './statistics.js';
+  baseOf as baseOfInd, countryIndicators, realmIndicators, biggestChanges, rankBy, realmPyramid, setFaith, refreshDerived } from './statistics.js';
+import { YEAR_DAYS, DEFICIT_FLOOR, RECENT_DAYS, GRIEV_KINDS, GRIEV_IDS, LAW_KIND, LAW_SV, grievFromChange, protestMods,
+  grievTotal, SHOCKS, DEMO_SUBS, NO_LAG, lagStep, migrantCap, regimeOf } from './realism.js';   // V5.16 VERKLIGHETEN
 import { PASS_COVERS, PASS_EMBLEMS, passportHtml, defaultIdent } from './passport.js';
 import { BANK_MONTH, MONTHS_PER_YEAR, RATINGS, PLAN_YEARS, DEFAULT_PLAN, MISS_LIMIT, DEFAULT_DAYS, CRISIS_DAYS, LOAN_SHARE,
   ratingOf, annuity, creditRoom, crisisMods } from './bank.js';
@@ -61,9 +63,9 @@ function puppetColor() { const c = soloColor(); return lumOf(c) > 200 ? mixHex(c
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.15.0';
-export const VERSION_DATE = '2026-10-31';
-export const VERSION_NAME = 'INGA GRÄNSER';
+export const VERSION = '5.16.0';
+export const VERSION_DATE = '2026-11-06';
+export const VERSION_NAME = 'VERKLIGHETEN';
 
 const globe = new Globe($('#globe'));
 
@@ -145,6 +147,13 @@ function resIcons(countryId) {
 function mergeMods(a, b) {
   const out = { ...(a || {}) };
   for (const [k, v] of Object.entries(b || {})) out[k] = (out[k] || 0) + v;
+  return out;
+}
+
+// V5.16: lagar som glider in har bråkdelar — nationsvärdena visas och räknas i heltal
+function roundMods(m) {
+  const out = {};
+  for (const [k, v] of Object.entries(m || {})) { const r = Math.round(v); if (r) out[k] = r; }
   return out;
 }
 
@@ -802,7 +811,7 @@ function renderFactDiplomacy(c) {
     gift.className = 'btn';
     gift.innerHTML = `\u{1F381} SKICKA GÅVA (${money(200)}) <small>+12 RELATION</small>`;
     gift.addEventListener('click', () => {
-      if (s.res.money < 200) { warn('FÖR LITE PENGAR'); return; }
+      if (!canAfford(200)) { warn('FÖR LITE PENGAR'); return; }
       s.res.money -= 200;
       relChange(c.id, REL_EVENTS.gift, 'GÅVA MOTTAGEN');
       renderResbar();
@@ -901,12 +910,12 @@ function renderFactIntegration(c) {
   btn.className = 'btn amber';
   btn.style.marginTop = '5px';
   btn.innerHTML = `\u{1F91D} INTEGRERA SNABBARE (+${cost.gain}%)<br>${money(cost.money)} + ${cost.pp} \u{2696}\u{FE0F}`;
-  const blocked = s.res.money < cost.money ? 'FÖR LITE PENGAR'
+  const blocked = !canAfford(cost.money) ? poorWhy(cost.money)
     : s.res.pp < cost.pp ? 'FÖR LITE POLITICAL POWER' : null;
   if (blocked) { btn.disabled = true; btn.title = blocked; }
   btn.addEventListener('click', () => {
     if (blocked) { warn(blocked); return; }
-    if (s.res.money < cost.money || s.res.pp < cost.pp) { warn('RESURSERNA RÄCKER INTE LÄNGRE'); refreshInfoPanel(); return; }
+    if (!canAfford(cost.money) || s.res.pp < cost.pp) { warn('RESURSERNA RÄCKER INTE LÄNGRE'); refreshInfoPanel(); return; }
     s.res.money -= cost.money;
     s.res.pp -= cost.pp;
     it.pct = Math.min(100, it.pct + cost.gain);
@@ -947,7 +956,7 @@ function renderFactBuild(c) {
     const blocked = unitBuildingBlocked(c.id, type)
       || resReq
       || (missing.length ? 'SAKNAR ' + missing.map((r) => RESOURCES[r].name.toUpperCase()).join(', ')
-      : s.res.money < fCost ? 'FÖR LITE PENGAR'
+      : !canAfford(fCost) ? poorWhy(fCost)
       : s.res.man < b.man ? 'FÖR LITE MANPOWER' : null);
     if (blocked) { btn.disabled = true; btn.title = blocked; }
     btn.addEventListener('click', () => {
@@ -1053,12 +1062,12 @@ function renderCityPanel(cid) {
         const resReq = B.research && (s.nation.research[B.research[0]] || 0) < B.research[1]
           ? `KRÄVER FORSKNING: ${RESEARCH[B.research[0]].name.toUpperCase()} T${B.research[1]}` : null;
         const dupe = built.includes(bid) || queued.some((q) => q.building === bid) ? 'FINNS REDAN I STADEN' : null;
-        const blocked = dupe || resReq || (s.res.money < B.money ? 'FÖR LITE PENGAR' : null);
+        const blocked = dupe || resReq || (!canAfford(B.money) ? poorWhy(B.money) : null);
         if (blocked) { btn.disabled = true; btn.title = blocked; }
         btn.addEventListener('click', () => {
           if (blocked) { warn(blocked); return; }
           // omkontroll vid klicket — saldot kan ha ändrats sedan panelen ritades
-          if (s.res.money < B.money) { warn('FÖR LITE PENGAR'); renderCityPanel(cid); return; }
+          if (!canAfford(B.money)) { warn('FÖR LITE PENGAR'); renderCityPanel(cid); return; }
           if (!s.claims[cid]) { warn('LANDET ÄR INTE LÄNGRE DITT'); $('#citypanel').classList.remove('show'); return; }
           s.res.money -= B.money;
           (s.buildQueue ||= []).push({ building: bid, cityKey: key, cityName: city.n, name: `${B.icon} ${B.name}`, left: B.days, total: B.days, dest: cid });
@@ -1130,12 +1139,12 @@ function renderFactTrade(c, dealsOnly = false) {
     const blocked = ideoWall ? ideoWall
       : (s.trade || []).length >= tradeSlots()
       ? `MAX ${tradeSlots()} AVTAL — BYGG \u{1F91D} HANDELSMARKNAD I EN STAD`
-      : s.res.money < price ? 'FÖR LITE PENGAR' : null;
+      : !canAfford(price) ? poorWhy(price) : null;
     if (blocked) { btn.disabled = true; btn.title = blocked; }
     btn.addEventListener('click', () => {
       if (blocked) { warn(blocked); return; }
       // omkontroll vid klicket — saldo och slots kan ha ändrats sedan render
-      if (s.res.money < price) { warn('FÖR LITE PENGAR'); refreshInfoPanel(); return; }
+      if (!canAfford(price)) { warn('FÖR LITE PENGAR'); refreshInfoPanel(); return; }
       if ((s.trade || []).length >= tradeSlots()) { warn('AVTALSPLATSERNA ÄR FULLA'); refreshInfoPanel(); return; }
       s.res.money -= price;
       (s.trade ||= []).push({ res: r, cid: c.id, upkeep });
@@ -1385,6 +1394,8 @@ function initNation(countryId) {
   s.partial = {}; s.bloc = null; s.aiBlocs = []; s.stateFlags = {};                // V5: delvis annekterat + block
   s.mods = {}; s.seenEvents = {}; s.trend = null; s.devQueue = [];                 // V5: modifierare, händelser, utveckling
   s.nextEvent = 1 + Math.floor(Math.random() * 25);   // första händelsen kommer tidigt
+  // V5.16: lagarna är i kraft från start, inget missnöje än, statistiken börjar i verkligheten
+  s.lawFx = null; s.ideoFx = null; s.griev = {}; s.lawLog = []; s.indLag = null; s.indHist = [];
   recomputeNation();
   $('#resbar').style.display = 'flex';
   renderResbar();
@@ -1400,15 +1411,20 @@ function recomputeNation() {
   s.mods ||= {};
   const owned = Object.keys(s.claims || {});
   const devSrc = devMods(worldCtx().world, owned.length ? owned : [s.home]);
+  // V5.16: lagarna och ideologin slår igenom gradvis — s.lawFx/s.ideoFx glider mot
+  // målet i tickPolicyPhase. Ett nytt parti börjar med lagarna redan i kraft.
+  s.lawFx ||= { ...lawMods(s.nation.laws) };
+  s.ideoFx ||= { ...ideologyMods(s.nation) };
   s.nationSources = {
-    laws: lawMods(s.nation.laws),
-    ideology: ideologyMods(s.nation),
+    laws: roundMods(s.lawFx),
+    ideology: roundMods(s.ideoFx),
     research: researchMods(s.nation),
     modifiers: modifierMods(s.mods),
     development: devSrc,
     extra: mergeMods(mergeMods(mergeMods(mergeMods(s.extra, s.permMods), s.factionMods), s.leaderMods), cabinetMods(s.nation)),
     faith: chaosMods(s.faith?.chaos || 0),   // V5.12: religiöst kaos
     bank: crisisMods(s.bank?.crisis || 0),   // V5.13: statsbankruttens kris
+    protest: protestMods(grievTotal(s.griev)),   // V5.16: missnöjet — protester och strejker
   };
   s.stats = computeStats(s.nation, s.nationSources);
   syncFaith();
@@ -1839,23 +1855,25 @@ function mySoldiers() {
 // Dina mått. Två lager: "utan politik" = rikets länder med sina verkliga
 // värden, och målet = samma länder med din politik (nationsvärden + lagar).
 // Politiken slår igenom gradvis: `indLag` är hur långt varje mått kommit från
-// "utan politik" mot målet, och följer målet med ~4 % om dagen. En erövring syns
-// däremot direkt, eftersom den ändrar "utan politik".
+// "utan politik" mot målet. V5.16: i verklig takt — varje mått har sin egen
+// halveringstid och ibland ett tak per år (realism.js: lagStep), och ett nytt parti
+// börjar i verkligheten, inte vid målet. En erövring syns däremot direkt,
+// eftersom den ändrar "utan politik".
 // target = vart riket är på väg om inget mer ändras.
 function myIndicators(target = false) {
   const s = state.solo;
   if (!s?.stats || !hasIndicatorData()) return null;
   const parts = myRealmParts();
-  const extra = { soldiers: mySoldiers(), reserve: (s.res?.man || 0) * PEOPLE_PER_MAN };
-  const goal = applyBankToIndicators(realmIndicators(parts, statTotals(s.stats), extra, baselineTotalsOf, s.nation?.laws));
-  if (target || !goal || !s.indLag) return goal;
+  const extra = { soldiers: mySoldiers(), reserve: (s.res?.man || 0) * PEOPLE_PER_MAN, treasury: myTreasury() };
+  const goal = realmIndicators(parts, statTotals(s.stats), extra, baselineTotalsOf, s.nation?.laws);
+  if (!goal) return null;
+  if (target) return applyGameToIndicators(goal);
   const plain = realmIndicators(parts, null, extra, baselineTotalsOf, null, true);
   const now = {};
   for (const [id, g] of Object.entries(goal)) {
-    const lag = s.indLag[id];
-    now[id] = lag == null || !Number.isFinite(plain?.[id]) ? g : plain[id] + lag;
+    now[id] = !Number.isFinite(plain?.[id]) || NO_LAG.has(id) ? g : plain[id] + (s.indLag?.[id] ?? 0);
   }
-  return applyBankToIndicators(now);   // V5.13: skulden glider inte — den är bankens
+  return applyGameToIndicators(now);   // V5.13: skulden glider inte — den är bankens
 }
 
 function tickIndLag() {
@@ -1868,14 +1886,250 @@ function tickIndLag() {
   // V5.13: lagarnas och nationsvärdenas skuldeffekt blir bankens månadsunderskott
   s.debtPolicy = Number.isFinite(goal.debt) && Number.isFinite(plain.debt) ? goal.debt - plain.debt : 0;
   s.indLag ||= {};
+  // V5.16: invandrarandelen kan inte växa fortare än folk faktiskt flyttar hit
+  const migCap = migrantCap(plain.netmig + (s.indLag.netmig ?? 0), plain.pop);
   for (const id of Object.keys(goal)) {
-    if (!Number.isFinite(goal[id]) || !Number.isFinite(plain[id])) continue;
-    const want = goal[id] - plain[id];
-    const cur = s.indLag[id] ?? want;
-    s.indLag[id] = Math.abs(want - cur) <= Math.abs(want) * 0.002 + 1e-9 ? want : cur + (want - cur) * 0.04;
+    if (NO_LAG.has(id) || !Number.isFinite(goal[id]) || !Number.isFinite(plain[id])) continue;
+    s.indLag[id] = lagStep(id, IND[id]?.group, s.indLag[id] ?? 0, goal[id] - plain[id], plain[id], migCap);
   }
   // V5.15: rikets FoU i % av BNP just nu — forskningspoängen räknas på den
   s.rdNow = Number.isFinite(plain.rnd) ? Math.max(0, plain.rnd + (s.indLag.rnd || 0)) : null;
+  // V5.16: hur långt politiken hunnit slå igenom i flyttningar, födslar och dödsfall —
+  // befolkningen (tickPopulation) växer med det, inte med lagens fulla effekt direkt
+  const prog = (id) => {
+    const d = goal[id] - plain[id];
+    return Number.isFinite(d) && Math.abs(d) > 1e-9 ? Math.max(0, Math.min(1.5, (s.indLag[id] ?? 0) / d)) : 1;
+  };
+  s.popLagF = { mig: prog('netmig'), birth: prog('birth'), death: prog('death') };
+}
+
+// ---------- V5.16 VERKLIGHETEN (realism.js) ----------
+// Det spelet själv vet bättre än statistiken: statskassan, missnöjet, banken.
+function applyGameToIndicators(out) {
+  const s = state.solo;
+  if (!out) return out;
+  applyBankToIndicators(out);
+  out.griev = grievTotal(s?.griev);
+  if (s?.bank && hasIndicatorData()) {
+    out.rating = bankRating().idx;
+    // underskottet i statskassan är en del av budgetunderskottet
+    if (Number.isFinite(out.budgetbal)) {
+      out.budgetbal -= (s.debtPolicy || 0) / 10 + 100 * Math.max(0, -(s.res?.money || 0)) / Math.max(1, bankY());
+    }
+  }
+  refreshDerived(out);
+  if (s?.bank && Number.isFinite(out.debtusd)) {
+    const R = RATINGS[bankRating().idx];
+    out.bondrate = R.rate + (s.res?.money < 0 ? 2 : 0) + Math.max(0, (out.infl || 0) - 2) * 0.5;
+    out.interestusd = out.debtusd * out.bondrate / 100;
+  }
+  return out;
+}
+
+const myTreasury = () => (state.solo?.res?.money || 0) * 1e8;   // 1 💰 = 100 miljoner $
+
+// Lagarna och ideologin glider mot sitt mål: ungefär en månad för en stor ändring.
+function tickPolicyPhase() {
+  const s = state.solo;
+  if (!s?.nation) return false;
+  let moved = false;
+  const glide = (cur, goal) => {
+    for (const k of new Set([...Object.keys(cur), ...Object.keys(goal)])) {
+      const g = goal[k] || 0, c = cur[k] || 0, d = g - c;
+      if (!d) continue;
+      const n = c + Math.sign(d) * Math.min(Math.abs(d), Math.max(0.34, Math.abs(d) * 0.07));
+      if (Math.abs(g - n) < 0.01) { if (g) cur[k] = g; else delete cur[k]; } else cur[k] = n;
+      moved = true;
+    }
+  };
+  glide(s.lawFx ||= {}, lawMods(s.nation.laws));
+  glide(s.ideoFx ||= {}, ideologyMods(s.nation));
+  return moved;
+}
+
+// vart nationsvärdena är på väg när lagarna slagit igenom helt
+function policyGoalStats() {
+  const s = state.solo;
+  return computeStats(s.nation, { ...s.nationSources, laws: lawMods(s.nation.laws), ideology: ideologyMods(s.nation) });
+}
+
+// ----- missnöjet -----
+function addGriev(kind, amt) {
+  const g = (state.solo.griev ||= {});
+  const k = GRIEV_KINDS[kind] ? kind : 'ekonomi';
+  g[k] = Math.max(0, Math.min(100, (g[k] || 0) + amt));
+  if (!(g[k] > 0.05)) delete g[k];
+}
+
+// En lag har ändrats (av dig, en händelse eller en revolution): folket bedömer den
+function noteLawChange(cat, from, to) {
+  const s = state.solo;
+  if (!s?.clock || !LAWS[cat] || from === to) return;
+  const r = grievFromChange(cat, lawOption(cat, from)?.mods, lawOption(cat, to)?.mods);
+  (s.lawLog ||= []).unshift({ cat, from, to, day: s.clock.day, kind: r.kind, delta: Math.round(r.delta) });
+  s.lawLog.length = Math.min(s.lawLog.length, 30);
+  if (r.amt) addGriev(r.kind, r.amt);
+  const k = GRIEV_KINDS[r.kind];
+  if (r.amt >= 8) {
+    toast(`${k.icon} FOLKET GILLAR INTE ÄNDRINGEN AV ${LAW_SV[cat].toUpperCase()} — MISSNÖJET VÄXER (+${r.amt})`, 'red', 7000);
+    // reaktionen låter inte vänta på sig
+    s.nextEvent = Math.min(s.nextEvent ?? 99, 3 + Math.floor(Math.random() * 10));
+  } else if (r.amt <= -8) {
+    toast(`${k.icon} FOLKET GLÄDS ÅT ÄNDRINGEN AV ${LAW_SV[cat].toUpperCase()} — MISSNÖJET MINSKAR`, 'amber', 6000);
+  }
+}
+
+// har någon av lagarna ändrats senaste spelåret? dir -1 = sämre för folket, 1 = bättre, 0 = alls
+function recentChange(cats, dir) {
+  const s = state.solo;
+  const since = (s.clock?.day || 0) - RECENT_DAYS;
+  return (s.lawLog || []).some((e) => e.day >= since && cats.includes(e.cat)
+    && (dir === 0 || (dir < 0 ? e.delta <= -2 : e.delta >= 2)));
+}
+
+// senaste lagändringen av ett slag (eller alls) — {lag} och undo: true i händelserna
+function lastLawChange(kind) {
+  const s = state.solo;
+  const since = (s.clock?.day || 0) - RECENT_DAYS;
+  return (s.lawLog || []).find((e) => e.day >= since && (!kind || e.kind === kind)) || null;
+}
+
+// lagen tillbaka till hur den var före den senaste ändringen
+function undoLaw(cat) {
+  const s = state.solo;
+  const e = (s.lawLog || []).find((x) => x.cat === cat);
+  if (!e || s.nation.laws[cat] !== e.to) return false;
+  if (lawLockedBy(s.nation, cat, e.from)) return false;
+  s.nation.laws[cat] = e.from;
+  noteLawChange(cat, e.to, e.from);
+  toast(`\u{21A9}\u{FE0F} ${LAW_SV[cat].toUpperCase()} ÅTERSTÄLLS: ${lawOption(cat, e.from)?.name.toUpperCase() || ''}`, 'amber', 6000);
+  return true;
+}
+
+// Missnöjet klingar av (ungefär halverat på två månader) — men fylls på av ett
+// underskott, en kris i ekonomin och invandring som går fortare än integrationen.
+function tickGriev() {
+  const s = state.solo;
+  const g = (s.griev ||= {});
+  const before = Math.round(grievTotal(g));
+  for (const k of Object.keys(g)) {
+    g[k] = g[k] * 0.988 - 0.04;
+    if (!(g[k] > 0.05)) delete g[k];
+  }
+  if (s.res.money < 0) addGriev('underskott', 0.12 + 0.35 * Math.min(2, -s.res.money / Math.max(1, creditLine())));
+  if (s.clock.day % 5 === 0) {
+    const ind = myIndicators();
+    if (ind) {
+      const kris = Math.max(0, (ind.unemp ?? 0) - 9) * 0.06 + Math.max(0, (ind.infl ?? 0) - 7) * 0.05
+        + Math.max(0, -1 - (ind.gdpgrowth ?? 0)) * 0.12;
+      if (kris > 0) addGriev('kris', kris * 5);
+      const rate = ind.pop ? (ind.netmig || 0) / ind.pop * 100 : 0;
+      const integ = s.stats?.integration?.total ?? 0;
+      if (rate > 1) addGriev('migration', (rate - 1) * 1.75 * (1 + Math.max(0, -integ) / 50) / (1 + Math.max(0, integ) / 40));
+    }
+  }
+  if (Math.round(grievTotal(g)) !== before) recomputeNation();
+}
+
+// ----- chocker i statistiken (händelsernas ind: { … }) -----
+function applyShock(id, v) {
+  const s = state.solo;
+  const sh = SHOCKS[id];
+  if (!sh || !Number.isFinite(v) || !hasIndicatorData()) return;
+  const plain = realmIndicators(myRealmParts(), null, {}, baselineTotalsOf, null, true);
+  s.indLag ||= {};
+  for (const k of id === 'demo' ? DEMO_SUBS : [id]) {
+    if (!Number.isFinite(plain?.[k])) continue;
+    const now = plain[k] + (s.indLag[k] ?? 0);
+    const def = IND[k];
+    const next = Math.max(def?.min ?? -Infinity, Math.min(def?.max ?? Infinity, now + (sh.unit === '%' ? now * v / 100 : v)));
+    s.indLag[k] = next - plain[k];
+  }
+}
+
+// ----- trender: en bild av statistiken var 30:e dag, fem bilder sparas -----
+function tickIndHist() {
+  const s = state.solo;
+  if (s.clock.day % 30 !== 0) return;
+  const now = myIndicators();
+  if (!now) return;
+  const v = {};
+  for (const [k, x] of Object.entries(now)) if (Number.isFinite(x)) v[k] = +x.toPrecision(5);
+  (s.indHist ||= []).push({ day: s.clock.day, v });
+  while (s.indHist.length > 5) s.indHist.shift();
+}
+
+// hur mycket ett mått ändrats per spelår, mätt mot bilden för ungefär ett år sedan
+function trendOf(id, now) {
+  const s = state.solo;
+  const day = s.clock?.day || 0;
+  const old = (s.indHist || []).find((e) => day - e.day <= YEAR_DAYS + 15);
+  if (!old || !Number.isFinite(old.v[id]) || !Number.isFinite(now?.[id])) return 0;
+  return (now[id] - old.v[id]) * YEAR_DAYS / Math.max(30, day - old.day);
+}
+
+// ----- underskottet: banken lånar ut till statskassan -----
+// Upp till ett halvt års inkomster och aldrig mer än banken lånar ut totalt —
+// och bara så länge Income är DEFICIT_FLOOR (-70) eller högre.
+function creditLine() {
+  const s = state.solo;
+  if (!s?.nation || !hasIndicatorData()) return 0;
+  const b = bankState();
+  const Y = bankY();
+  const room = creditRoom(b.debt, Y, WEALTH_TIER[s.home] || 1, bankRating().idx);
+  return Math.max(0, Math.floor(Math.min(room, Y / 8)));
+}
+const incomeOk = () => (state.solo?.stats?.income?.total ?? 0) >= DEFICIT_FLOOR;
+// vad du kan lägga just nu: kassan plus bankens kredit (om Income tillåter)
+function spendable() {
+  const m = state.solo?.res?.money || 0;
+  return incomeOk() ? m + creditLine() : Math.max(0, m);
+}
+const canAfford = (cost) => (cost || 0) <= spendable();
+
+// LÄGET I LANDET överst i ÖVERSIKT: demokratin, missnöjet, statskassan och lagar som slår igenom
+function realityBox() {
+  const s = state.solo;
+  const div = document.createElement('div');
+  div.className = 'natgroup reality';
+  const ind = myIndicators();
+  const lines = [];
+  if (Number.isFinite(ind?.demo)) {
+    const rg = regimeOf(ind.demo);
+    const tr = trendOf('demo', ind);
+    lines.push(`<div class="rline"><span>\u{1F5F3}\u{FE0F} DEMOKRATIINDEX</span><b style="color:${rg.color}">${fmtNum(ind.demo)} / 10 — ${rg.name}</b>`
+      + (Math.abs(tr) >= 0.05 ? `<small class="${tr > 0 ? 'dp' : 'dn'}">${tr > 0 ? '+' : ''}${fmtNum(tr)} SENASTE ÅRET</small>` : '') + '</div>');
+  }
+  const g = s.griev || {};
+  const tot = grievTotal(g);
+  const causes = GRIEV_IDS.filter((k) => g[k] >= 1).sort((a, b) => g[b] - g[a]);
+  const col = tot >= 60 ? 'var(--red)' : tot >= 30 ? 'var(--amber)' : '#4ae37a';
+  const mood = tot >= 80 ? 'LANDET BRINNER' : tot >= 60 ? 'STREJKER OCH KRAVALLER' : tot >= 30 ? 'PROTESTER' : tot >= 10 ? 'KNOT' : 'LUGNT';
+  lines.push(`<div class="rline"><span>\u{1F620} MISSNÖJE</span><b style="color:${col}">${Math.round(tot)} / 100 — ${mood}</b></div>`
+    + `<div class="gbar"><div style="width:${Math.min(100, tot)}%;background:${col}"></div></div>`
+    + (causes.length ? `<div class="rsub">${causes.slice(0, 4).map((k) => `${GRIEV_KINDS[k].icon} ${GRIEV_KINDS[k].name} ${Math.round(g[k])}`).join(' &nbsp;\u{00B7}&nbsp; ')}</div>` : ''));
+  const m = s.res.money;
+  const cl = creditLine();
+  if (m < 0) {
+    const r = RATINGS[bankRating().idx].rate + 2;
+    lines.push(`<div class="rline"><span>\u{1F3E6} UNDERSKOTT</span><b style="color:var(--red)">${money(m)}</b></div>`
+      + `<div class="rsub">STATEN LEVER PÅ BANKENS KREDIT (${money(cl)} TOTALT, RÄNTA ${r} % PER ÅR). `
+      + (incomeOk() ? '' : `<span class="dn">INCOME ÄR UNDER ${DEFICIT_FLOOR} — BANKEN LÅNAR INTE UT MER.</span> `)
+      + (m < -cl ? '<span class="dn">KREDITEN ÄR SLUT — VARJE MÅNAD RÄKNAS SOM EN MISSAD BETALNING.</span>'
+        : 'FÅ UPP KASSAN ÖVER NOLL: HÖJ INCOME ELLER DRA NER PÅ UTGIFTERNA.') + '</div>');
+  } else {
+    lines.push(`<div class="rsub">\u{1F3E6} BANKENS KREDIT: STATSKASSAN KAN GÅ ${money(cl)} UNDER NOLL — SÅ LÄNGE INCOME ÄR ${DEFICIT_FLOOR} ELLER HÖGRE.</div>`);
+  }
+  const goal = policyGoalStats();
+  const moving = Object.keys(STATS).filter((k) => Math.round(goal[k].total - s.stats[k].total) !== 0).length;
+  if (moving) lines.push(`<div class="rsub">\u{1F4DC} LAGAR OCH IDEOLOGI SLÅR IGENOM — ${moving} VÄRDEN ÄR PÅ VÄG (PILARNA NEDAN)</div>`);
+  div.innerHTML = `<div class="gtitle">▸ LÄGET I LANDET</div>${lines.join('')}`;
+  return div;
+}
+function poorWhy(cost) {
+  const m = state.solo?.res?.money || 0;
+  if (!incomeOk() && m < cost) return `INCOME UNDER ${DEFICIT_FLOOR} — BANKEN LÅNAR INTE UT`;
+  return m < cost ? 'FÖR LITE PENGAR — ÄVEN MED BANKENS KREDIT' : 'FÖR LITE PENGAR';
 }
 
 // ---------- V5.7: LEVANDE BEFOLKNING ----------
@@ -1901,8 +2155,15 @@ function tickPopulation() {
     const v = countryIndicators(c.id, mine ? statTotals(s.stats) : nationTotalsOf(owner), T0,
       mine ? s.nation?.laws : state.world?.[owner]?.laws || null);
     if (!v) continue;
-    // samma tal som STATISTIK visar som "befolkningsförändring per år"
-    fact.p = Math.max(1000, fact.p + v.popchange * step);
+    // samma tal som STATISTIK visar som "befolkningsförändring per år".
+    // V5.16: i ditt rike bara så långt politiken hunnit slå igenom (s.popLagF)
+    let change = v.popchange;
+    const f = mine ? s.popLagF : null;
+    if (f) {
+      const p0 = countryIndicators(c.id, T0, T0, null);
+      if (p0) change = p0.popchange + (v.births - p0.births) * f.birth - (v.deaths - p0.deaths) * f.death + ((v.netmig || 0) - (p0.netmig || 0)) * f.mig;
+    }
+    fact.p = Math.max(1000, fact.p + change * step);
   }
   if (state.indRankCache) state.indRankCache.at = 0;
   popMilestone();
@@ -2171,14 +2432,14 @@ function coldWarAction(cw, kind) {
     toast(`\u{1F91D} TOPPMÖTE MED ${cname(foe)} — SPÄNNINGEN SJUNKER`, 'amber', 6000);
     logEvent(`\u{1F91D} DU HÖLL TOPPMÖTE MED ${cname(foe)}`, { mine: true });
   } else if (kind === 'arms') {
-    if (s.res.money < 300) { warn(`KRÄVER ${money(300)}`); return; }
+    if (!canAfford(300)) { warn(`KRÄVER ${money(300)}`); return; }
     s.res.money -= 300;
     s.extra.milpower = (s.extra.milpower || 0) + 12;
     cw.tension = Math.min(100, cw.tension + 8);
     toast(`\u{1F680} DU KAPPRUSTAR MOT ${cname(foe)} — MILITÄRMAKTEN STIGER, SPÄNNINGEN OCKSÅ`, 'red', 6000);
     logEvent(`\u{1F680} DU KAPPRUSTADE MOT ${cname(foe)}`, { mine: true });
   } else if (kind === 'spy') {
-    if (s.res.money < 150) { warn(`KRÄVER ${money(150)}`); return; }
+    if (!canAfford(150)) { warn(`KRÄVER ${money(150)}`); return; }
     s.res.money -= 150;
     if (Math.random() < 0.6) {
       s.res.rp += 30;
@@ -2696,13 +2957,14 @@ function renderResbar() {
   if (!s?.res) return;
   $('#rday').textContent = 'DAG ' + s.clock.day;
   $('#rmoney').textContent = money(s.res.money);
+  $('#rmoney').classList.toggle('neg', s.res.money < 0);   // V5.16: underskott
   $('#rman').textContent = people(s.res.man);
   $('#rrp').textContent = s.res.rp;
   $('#rpp').textContent = s.res.pp;
   $('#pausebtn').innerHTML = s.clock.paused ? '&#9654; SPELA' : '&#9208; PAUS';
   // resursraden inne i NATION-panelen — så beslut kan fattas utan att stänga
   $('#natres').innerHTML = `<span>DAG <b>${s.clock.day}</b></span>` +
-    `<span>\u{1F4B0} <b>${money(s.res.money)}</b></span>` +
+    `<span>\u{1F4B0} <b${s.res.money < 0 ? ' class="neg"' : ''}>${money(s.res.money)}</b></span>` +
     `<span>\u{1F9CD} <b>${people(s.res.man)}</b></span>` +
     `<span>\u{1F52C} <b>${s.res.rp}</b></span>` +
     `<span>\u{2696}\u{FE0F} <b>${s.res.pp}</b></span>`;
@@ -2746,12 +3008,14 @@ function tickDay() {
   const s = state.solo;
   s.clock.day++;
   tickIndLag();   // V5.6: statistiken glider mot det läge politiken pekar ut
+  if (tickPolicyPhase()) recomputeNation();   // V5.16: lagarna slår igenom gradvis
   if (state.mode === 'solo' && s.clock.day % 10 === 0) tickPopulation();   // V5.7
   const st = s.stats;
   // V5.15 INGA GRÄNSER: inkomst, forskning, politisk makt och rekrytering räknas
-  // på raw-värdet (utan tak vid 100) — oändlig forskning ger oändlig avkastning
+  // på raw-värdet (utan tak vid 100) — oändlig forskning ger oändlig avkastning.
+  // V5.16: statskassan får gå under noll — banken lånar ut (se creditLine)
   const raw = (k) => st[k]?.raw ?? st[k]?.total ?? 0;
-  s.res.money = Math.max(0, s.res.money + Math.round(10 + raw('income') * 0.3));
+  s.res.money += Math.round(10 + raw('income') * 0.3);
   // varje ägt land bidrar efter sin ekonomiska tyngd — MEN erövrade länder ger
   // inget förrän de integrerats: i ockupationsfasen kostar de i stället.
   let occUnrest = 0;
@@ -2768,6 +3032,16 @@ function tickDay() {
   tickIntegration();
   tickFaith();   // V5.12
   tickBank();    // V5.13: statsskulden betalas av varje månad
+  // V5.16: underskottet i statskassan kostar ränta varje dag (bankens ränta + 2 %)
+  if (s.res.money < 0 && hasIndicatorData()) {
+    const r = (RATINGS[bankRating().idx].rate + 2) / 100 / YEAR_DAYS;
+    s.res.money -= Math.max(1, Math.round(-s.res.money * r));
+  }
+  // V5.16: första dagen under noll — det dröjer inte länge innan någon reagerar
+  if (s.res.money < 0 && !s.inDeficit) { s.inDeficit = true; s.nextEvent = Math.min(s.nextEvent ?? 99, 4 + Math.floor(Math.random() * 12)); }
+  else if (s.res.money >= 0) s.inDeficit = false;
+  tickGriev();    // V5.16: missnöjet klingar av eller växer
+  tickIndHist();  // V5.16: bilder av statistiken för trenderna
   tickDiplomacy();
   tickBlocApplications();
   tickMinisters();
@@ -2791,7 +3065,7 @@ function tickDay() {
   s.sanction = worldSanction();
   if (s.sanction) {
     const hit = Math.round(Math.abs(s.sanction.income) * 30);
-    s.res.money = Math.max(0, s.res.money - hit);
+    s.res.money -= hit;
     if (s.clock.day % 40 === 0) {
       toast(`${s.sanction.icon} ${s.sanction.name} — ${s.sanction.desc} (-${money(hit)}/DAG)`, 'red', 8000);
     }
@@ -2799,9 +3073,9 @@ function tickDay() {
   // integrationskontorens upkeep
   const offices = allBuildings().filter((b) => BUILDINGS[b]?.upkeep).length;
   s.res.money -= offices * 6;
-  // ockupationsoron sätts (inte ackumuleras) och saldon får aldrig gå under noll
+  // ockupationsoron sätts (inte ackumuleras). V5.16: pengarna får gå under noll
+  // (underskott), politisk makt får det inte
   if (occUnrest > 0) s.occUnrest = Math.min(45, occUnrest); else delete s.occUnrest;
-  s.res.money = Math.max(0, s.res.money);
   s.res.pp = Math.max(0, s.res.pp);
   s.res.man += Math.max(0, Math.round(2 + raw('manpower') * 0.06));
   // V5.15: forskningspoängen har bråkdelar (FoU-delen) — de sparas till nästa dag
@@ -2826,7 +3100,7 @@ function tickDay() {
     if (s.claims[deal.cid]) {
       s.trade = s.trade.filter((x) => x !== deal);
       toast(`\u{1F91D} ${cname(deal.cid)} ÄR NU DITT — AVTALET OM ${RESOURCES[deal.res].name.toUpperCase()} BEHÖVS INTE LÄNGRE`, '', 5000);
-    } else if (s.res.money >= deal.upkeep) {
+    } else if (canAfford(deal.upkeep)) {   // V5.16: avtalen löper vidare på kredit
       s.res.money -= deal.upkeep;
     } else {
       s.trade = s.trade.filter((x) => x !== deal);
@@ -2845,7 +3119,7 @@ function tickDay() {
 
   // oro får konsekvenser
   if (st.unrest.total > 40 && s.clock.day % 12 === 0) {
-    s.res.money = Math.max(0, s.res.money - 120);
+    s.res.money -= 120;
     toast(`STREJKER! ORON KOSTAR ${money(120)}`, 'red', 5000);
   }
   // val (om landet har rimligt fria val)
@@ -3006,6 +3280,8 @@ function eventCtx() {
   const s = state.solo;
   const st = {};
   for (const [k, v] of Object.entries(s.stats || {})) st[k] = v.total;
+  const ind = myIndicators() || {};
+  const rt = hasIndicatorData() && s.nation ? bankRating() : null;
   return {
     st, day: s.clock?.day || 0,
     money: s.res?.money || 0, pp: s.res?.pp || 0, rp: s.res?.rp || 0, man: s.res?.man || 0,
@@ -3021,10 +3297,23 @@ function eventCtx() {
     res: (branch) => s.nation?.research?.[branch] || 0,
     mod: (id) => !!s.mods?.[id],
     // V5.6: rikets verkliga statistik (statistics.js) — tom innan datat laddats
-    ind: myIndicators() || {},
+    ind,
     // V5.8: står du i ett kallt krig, och hur många revolutioner har skett i år?
     coldWar: coldWarsOf(s.coldWars, s.home).length > 0,
     worldRevolutions: recentRevolutions(s, s.clock?.day || 0),
+    // V5.16 VERKLIGHETEN: missnöje, lagändringar, underskott, bank, invandring, demokrati
+    griev: grievTotal(s.griev),
+    grievOf: (k) => s.griev?.[k] || 0,
+    cut: (...cats) => recentChange(cats, -1),
+    raised: (...cats) => recentChange(cats, 1),
+    changed: (...cats) => recentChange(cats, 0),
+    deficit: (s.res?.money || 0) < 0,
+    spend: spendable(),
+    debt: hasIndicatorData() && s.bank ? debtPct() : (ind.debt ?? 0),
+    rating: rt ? RATINGS[rt.idx].id : 'BBB', ratingIdx: rt ? rt.idx : 3,
+    migRate: ind.pop ? (ind.netmig || 0) / ind.pop * 100 : 0,
+    demo: ind.demo ?? 5,
+    trend: (id) => trendOf(id, ind),
   };
 }
 
@@ -3162,6 +3451,13 @@ function eventVars() {
 // aldrig blir exakt likadan två gånger. Originalet i EVENTS rörs inte.
 function eventInstance(ev, vars = null) {
   const v = { ...eventVars(), ...(vars || {}) };
+  // V5.16: händelsens slag av missnöje och {lag} = lagen som senast ändrats av det
+  // slaget. En kedjehändelse ärver båda från händelsen som startade kedjan.
+  v.kind = ev.kind || v.kind || null;
+  if (!v.lagcat) {
+    const e = lastLawChange(v.kind);
+    if (e) { v.lagcat = e.cat; v.lag = LAW_SV[e.cat]; } else v.lag = 'den nya lagen';
+  }
   const f = Math.max(1, Math.sqrt(moneyPerDay() / 80)) * (0.8 + Math.random() * 0.45);
   const jit = () => 0.8 + Math.random() * 0.45;
   const scale = (o) => {
@@ -3172,11 +3468,11 @@ function eventInstance(ev, vars = null) {
     return out;
   };
   const fill = (t) => fillText(t, v);
-  const outcome = (o) => o && { ...o, text: fill(o.text), res: scale(o.res) };
+  const outcome = (o) => o && { ...o, text: fill(o.text), res: scale(o.res), vars: v, kind: v.kind };
   return {
     ...ev, title: fill(ev.title), text: fill(ev.text),
     choices: ev.choices.map((ch) => ({
-      ...ch, text: fill(ch.text), tip: fill(ch.tip), cost: scale(ch.cost), res: scale(ch.res), vars: v,
+      ...ch, text: fill(ch.text), tip: fill(ch.tip), cost: scale(ch.cost), res: scale(ch.res), vars: v, kind: v.kind,
       risk: ch.risk && { chance: ch.risk.chance, win: outcome(ch.risk.win), lose: outcome(ch.risk.lose) },
     })),
   };
@@ -3204,6 +3500,19 @@ function effectHtml(ch) {
   if (ch.unmod) bits.push(`<span class="ep">\u{2713} ${MODIFIERS[ch.unmod]?.name} FÖRSVINNER</span>`);
   if (ch.rel) bits.push(`<span class="${ch.rel > 0 ? 'ep' : 'en'}">${ch.rel > 0 ? '+' : ''}${ch.rel} RELATION MED VÄRLDEN</span>`);
   if (ch.law) bits.push(`<span class="ec">\u{1F4DC} LAGEN ÄNDRAS</span>`);
+  // V5.16: lagen tillbaka, missnöjet och chocker i statistiken
+  if (ch.undo) {
+    const cat = ch.undo === true ? ch.vars?.lagcat : ch.undo;
+    if (cat && LAW_SV[cat]) bits.push(`<span class="ec">\u{21A9}\u{FE0F} ${LAW_SV[cat].toUpperCase()} ÅTERSTÄLLS</span>`);
+  }
+  if (ch.griev) bits.push(`<span class="${ch.griev < 0 ? 'ep' : 'en'}">${ch.griev > 0 ? '+' : ''}${ch.griev} MISSNÖJE${ch.kind && GRIEV_KINDS[ch.kind] ? ' (' + GRIEV_KINDS[ch.kind].name + ')' : ''}</span>`);
+  for (const [k, v] of Object.entries(ch.ind || {})) {
+    const d = IND[k === 'demo' ? 'demo' : k];
+    if (!d) continue;
+    const good = d.better === 'high' ? v > 0 : d.better === 'low' ? v < 0 : null;
+    const unit = { pp: ' %-ENH.', '%': ' %', pts: '', yrs: ' ÅR' }[SHOCKS[k]?.unit] ?? '';
+    bits.push(`<span class="${good == null ? 'ec' : good ? 'ep' : 'en'}">\u{1F4CA} ${d.name.toUpperCase()} ${v > 0 ? '+' : ''}${fmtNum(v)}${unit}</span>`);
+  }
   // V5.15: chansval (egen rad) och följder
   if (ch.next) bits.push('<span class="enext">\u{23F3} DET HÄR KAN FÅ FÖLJDER…</span>');
   let risk = '';
@@ -3268,7 +3577,7 @@ function openEventDialog(ev) {
 function applyChoice(ch) {
   const s = state.solo;
   const cost = ch.cost || {};
-  s.res.money = Math.max(0, s.res.money - (cost.money || 0));
+  s.res.money -= cost.money || 0;   // V5.16: får gå under noll — banken lånar ut
   s.res.pp = Math.max(0, s.res.pp - (cost.pp || 0));
   s.res.rp = Math.max(0, s.res.rp - (cost.rp || 0));
   s.res.man = Math.max(0, s.res.man - (cost.man || 0));
@@ -3291,9 +3600,21 @@ function applyChoice(ch) {
     // V5.6: en händelse får inte ge en lag som din ideologi förbjuder
     // (t.ex. militärjunta i en demokrati) — då står lagen kvar som den var
     const locked = lawLockedBy(s.nation, cat, opt);
-    if (LAWS[cat]?.options.some((o) => o.id === opt) && !locked) s.nation.laws[cat] = opt;
-    else if (locked) toast(`\u{1F512} ${LAWS[cat].name.toUpperCase()}: ${locked.toUpperCase()} — LAGEN STÅR KVAR`, '', 5000);
+    if (LAWS[cat]?.options.some((o) => o.id === opt) && !locked) {
+      const was = s.nation.laws[cat];
+      s.nation.laws[cat] = opt;
+      noteLawChange(cat, was, opt);   // V5.16: folket reagerar på lagen, vem som än ändrade den
+    } else if (locked) toast(`\u{1F512} ${LAWS[cat].name.toUpperCase()}: ${locked.toUpperCase()} — LAGEN STÅR KVAR`, '', 5000);
   }
+  // V5.16: lagen tillbaka, missnöjet och chocker i statistiken
+  if (ch.undo) undoLaw(ch.undo === true ? ch.vars?.lagcat : ch.undo);
+  if (ch.griev) {
+    const g = s.griev || {}, tot = grievTotal(g);
+    if (ch.kind) addGriev(ch.kind, ch.griev);
+    else if (ch.griev < 0 && tot > 0) for (const k of Object.keys(g)) addGriev(k, ch.griev * g[k] / tot);
+    else addGriev(lastLawChange()?.kind || 'ekonomi', ch.griev);
+  }
+  for (const [k, v] of Object.entries(ch.ind || {})) applyShock(k, v);
   if (ch.rel) for (const cid of Object.keys(s.rel || {})) relChange(cid, ch.rel);
   // V5.15: följdhändelse om 10–45 dagar (kanske — next kan innehålla null)
   const nx = rollNext(ch.next);
@@ -3332,7 +3653,7 @@ function queueDev(cid, kind) {
   const already = (s.devQueue || []).filter((q) => q.cid === cid && q.kind === kind).length;
   const cost = stepCost(lvl + already * DEV_STEP);
   if ((s.devQueue || []).length >= 4) { warn('MAX 4 BYGGPROJEKT I KÖN'); return; }
-  if (s.res.money < cost.money) { warn(`KRÄVER ${money(cost.money)} — DU HAR ${money(s.res.money)}`); return; }
+  if (!canAfford(cost.money)) { warn(`KRÄVER ${money(cost.money)} — DU HAR ${money(s.res.money)}`); return; }
   if (s.res.rp < cost.rp) { warn(`KRÄVER ${cost.rp} \u{1F52C} — DU HAR ${s.res.rp}`); return; }
   s.res.money -= cost.money;
   s.res.rp -= cost.rp;
@@ -4274,7 +4595,7 @@ function modSummary(mods, max = 4) {
 // V5.8: 224 mått — en sökruta och hopfällbara grupper gör fliken överblickbar.
 // Ekonomi och brott är utfällda från start; en sökning visar träffar i alla grupper.
 let statQuery = '';
-const statShut = new Set(IND_GROUPS.map((g) => g.id).filter((id) => id !== 'eko' && id !== 'brt' && id !== 'dem' && id !== 'rel'));
+const statShut = new Set(IND_GROUPS.map((g) => g.id).filter((id) => !['eko', 'fin', 'dmk', 'brt', 'dem', 'rel'].includes(id)));   // V5.16: demokratin och statsfinanserna öppna
 const PYRAMID_GROUP = IND_GROUPS.some((x) => x.id === 'dem') ? 'dem' : 'bef';
 
 // V5.10: befolkningspyramiden — män till vänster, kvinnor till höger, äldst överst.
@@ -4341,7 +4662,7 @@ function renderStatsTab(body) {
   }
   const intro = document.createElement('div');
   intro.style.cssText = 'font-size:6px;color:var(--holo-dim);line-height:2;margin-bottom:8px';
-  intro.textContent = `VERKLIGA VÄRDEN FÖR DITT RIKE. LAGAR, IDEOLOGI OCH FORSKNING FLYTTAR DEM — INTE PÅ EN GÅNG UTAN DAG FÖR DAG, OCH PILEN VISAR VART VÄRDET ÄR PÅ VÄG. # = DIN PLATS AV ${rows.length} RIKEN. ~ = UPPSKATTAT.`;
+  intro.textContent = `VERKLIGA VÄRDEN FÖR DITT RIKE. LAGAR, IDEOLOGI OCH FORSKNING FLYTTAR DEM — I VERKLIG TAKT: PRISER OCH FÖRTROENDE PÅ MÅNADER, ARBETSLÖSHET OCH BROTT PÅ ETT PAR ÅR, UTBILDNING, LIVSLÄNGD OCH BEFOLKNING PÅ ÅRTIONDEN. PILEN VISAR VART VÄRDET ÄR PÅ VÄG. # = DIN PLATS AV ${rows.length} RIKEN. ~ = UPPSKATTAT. (1 SPELÅR = 120 DAGAR)`;
   body.appendChild(intro);
   const bar = document.createElement('div');
   bar.className = 'statbar';
@@ -4440,6 +4761,7 @@ function renderNationTab() {
   if (natTab === "block") return renderBlocTab(body);
   const stats = state.solo.stats;
   body.innerHTML = '';
+  body.appendChild(realityBox());   // V5.16: demokratin, missnöjet och statskassan överst
 
   // ARMÉ-sektionen: bygg enheter med pengar + manpower + tillgångskrav
   const s = state.solo;
@@ -4473,7 +4795,7 @@ function renderNationTab() {
       : unitBuildingBlocked(s.home, type)
       || resReq
       || (missing.length ? 'SAKNAR ' + missing.map((r) => RESOURCES[r].name.toUpperCase()).join(', ')
-      : s.res.money < fCost ? 'FÖR LITE PENGAR'
+      : !canAfford(fCost) ? poorWhy(fCost)
       : s.res.man < b.man ? 'FÖR LITE MANPOWER' : null);
     if (blocked) { btn.disabled = true; btn.title = blocked; }
     btn.addEventListener('click', () => {
@@ -4566,6 +4888,7 @@ function renderNationTab() {
     body.appendChild(fDiv);
   }
 
+  const goalStats = policyGoalStats();   // V5.16: vart värdena är på väg när lagarna slagit igenom
   for (const g of STAT_GROUPS) {
     const div = document.createElement('div');
     div.className = 'natgroup';
@@ -4577,6 +4900,7 @@ function renderNationTab() {
       if (def.group !== g.id) continue;
       // V5.15: produktionsvärden visas utan tak (raw) — stapeln är full vid 100
       const v = UNCAPPED.has(id) ? (stats[id].raw ?? stats[id].total) : stats[id].total;
+      const gv = UNCAPPED.has(id) ? (goalStats[id]?.raw ?? goalStats[id]?.total) : goalStats[id]?.total;
       const good = statGoodness(id, v);
       const row = document.createElement('div');
       row.className = 'statrow';
@@ -4597,6 +4921,12 @@ function renderNationTab() {
       const val = document.createElement('div');
       val.className = 'sval ' + (v === 0 ? 'zero' : good > 0 ? 'pos' : 'neg');
       val.textContent = v > 0 ? '+' + v : String(v);
+      if (Number.isFinite(gv) && Math.round(gv) !== v) {   // V5.16: lagen har inte slagit igenom än
+        const to = document.createElement('small');
+        to.className = 'sto ' + (statGoodness(id, gv - v) > 0 ? 'pos' : 'neg');
+        to.textContent = `\u{2192}${gv > 0 ? '+' : ''}${Math.round(gv)}`;
+        val.appendChild(to);
+      }
       row.append(name, bar, val);
       div.appendChild(row);
     }
@@ -4874,7 +5204,8 @@ function bankRating() {
   const s = state.solo;
   const st = s.stats || {};
   return ratingOf({
-    pct: 100 * (s.bank?.debt || 0) / Math.max(1, bankY()),
+    // V5.16: underskottet i statskassan är också skuld
+    pct: 100 * ((s.bank?.debt || 0) + Math.max(0, -(s.res?.money || 0))) / Math.max(1, bankY()),
     tier: WEALTH_TIER[s.home] || 1,
     stability: st.stability?.total, unrest: st.unrest?.total, corruption: st.corruption?.total,
     missed: s.bank?.missed || 0,
@@ -4910,6 +5241,15 @@ function tickBank() {
   if (b.crisis > 0) b.crisis--;
   if (s.clock.day % BANK_MONTH !== 0) return;
   const Y = bankY();
+  // V5.16: underskottet i statskassan får inte växa förbi bankens kredit — gör det
+  // det räknas månaden som en missad betalning (tre i rad = statsbankrutt). Har
+  // staten en skuld att betala av räknas missen i stället vid avbetalningen nedan.
+  if (s.res.money < 0 && s.res.money < -creditLine() && !(b.debt >= 1)) {
+    b.missed = (b.missed || 0) + 1;
+    toast(`\u{1F6A8} UNDERSKOTTET ÄR STÖRRE ÄN BANKENS KREDIT — ${b.missed}/${MISS_LIMIT} MISSADE BETALNINGAR`, 'red', 9000);
+    logEvent(`\u{1F6A8} UNDERSKOTT ÖVER KREDITEN: ${money(-s.res.money)} (KREDIT ${money(creditLine())})`, { mine: true });
+    if (b.missed >= MISS_LIMIT) { stateBankrupt(); return; }
+  }
   // din politik: lagarnas skuldeffekt blir ett underskott (eller överskott) som
   // sprids ut över tio spelår — generösa pensioner måste lånas till varje månad
   const flow = (s.debtPolicy || 0) / 40 / 100 * Y;
@@ -4930,7 +5270,7 @@ function tickBank() {
   }
   const { pay, interest } = bankBill();
   const before = debtPct();
-  if (s.res.money >= pay) {
+  if (canAfford(pay)) {   // V5.16: betalas på kredit om kassan inte räcker
     s.res.money -= pay;
     b.debt = Math.max(0, b.debt + interest - pay);
     b.missed = 0;
@@ -4938,7 +5278,7 @@ function tickBank() {
     toast(`\u{1F3E6} AVBETALNING ${money(pay)} — STATSSKULDEN ${fmtInd('debt', debtPct())}`, '', 4000);
   } else {
     // pengarna räcker inte: allt som finns går till banken, resten läggs på skulden med straffavgift
-    const paid = Math.max(0, Math.floor(s.res.money));
+    const paid = Math.max(0, Math.floor(spendable()));
     s.res.money -= paid;
     b.debt = b.debt + interest - paid + (pay - paid) * 0.1;
     b.missed = (b.missed || 0) + 1;
@@ -4962,7 +5302,9 @@ function tickBank() {
 function stateBankrupt() {
   const s = state.solo;
   const b = s.bank;
-  b.debt = Math.round(b.debt * 0.5);   // långivarna får nöja sig med hälften
+  // V5.16: underskottet i statskassan räknas in — långivarna får nöja sig med hälften av allt
+  if (s.res.money < 0) { b.debt += -s.res.money; s.res.money = 0; }
+  b.debt = Math.round(b.debt * 0.5);
   b.missed = 0;
   b.defaultUntil = s.clock.day + DEFAULT_DAYS;
   b.crisis = CRISIS_DAYS;
@@ -5041,6 +5383,16 @@ function renderBankTab(body) {
       + (b.missed ? `<br><span style="color:var(--red)">\u{1F6A8} ${b.missed}/${MISS_LIMIT} MISSADE BETALNINGAR I RAD — VID ${MISS_LIMIT} GÅR STATEN I KONKURS</span>` : '')
       + (b.crisis > 0 ? `<br><span style="color:var(--red)">\u{1F4A5} BANKRUTTKRIS: ${b.crisis} DAGAR KVAR</span>` : '')
       + '</div>';
+  // V5.16: statskassans kredit — staten får gå med underskott tills problemet är löst
+  const cl = creditLine();
+  const od = Math.max(0, -s.res.money);
+  g.innerHTML += `<div class="ftext">\u{1F4B3} STATSKASSANS KREDIT: ${money(cl)} (HÖGST ETT HALVÅRS INKOMSTER, INOM BANKENS LÅNETAK). `
+    + (od > 0
+      ? `<span style="color:var(--red)">UNDERSKOTT ${money(od)} — RÄNTA ${fmtNum(rt.rate + 2)} % PER ÅR, RÄKNAS IN I KREDITBETYGET.`
+        + (od > cl ? ' KREDITEN ÄR SLUT: VARJE MÅNAD RÄKNAS SOM EN MISSAD BETALNING.' : '') + '</span>'
+      : 'STATSKASSAN ÄR ÖVER NOLL.')
+    + `<br>${incomeOk() ? `BANKEN LÅNAR UT SÅ LÄNGE INCOME ÄR ${DEFICIT_FLOOR} ELLER HÖGRE (NU ${s.stats.income.total}).`
+      : `<span style="color:var(--red)">INCOME ÄR ${s.stats.income.total} — UNDER ${DEFICIT_FLOOR} LÅNAR BANKEN INTE UT NÅGOT MER.</span>`}</div>`;
   // betyget och vad som påverkar det
   const why = [`VÄGD SKULD ${fmtNum(R.eff ?? pct)} % (SKULD DELAT MED VÄLSTÅND) → ${RATINGS[R.base].id}`,
     ...R.notes.map(([t, d]) => `${t} ${d > 0 ? '+' : ''}${d} STEG`)];
@@ -5130,9 +5482,20 @@ function renderLawsTab(body) {
     ok.textContent = '\u{2705} GODKÄNN LAGEN';
     ok.addEventListener('click', () => {
       if (s.res.pp < pend.cost) { warn(`KRÄVER ${pend.cost} \u{2696}\u{FE0F} — DU HAR ${s.res.pp}`); return; }
+      // V5.16: lever staten på kredit får Income inte pressas under -70
+      if (s.res.money < 0) {
+        const test = { ...s.nation, laws: { ...s.nation.laws, [pend.cat]: pend.oid } };
+        const inc = computeStats(test, { ...s.nationSources, laws: lawMods(test.laws), ideology: ideologyMods(test) }).income.total;
+        if (inc < DEFICIT_FLOOR && inc < (policyGoalStats().income?.total ?? 0)) {
+          warn(`UNDERSKOTT I STATSKASSAN: INCOME FÅR INTE GÅ UNDER ${DEFICIT_FLOOR} (BLIR ${inc}) — FÅ UPP KASSAN ÖVER NOLL FÖRST`);
+          return;
+        }
+      }
+      const was = s.nation.laws[pend.cat];
       s.res.pp -= pend.cost;
       s.nation.laws[pend.cat] = pend.oid;
       state.pendingLaw = null;
+      noteLawChange(pend.cat, was, pend.oid);   // V5.16: folket reagerar
       if (pend.cat === 'religion') {   // V5.12: statsreligionen blir den landet är mest anknutet till
         const f = faithState();
         if (faithKind(pend.oid) === 'state' && !f.rel) f.rel = majorityFaith(realmFaith());
@@ -5142,7 +5505,7 @@ function renderLawsTab(body) {
       recomputeNation();
       renderResbar();
       renderNationTab();
-      toast(`${pDef.name.toUpperCase()}: ${pOpt.name.toUpperCase()} (-${pend.cost} \u{2696}\u{FE0F})`, 'amber');
+      toast(`${pDef.name.toUpperCase()}: ${pOpt.name.toUpperCase()} (-${pend.cost} \u{2696}\u{FE0F}) — SLÅR IGENOM UNDER ~1 MÅNAD, I STATISTIKEN UNDER ÅR`, 'amber', 6000);
     });
     const no = document.createElement('button');
     no.className = 'lcbtn no';
@@ -5335,7 +5698,9 @@ function renderIdeologyTab(body) {
       s.res.pp -= IDEOLOGY_COST;
       s.nation.ideology = natIdeoPick;
       s.nation.doctrine = pick.doctrines ? Object.keys(pick.doctrines)[0] : null;
+      const lawsBefore = { ...s.nation.laws };
       const forced = enforceRequirements(s.nation);
+      for (const c of forced) noteLawChange(c, lawsBefore[c], s.nation.laws[c]);   // V5.16: folket märker det
       s.extra.unrest = (s.extra.unrest || 0) + 30;
       natIdeoPick = null;
       recomputeNation(); renderResbar(); renderNationTab();
@@ -6299,7 +6664,7 @@ $('#chCancel').addEventListener('click', () => {
 $('#nukebtn').addEventListener('click', () => {
   const s = state.solo;
   if (!selectedCountry || !s?.nation) return;
-  if (s.res.money < 500) { warn(`KRÄVER ${money(500)}`); return; }
+  if (!canAfford(500)) { warn(`KRÄVER ${money(500)}`); return; }
   state.pendingTarget = selectedCountry;
   s.prevAt = s.army?.at;
   s.res.money -= 500;
@@ -7498,6 +7863,8 @@ function saveGame() {
           coldWars: s.coldWars, revolutions: s.revolutions, rest: s.rest, color: s.color,   // V5.8
           faith: s.faith, ident: s.ident, bank: s.bank,   // V5.12–5.13
           eventQueue: s.eventQueue || [],   // V5.15: följdhändelser som väntar
+          // V5.16: lagar som slår igenom, missnöjet, lagändringarna och statistikens historik
+          lawFx: s.lawFx, ideoFx: s.ideoFx, griev: s.griev || {}, lawLog: s.lawLog || [], indHist: s.indHist || [],
         },
         world: state.world || {},
         history: (state.history || []).slice(0, 120),
@@ -7550,6 +7917,7 @@ function saveSession() {
       partial: s.partial, bloc: s.bloc, aiBlocs: s.aiBlocs, flag: s.flag, indLag: s.indLag,
       faith: s.faith, ident: s.ident, bank: s.bank,   // V5.12–5.13
       eventQueue: s.eventQueue || [],   // V5.15
+      lawFx: s.lawFx, ideoFx: s.ideoFx, griev: s.griev || {}, lawLog: s.lawLog || [], indHist: s.indHist || [],   // V5.16
     }));
   } catch (e) { /* privat läge / fullt lager — strunt samma */ }
 }
@@ -7592,6 +7960,8 @@ function restoreSession(snap, home) {
   s.indLag = snap.indLag || null;   // V5.6
   s.faith = snap.faith || null;   // V5.12
   s.eventQueue = snap.eventQueue || [];   // V5.15
+  s.lawFx = snap.lawFx || null; s.ideoFx = snap.ideoFx || null;   // V5.16
+  s.griev = snap.griev || {}; s.lawLog = snap.lawLog || []; s.indHist = snap.indHist || [];
   s.ident = snap.ident || null;   // V5.12
   s.bank = snap.bank || null;   // V5.13
   s.stateFlags = snap.stateFlags || {};
@@ -7919,4 +8289,5 @@ window.__imperium = {
   renderNationTab, refreshInfraLayer, queueDev, aiWorldTick, tickDay,
   MODIFIERS, EVENTS, RESEARCH, LAWS, IDEOLOGIES, devOf, raiseDev,
   openEventDialog, eventInstance, battleBoost, researchIncome, activeResearch,   // V5.15
+  myIndicators, noteLawChange, applyShock, creditLine, spendable, policyGoalStats, eventCtx, applyChoice,   // V5.16
 };
