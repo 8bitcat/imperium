@@ -66,6 +66,15 @@ import { money, people } from './real.js';
 //   griev tal                missnöjet (händelsens slag) ökar/minskar
 //   ind { mått: tal }        en chock i statistiken (SHOCKS i realism.js) som sedan
 //                            glider tillbaka i måttets egen takt
+//
+// V5.17 YTTERLIGHETER — ✨ utopier (låter bra, spricker med tiden) och 💀 brutala lagar:
+//   c.utopias, c.utopiaCrack   antal aktiva utopier · hur långt den mest spruckna har
+//                              spruckit (0..1; 0,2 = det märks, 0,6 = på allvar, 1 = helt)
+//   c.utopiaAge                dagar sedan den äldsta utopin antogs
+//   c.brutals, c.brutalAge     antal brutala lagar · dagar sedan den senaste antogs
+//   c.shame                    omvärldens samlade fördömande (summan av lagarnas shame)
+// Platshållare: {utopi}/{utopilag} = utopins namn / lagen på svenska (mest sprucken först),
+// {brutal}/{brutallag} = den senaste brutala lagen. undo: 'utopi' | 'brutal' river den lagen.
 
 import { EVENTS as EKONOMI } from './events/ekonomi.js';
 import { EVENTS as HALSA } from './events/halsa.js';
@@ -97,6 +106,7 @@ import { EVENTS as PROTESTER } from './events/protester.js';
 import { EVENTS as MIGRATION } from './events/migration.js';
 import { EVENTS as STATSFINANS } from './events/statsfinans.js';
 import { EVENTS as DEMOKRATI } from './events/demokrati.js';
+import { EVENTS as YTTERLIGHETER } from './events/ytterligheter.js';   // V5.17
 import { EVENTS as SAMHALLSLIV } from './events/samhallsliv.js';
 import { EVENTS as KONSEKVENSER } from './events/konsekvenser.js';
 
@@ -1109,6 +1119,7 @@ export const EVENTS = [
   ...NYA_IDEOLOGIER, ...MILITAR, ...VETENSKAP, ...SAMHALLE, ...OMVARLD, ...KALLA_KRIGET, ...NYA_LAGAR_58,
   ...VARDAG, ...KATASTROF, ...AFFARER, ...DIPLOMATI, ...INTRIGER, ...FRAMTID, ...KURIOSA, ...KEDJOR, ...RIKET,
   ...REAKTIONER, ...PROTESTER, ...MIGRATION, ...STATSFINANS, ...DEMOKRATI, ...SAMHALLSLIV, ...KONSEKVENSER,
+  ...YTTERLIGHETER,
 ];
 
 export const EVENT_BY_ID = Object.fromEntries(EVENTS.map((e) => [e.id, e]));
@@ -1157,7 +1168,8 @@ export function nextEventGap() {
 // {land} = ett främmande land, {stad} = en stad i ditt rike, {huvudstad}.
 // I titlar (VERSALER) skrivs de med versaler: {GRANNE}, {STAD} …
 // V5.16: {lag} = lagen som senast ändrats (händelsens slag), t.ex. 'pensionerna'.
-export const PLACEHOLDERS = ['rike', 'granne', 'land', 'stad', 'huvudstad', 'lag'];
+// V5.17: {utopi} {utopilag} {brutal} {brutallag} — se ovan.
+export const PLACEHOLDERS = ['rike', 'granne', 'land', 'stad', 'huvudstad', 'lag', 'utopi', 'utopilag', 'brutal', 'brutallag'];
 export function fillText(str, vars) {
   if (typeof str !== 'string' || !str.includes('{')) return str;
   return str.replace(/\{(\w+)\}/g, (m, k) => {

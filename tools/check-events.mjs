@@ -51,7 +51,7 @@ const EVENT_KEYS = new Set(['id', 'icon', 'weight', 'cooldown', 'title', 'text',
 // V5.15: utfallen i ett chansval (risk.win / risk.lose)
 const OUTCOME_KEYS = new Set(['text', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'undo', 'griev', 'ind']);   // V5.16: + undo/griev/ind
 const EFFECT_KEYS = ['res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'undo', 'griev', 'ind'];
-const PLACEHOLDERS = new Set(['rike', 'granne', 'land', 'stad', 'huvudstad', 'lag']);
+const PLACEHOLDERS = new Set(['rike', 'granne', 'land', 'stad', 'huvudstad', 'lag', 'utopi', 'utopilag', 'brutal', 'brutallag']);   // V5.17: + utopi/brutal
 const nextRefs = [];   // [var, id] — kontrolleras när alla filer är lästa
 const CAPS = { money: 2500, pp: 60, rp: 150, man: 25 };
 
@@ -117,6 +117,12 @@ function sampleCtx(emptyInd = false) {
     migRate: Math.random() < 0.5 ? rnd(-0.5, 0.8) : rnd(0, 4) * Math.random(),
     demo: Number.isFinite(indRaw.demo) ? indRaw.demo : rnd(0.5, 9.8),
     trend: (id) => { if (!IND_IDS.has(id)) unknown.add("c.trend('" + id + "')"); return (Math.random() - 0.5) * 2 * Math.abs(indRaw[id] || 1) * 0.08; },
+    // V5.17 YTTERLIGHETER
+    ...(() => {
+      const u = Math.random() < 0.3 ? Math.ceil(rnd(0, 3)) : 0, b = Math.random() < 0.3 ? Math.ceil(rnd(0, 3)) : 0;
+      return { utopias: u, utopiaCrack: u ? Math.min(1, Math.random() * 1.2) : 0, utopiaAge: u ? Math.floor(rnd(0, 500)) : 0,
+        brutals: b, brutalAge: b ? Math.floor(rnd(0, 400)) : 0, shame: b ? Math.round(rnd(4, 20) * b) : 0 };
+    })(),
   };
 }
 const SAMPLES = Array.from({ length: 400 }, () => sampleCtx());
@@ -138,7 +144,7 @@ function effects(c, P, E) {
     if (!LAWS[cat]?.options.some((o) => o.id === opt)) E(`${P}: law ['${cat}', '${opt}'] finns inte`);
   }
   // V5.16
-  if (c.undo != null && c.undo !== true && !LAWS[c.undo]) E(P + ': undo = true eller en lagkategori');
+  if (c.undo != null && c.undo !== true && c.undo !== 'utopi' && c.undo !== 'brutal' && !LAWS[c.undo]) E(P + ": undo = true, 'utopi', 'brutal' eller en lagkategori");
   if (c.griev != null && (!Number.isInteger(c.griev) || !c.griev || Math.abs(c.griev) > 40)) E(P + ': griev heltal ±40 (inte 0)');
   if (c.ind != null) {
     if (typeof c.ind !== 'object' || !Object.keys(c.ind).length) E(P + ': ind = { mått: tal }');
@@ -173,6 +179,13 @@ function checkEvent(ev, where) {
   const undoTrue = (o) => o?.undo === true;
   const usesLag = /\{lag\}/i.test(JSON.stringify(ev)) || (ev.choices || []).some((c) => undoTrue(c) || undoTrue(c.risk?.win) || undoTrue(c.risk?.lose));
   if (usesLag && !ev.chain && !/c\.(cut|raised|changed)\(/.test(String(ev.when))) E('{lag} / undo: true kräver att when frågar c.cut(…), c.raised(…) eller c.changed(…)');
+  // V5.17: {utopi}/undo: 'utopi' kräver en utopi, {brutal}/undo: 'brutal' en brutal lag
+  for (const [kind, field] of [['utopi', 'utopias'], ['brutal', 'brutals']]) {
+    const und = (o) => o?.undo === kind;
+    const uses = new RegExp('\\{' + kind + '(lag)?\\}', 'i').test(JSON.stringify(ev))
+      || (ev.choices || []).some((c) => und(c) || und(c.risk?.win) || und(c.risk?.lose));
+    if (uses && !ev.chain && !new RegExp('c\\.' + field + '\\b').test(String(ev.when))) E(`{${kind}} / undo: '${kind}' kräver att when frågar c.${field}`);
+  }
   if (ev.chain != null && ev.chain !== true) E('chain ska vara true eller utelämnas');
   // villkoret (en kedjehändelse lottas aldrig — den behöver inget villkor)
   if (ev.chain) {

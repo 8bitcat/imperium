@@ -17,6 +17,7 @@
 //    Income är DEFICIT_FLOOR eller högre.
 //
 // Ren logik och data — main.js håller tillståndet och kopplar in det.
+import { NEW_511 } from './laws-511.js';
 
 export const YEAR_DAYS = 120;
 export const DEFICIT_FLOOR = -70;     // Income under detta: inga nya utgifter på kredit
@@ -91,6 +92,11 @@ export const LAW_SV = {
   road_safety: 'trafiksäkerheten', urban_planning: 'stadsplaneringen', marriage: 'äktenskapslagarna',
   sports: 'idrottspolitiken', defense_budget: 'försvarsbudgeten',
 };
+// V5.17: nya lagar bär sitt missnöjesslag (kind) och sitt svenska namn (sv) själva
+for (const [cat, L] of Object.entries(NEW_511)) {
+  if (L.kind && !LAW_KIND[cat]) LAW_KIND[cat] = L.kind;
+  if (L.sv && !LAW_SV[cat]) LAW_SV[cat] = L.sv;
+}
 
 // Hur mycket folket gillar ett lagalternativ (ur dess nationsvärden). Högre = populärare.
 export function lawPopularity(mods) {
@@ -218,4 +224,32 @@ export function regimeOf(score) {
   if (score > 6) return { id: 2, name: 'BRISTFÄLLIG DEMOKRATI', color: '#9fe34a' };
   if (score > 4) return { id: 1, name: 'HYBRIDREGIM', color: '#ffb02e' };
   return { id: 0, name: 'AUKTORITÄR REGIM', color: '#ff6b5e' };
+}
+
+// ---------- V5.17 YTTERLIGHETER: utopier och brutala lagar ----------
+// ✨ En utopi (option.utopia) lockar med sina mods, men verkligheten (option.sting)
+// kommer ikapp: från dag STING_START efter att lagen antogs växer stinget linjärt
+// till fullt efter STING_DAYS till, samtidigt som lockelsens positiva delar halveras.
+// 💀 Ett brutalt val (option.brutal) fungerar direkt men omvärlden fördömer det
+// (option.shame): relationerna glider nedåt så länge lagen gäller, mest hos fria länder.
+export const STING_START = 20;
+export const STING_DAYS = 220;
+export const HONEY_FADE = 0.5;
+export function stingFactor(age) {
+  return Math.max(0, Math.min(1, ((age || 0) - STING_START) / STING_DAYS));
+}
+// inverted = nationsvärden där högt är dåligt (oro, korruption, krigstid)
+export function utopiaFx(option, f, inverted) {
+  const out = {};
+  if (!(f > 0) || !option?.utopia) return out;
+  for (const [k, v] of Object.entries(option.mods || {})) {
+    const good = inverted.has(k) ? -v : v;
+    if (good > 0) out[k] = (out[k] || 0) - v * HONEY_FADE * f;
+  }
+  for (const [k, v] of Object.entries(option.sting || {})) out[k] = (out[k] || 0) + v * f;
+  return out;
+}
+// hur mycket ett land bryr sig om dina brutala lagar: fria länder mest, diktaturer knappt
+export function shameWeight(auth) {
+  return Math.max(0.2, Math.min(1.5, 1.6 - (auth ?? 40) / 55));
 }

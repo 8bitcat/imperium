@@ -33,15 +33,15 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | Fil | Innehåll |
 |---|---|
 | `stats.js` | 22 nationsvärden + `computeStats` (V5.16: källan `protest` = missnöjet). Nya stat-nycklar MÅSTE finnas här, annars noll effekt utan fel. V5.15: varje värde har `total` (−100…100, det statistiken och allt gammalt läser) och `raw` (inget tak uppåt); `UNCAPPED` = de som producerar och visas med raw |
-| `laws.js` · `ideologies.js` · `research.js` | lagar (85 kategorier, 802 alternativ) · 19 ideologier/doktriner + axlar + sidogrenar · 27 grenar × 9 namngivna nivåer + OÄNDLIGT många till (`tierOf`, `tierCost`, `tierDays`), förkunskaper mellan grenar (`NEEDS`), förbandens egenskaper (`unit`: hp/rng/mv/heal → `unitUpgrades`) |
+| `laws.js` · `ideologies.js` · `research.js` | lagar (93 kategorier, 1 052 alternativ — V5.17: ett ✨ och ett 💀 i varje) · 19 ideologier/doktriner + axlar + sidogrenar · 27 grenar × 9 namngivna nivåer + OÄNDLIGT många till (`tierOf`, `tierCost`, `tierDays`), förkunskaper mellan grenar (`NEEDS`), förbandens egenskaper (`unit`: hp/rng/mv/heal → `unitUpgrades`) |
 | `laws-extra.js` | V5.7: nya alternativ i befintliga lagar (`after`-position, `locks`, `effects`), splitsas in i LAWS vid laddning |
 | `laws-more.js` | V5.8: helt nya lagkategorier som bär sin egen `axis`/`dir`, `locks` och `effects` — läses av laws.js, ideologies.js och statistics.js |
-| `laws-511.js` + `laws511/part1–11.js` | V5.11 LAGARNAS MAKT: tre nya val i varje lag (`EXTRAS` → laws-extra.js), fyra nya lagar (`NEW` → laws-more.js) och en stark statistikuppsättning för VARJE alternativ (`FX` → statistics.js, läggs sist och vinner per mått) |
-| `events.js` · `modifiers.js` · `development.js` | 2 528 händelser med villkor (V5.15: +1 044 i nio nya teman; V5.16: +785 i sju teman som följer av vad spelaren gör — reaktioner, protester, migration, statsfinanser, demokrati, samhällsliv, konsekvenser) · 48 modifierare · stadsnivå/infrastruktur 0–100 |
+| `laws-511.js` + `laws511/part1–17.js` | V5.17: del 12–16 = ✨/💀-valen, del 17 = åtta nya lagar. V5.11 LAGARNAS MAKT: tre nya val i varje lag (`EXTRAS` → laws-extra.js), fyra nya lagar (`NEW` → laws-more.js) och en stark statistikuppsättning för VARJE alternativ (`FX` → statistics.js, läggs sist och vinner per mått) |
+| `events.js` · `modifiers.js` · `development.js` | 2 667 händelser med villkor (V5.17: +139 om utopier och brutala lagar; V5.15: +1 044 i nio nya teman; V5.16: +785 i sju teman som följer av vad spelaren gör — reaktioner, protester, migration, statsfinanser, demokrati, samhällsliv, konsekvenser) · 48 modifierare · stadsnivå/infrastruktur 0–100 |
 | `war.js` · `integration.js` · `stance.js` | casus belli/krav/historiska riken (32 st — BARA grundlandet `core` kan utropa sitt rike, och ALLA `lands` krävs helt annekterade: lydstater och delvis tagna länder räknas inte, se `empireOwnedIds` i main.js) · integration av erövrat land · ländernas hållning |
 | `geopolitics.js` | V5.8: VÄRLDSLÄGET — kalla krig (spänning 0–100, incidenter, kris → ibland varmt krig), val i demokratier, revolutioner/kupper som river upp lagarna. Ren logik; main.js kopplar in den via `geoApi(ctx)` i `aiWorldTick` |
 | `diplomacy.js` · `blocs.js` · `ministers.js` · `ranking.js` | relationer/sanktioner · block + fanor · kabinett · världsrankning |
-| `economy.js` · `resources.js` · `buildings.js` · `factions.js` · `leaders.js` | inkomst/arméstorlek · naturtillgångar · stadsbyggnader · 4 faktioner · 200+ ledare |
+| `economy.js` · `resources.js` · `buildings.js` · `factions.js` · `leaders.js` | inkomst/arméstorlek · naturtillgångar · stadsbyggnader (40 st, 15 platser per stad — se Byggboom) · 4 faktioner · 200+ ledare |
 | `battleA.js` · `units.js` | taktikstriden (Advance Wars-lik, används för ALLA krig) · enheter/sprites. `battleB.js` är oanvänd |
 | `globe.js` · `globe3d.js` | pixelglob (d3) · WebGL-planet. All ritning går via `_project`/`_front` så den funkar i båda |
 | `net.js` · `data.js` · `names.js` | PeerJS (värden äger världen) · kartdata · svenska landsnamn |
@@ -83,6 +83,23 @@ sedan går med som vanlig `player` (`state.hosting`). Kompisar går med på kode
 - **Statistiken:** 391 mått i 19 grupper, varav 75 nya: DEMOKRATI & STYRE, STATSFINANSER, MIGRATION & INTEGRATION, VARDAG & PLÅNBOK, plus hälsa, skola och el. Verkliga tabeller ligger i `T516`, modellerna i `model516`.
 - Nya fält i `state.solo`: lawFx, ideoFx, griev, lawLog, indHist (bilder var 30:e dag för `c.trend`).
 
+**Ytterligheter (V5.17, `realism.js` + `laws511/part12–17.js`):** varje lag har ett ✨ och ett 💀 val, och det finns åtta nya lagar.
+- **✨ Utopi** (`option.utopia`, `option.sting`): `mods` är lockelsen. Från dag `STING_START` (20) efter att lagen antogs växer stinget linjärt till fullt efter `STING_DAYS` (220) dagar till, och samtidigt halveras lockelsens positiva delar (`utopiaFx`). Det blir en egen källa `utopia` i `computeStats` (`utopiaMods`). Missnöjet växer och spelaren varnas i tre steg (`tickExtremes`).
+- **💀 Brutalt** (`option.brutal`, `option.shame`): omvärlden fördömer valet. När lagen antas sjunker relationerna (`noteLawChange`), och så länge den gäller drar `naturalRelTo` ner det naturliga läget med `shame × shameWeight(auth)` (fria länder mest). Det leder till sanktioner via `worldSanction`. Folket glömmer inte: missnöjet fylls på i `tickExtremes`.
+- **Partiets linje** (`preferredIndex`) och harmonins tolerans räknas bara bland de vanliga valen (`plainOptions`). Grannregeln i ideologies.js hoppar över ✨/💀-val. Ytterligheterna är alltid spelarens eget val.
+- `s.lawSince` = {lag: dag} och sätts av `noteLawChange`. `s.utopiaWarned` håller reda på varningsstegen. Båda sparas.
+- **Händelserna** (`events/ytterligheter.js`, prefix `yt_`): villkoren `c.utopias`, `c.utopiaCrack`, `c.utopiaAge`, `c.brutals`, `c.brutalAge` och `c.shame`; platshållarna `{utopi}`, `{utopilag}`, `{brutal}` och `{brutallag}`; valet `undo: 'utopi' | 'brutal'` (`undoExtreme`).
+
+**Byggboom (V5.17, `buildings.js`):**
+- Städerna har 15 platser (`CITY_SLOTS`), och stadspanelen visar ALLA städer (`cityPanelCities`). Spelaren bockar för städer och bygger i alla på en gång (`buildChooser` och `buildTargets`).
+- Stadsbyggnaderna byggs parallellt, förbanden ett i taget.
+- Nya fält:
+  - `stats` ger nationsvärden efter täckning, alltså andelen av rikets folk som bor i en stad med byggnaden (`buildingCover` → `coverageMods`, källan `buildings`).
+  - `drift` är driften i % av rikets dagsinkomst vid full täckning, och `driftFix` är % per byggnad.
+  - `perCountry` begränsar hur många som får byggas i ett land, och `needs` anger råvaror som krävs.
+- Avkastningen (`daily`) är full i landets första 14 städer per sort och avtar sedan (`yieldWeight`).
+- Infrastruktur och stadsnivå har ingen kö-gräns. Varje land och slag bygger sitt första steg parallellt (`queueDev(cid, kind, steg)`, `devPlan`).
+
 **Statsskulden (V5.13):** `state.solo.bank` = { debt (💰), plan (år), months kvar, missed, defaultUntil, crisis, log }. Rikets BNP i spelets pengar = `bankY()` (fyra spelår av grundinkomsten). Startskulden = rikets verkliga statsskuld i % av BNP. `tickBank` betalar var 30:e dag; räcker pengarna inte läggs resten på skulden och efter 3 missade månader blir det statsbankrutt (halva skulden struken, betyget D i ett år, kris). Lagarnas och nationsvärdenas skuldeffekt (`s.debtPolicy` från `tickIndLag`) blir ett månadsunderskott eller -överskott (/40 per månad). Statsskuld och Räntekostnader i STATISTIK skrivs över med bankens siffror (`applyBankToIndicators`), och förhandsrutan för lagar visar skuldeffekten som "STATEN LÅNAR X % AV BNP MER PER ÅR".
 
 Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
@@ -107,6 +124,11 @@ Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
   frågar `c.cut`/`c.raised`/`c.changed`. Villkoren har också `c.griev`, `c.grievOf`, `c.deficit`,
   `c.spend`, `c.debt`, `c.rating(Idx)`, `c.migRate`, `c.demo` och `c.trend(id)` (se events.js).
 - **Ny lagändring i koden:** anropa `noteLawChange(cat, från, till)`, annars märker folket inget.
+- **Nya ✨/💀-val (V5.17):**
+  - En utopi kräver `sting` med minst 4 nationsvärden, alla dåliga och minst 1,3 × lockelsen.
+  - Ett brutalt val kräver `shame` 4–25, vinster på minst 30 och kostnader på minst 45.
+  - `node tools/check-laws.mjs` ska ge 0 fel. Den kontrollerar också att inget partis linje hamnar på ett val partiet inte tillåter.
+  - Nya lagar bär `kind` (missnöjets slag) och `sv` (svenskt namn i bestämd form), och realism.js läser in dem.
 
 ## Fällor som redan kostat tid
 
@@ -134,6 +156,7 @@ Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
 node tools/smoke.mjs          # lokal kod, startar egen server på 8481
 node tools/smoke.mjs --live   # mot 8bitcat.github.io efter push
 node tools/check-events.mjs   # händelserna i events/ (--alla tar med de 87 ursprungliga)
+node tools/check-laws.mjs     # V5.17: lagarna — ✨/💀-valen, FX-måtten, partiernas krav
 ```
 
 Spelar ett soloparti (hemland → faktion → 120 dagar + AI → alla NATION-flikar →

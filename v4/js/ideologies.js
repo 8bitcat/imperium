@@ -383,9 +383,12 @@ for (const [cat, byOpt] of Object.entries(NEW_LAW_LOCKS)) {
   for (const [optId, ideos] of Object.entries(byOpt)) for (const id of ideos) lockFor(id, cat, optId);
 }
 for (const [cat, list] of Object.entries(LAW_EXTRAS)) {
-  const order = (LAWS[cat]?.options || []).map((o) => o.id);
+  const all = LAWS[cat]?.options || [];
   for (const { option, locks } of list) {
     for (const id of locks || []) lockFor(id, cat, option.id);
+    // V5.17: ✨/💀-val är aldrig grannar åt andra val — annars tappar ett vanligt val
+    // som ärvt ett krav det kravet när en ytterlighet läggs bredvid det
+    const order = all.filter((o) => o.id === option.id || (!o.utopia && !o.brutal)).map((o) => o.id);
     const i = order.indexOf(option.id);
     if (i < 0) continue;
     const prev = order[i - 1], next = order[i + 1];
@@ -415,10 +418,15 @@ export function axesOf(nation) {
 }
 
 // Vilket alternativindex vill ideologin ha i den här lagkategorin?
+// V5.17: linjen räknas bara bland de vanliga valen — ✨ utopier och 💀 brutala val är
+// spelarens eget val för ett hårdare parti, aldrig något partiet kräver.
+export const plainOptions = (cat) => (LAWS[cat]?.options || []).filter((o) => !o.utopia && !o.brutal);
 export function preferredIndex(nation, cat) {
   const map = LAW_AXIS[cat];
-  const opts = LAWS[cat]?.options;
-  if (!map || !opts?.length) return null;
+  const all = LAWS[cat]?.options;
+  if (!map || !all?.length) return null;
+  const opts = plainOptions(cat);
+  if (!opts.length) return null;
   const a = axesOf(nation);
   // normalisera axeln till 0..1
   let t = map.axis === 'econ' ? (a.econ + 100) / 200 : a.auth / 100;
@@ -427,11 +435,12 @@ export function preferredIndex(nation, cat) {
   // V5.11: partiets linje är aldrig ett alternativ ideologin själv spärrar —
   // då blir det närmaste tillåtna grannen
   const locked = IDEOLOGIES[nation?.ideology]?.locks?.[cat];
-  if (!locked?.includes(opts[i].id)) return i;
+  const at = (j) => all.indexOf(opts[j]);
+  if (!locked?.includes(opts[i].id)) return at(i);
   for (let d = 1; d < opts.length; d++) {
-    for (const j of [i - d, i + d]) if (j >= 0 && j < opts.length && !locked.includes(opts[j].id)) return j;
+    for (const j of [i - d, i + d]) if (j >= 0 && j < opts.length && !locked.includes(opts[j].id)) return at(j);
   }
-  return i;
+  return at(i);
 }
 
 // Hur långt från ideologins önskade läge ligger den valda lagen? 0 = precis rätt.
@@ -452,7 +461,7 @@ export function ideologyHarmony(nation) {
   if (!cats.length) return 1;
   let score = 0;
   for (const cat of cats) {
-    const opts = LAWS[cat].options.length;
+    const opts = plainOptions(cat).length;   // V5.17: ytterlighetsvalen ändrar inte toleransen
     const dev = lawDeviation(nation, cat);
     score += Math.max(0, 1 - dev / Math.max(1, (opts - 1) * 0.55));
   }

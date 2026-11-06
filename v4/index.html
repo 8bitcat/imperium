@@ -722,6 +722,30 @@
     border: 1px solid rgba(57, 215, 255, 0.25); background: rgba(8, 18, 28, 0.7);
   }
   .citychooser .armybtn small { font-size: 5px; color: var(--holo-dim); }
+  /* V5.17 BYGGBOOM: alla städer, 15 platser, bygg i många städer på en gång */
+  #citypanel { width: 430px; }
+  .cptools { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 0 0 8px; }
+  .cptools button { font-family: inherit; font-size: 6px; padding: 5px 7px; background: rgba(10, 20, 30, 0.8);
+    color: var(--holo); border: 1px solid rgba(57, 215, 255, 0.4); cursor: pointer; }
+  .cptools button.go { color: var(--amber); border-color: var(--amber); }
+  .cptools button:disabled { opacity: 0.35; cursor: default; }
+  .cptools .cpsel { font-size: 6px; color: var(--holo-dim); margin-left: 4px; }
+  .cityrow { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 2px 6px; align-items: start; }
+  .cityrow.sel .cityname { color: var(--amber); }
+  .citycheck { font-family: inherit; width: 16px; height: 16px; padding: 0; font-size: 9px; line-height: 14px;
+    background: rgba(10, 20, 30, 0.8); color: var(--amber); border: 1px solid rgba(57, 215, 255, 0.45); cursor: pointer; }
+  .cityrow .cityname { cursor: pointer; }
+  .cityicons { display: flex; flex-wrap: wrap; gap: 2px; grid-column: 2; }
+  .cityicons span { width: 17px; height: 17px; font-size: 10px; line-height: 15px; text-align: center;
+    border: 1px dashed rgba(57, 215, 255, 0.22); color: var(--holo-dim); }
+  .cityicons span.b { border: 1px solid rgba(255, 176, 46, 0.55); }
+  .cityicons span.q { border: 1px solid rgba(57, 215, 255, 0.55); opacity: 0.6; }
+  .cityicons button { font-family: inherit; font-size: 6px; padding: 0 5px; height: 17px; background: rgba(10, 20, 30, 0.8);
+    color: var(--holo); border: 1px dashed rgba(57, 215, 255, 0.5); cursor: pointer; }
+  .citychooser .bcat { width: 100%; font-size: 6px; color: var(--holo-dim); margin: 4px 0 0; }
+  .citychooser .armybtn { width: calc(50% - 3px); text-align: left; }
+  .citychooser .armybtn .bfx { display: block; font-size: 5px; color: #4ae37a; line-height: 1.7; }
+  .citychooser .armybtn .bn { display: block; font-size: 5px; color: var(--amber); line-height: 1.7; }
   .natgroup { margin-bottom: 14px; }
   .natgroup .gtitle {
     font-size: 8px; letter-spacing: 2px; color: var(--amber);
@@ -781,6 +805,13 @@
   .reality .rsub { font-size: 6px; color: var(--holo-dim); line-height: 1.9; margin: 2px 0 4px; }
   .reality .gbar { height: 6px; background: rgba(0, 12, 20, 0.8); border: 1px solid rgba(55,224,255,0.2); }
   .reality .gbar div { height: 100%; }
+  /* V5.17: ✨ utopier och 💀 brutala lagval */
+  .lawopt.utopia { border-color: rgba(255,120,230,0.55); color: #ffc8f3; }
+  .lawopt.brutal { border-color: rgba(255,80,70,0.6); color: #ffb0a8; background: rgba(40, 6, 6, 0.7); }
+  .lawopt.utopia.cur, .lawopt.brutal.cur { color: var(--amber); border-color: var(--amber); }
+  #natpreview .lawx { display: block; margin-top: 4px; font-size: 7px; line-height: 1.8; }
+  #natpreview .lawx.utopia { color: #ff9be8; }
+  #natpreview .lawx.brutal { color: #ff6b5e; }
   /* V5.6: STATISTIK-fliken — namn, värde i dag, vart det är på väg, plats i världen */
   .indgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; }
   @media (max-width: 820px) { .indgrid { grid-template-columns: minmax(0, 1fr); } }

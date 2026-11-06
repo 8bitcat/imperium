@@ -15,7 +15,8 @@ import { RESEARCH, researchMods, combatBonus, hasUnlock, logisticsRange, satCove
 import { MODIFIERS, modifierMods, tickModifiers, tickTrend, grant as grantMod, revoke as revokeMod, activeList as modList } from './modifiers.js';
 import { EVENTS, pickEvent, affordable, EVENT_COUNT, EVENT_BY_ID, nextEventGap, fillText, rollNext } from './events.js';
 import { DEV_MAX, DEV_STEP, DEV_KINDS, DEV_RAMP, stepCost, devOf, raiseDev, realmDev, devMods, tradeDevFactor, devColor, devLabel, devColorMap, aiDevStep } from './development.js';
-import { BUILDINGS, CITY_SLOTS, UNIT_NEEDS_BUILDING, TRADE_PRICES, TRADE_DEFAULT } from './buildings.js';
+import { BUILDINGS, CITY_SLOTS, UNIT_NEEDS_BUILDING, TRADE_PRICES, TRADE_DEFAULT,
+  BUILD_CATS, coverageMods, buildingEffects, yieldWeight } from './buildings.js';
 import { countryIncomeOf, armySizeOf, econOf, WEALTH_TIER } from './economy.js';
 import { CASUS_BELLI, justifyDays, seizeAmount, FEDERATION_FORMS, HISTORICAL_EMPIRES, DYNAMIC_GOALS, formableEmpires, empireProgress, empireComplete } from './war.js';
 import { FACTIONS } from './factions.js';
@@ -30,7 +31,8 @@ import { money, people, soldiersOf, soldiersText, PEOPLE_PER_MAN } from './real.
 import { INDICATORS, IND, IND_GROUPS, RANKINGS, fmtInd, setIndicatorData, hasIndicatorData, isEstimated,
   baseOf as baseOfInd, countryIndicators, realmIndicators, biggestChanges, rankBy, realmPyramid, setFaith, refreshDerived } from './statistics.js';
 import { YEAR_DAYS, DEFICIT_FLOOR, RECENT_DAYS, GRIEV_KINDS, GRIEV_IDS, LAW_KIND, LAW_SV, grievFromChange, protestMods,
-  grievTotal, SHOCKS, DEMO_SUBS, NO_LAG, lagStep, migrantCap, regimeOf } from './realism.js';   // V5.16 VERKLIGHETEN
+  grievTotal, SHOCKS, DEMO_SUBS, NO_LAG, lagStep, migrantCap, regimeOf,
+  STING_START, STING_DAYS, stingFactor, utopiaFx, shameWeight } from './realism.js';   // V5.16 VERKLIGHETEN + V5.17 YTTERLIGHETER
 import { PASS_COVERS, PASS_EMBLEMS, passportHtml, defaultIdent } from './passport.js';
 import { BANK_MONTH, MONTHS_PER_YEAR, RATINGS, PLAN_YEARS, DEFAULT_PLAN, MISS_LIMIT, DEFAULT_DAYS, CRISIS_DAYS, LOAN_SHARE,
   ratingOf, annuity, creditRoom, crisisMods } from './bank.js';
@@ -63,9 +65,9 @@ function puppetColor() { const c = soloColor(); return lumOf(c) > 200 ? mixHex(c
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.16.0';
+export const VERSION = '5.17.0';
 export const VERSION_DATE = '2026-11-06';
-export const VERSION_NAME = 'VERKLIGHETEN';
+export const VERSION_NAME = 'YTTERLIGHETER';
 
 const globe = new Globe($('#globe'));
 
@@ -702,13 +704,20 @@ function renderFactDev(c) {
     if (!mine || !state.solo?.nation) continue;
     const queued = (state.solo.devQueue || []).filter((q) => q.cid === c.id && q.kind === kind).length;
     if (lvl + queued * DEV_STEP >= DEV_MAX) continue;
-    const cost = stepCost(lvl + queued * DEV_STEP);
-    const btn = document.createElement('button');
-    btn.className = 'armybtn';
-    btn.innerHTML = `\u{1F528} BYGG UT +${DEV_STEP}<br>${money(cost.money)} + ${cost.rp} \u{1F52C} \u{00B7} ${cost.days} DAGAR`
-      + (queued ? `<br><span style="color:var(--amber)">${queued} REDAN I KÖN</span>` : '');
-    btn.addEventListener('click', () => queueDev(c.id, kind));
-    el.appendChild(btn);
+    // V5.17: ett steg, fem steg eller hela vägen — så länge pengarna räcker
+    const wrap = document.createElement('div');
+    wrap.className = 'armybuild';
+    for (const steps of [1, 5, 20]) {
+      const p = devPlan(c.id, kind, steps);
+      if (!p.steps || (steps > 1 && p.steps < 2) || (steps === 20 && p.steps <= 5)) continue;
+      const btn = document.createElement('button');
+      btn.className = 'armybtn';
+      btn.innerHTML = `\u{1F528} ${steps === 20 ? 'TILL MAX' : 'BYGG UT'} +${p.steps * DEV_STEP}<br>${money(p.money)} + ${p.rp} \u{1F52C} \u{00B7} ${p.days} DAGAR`
+        + (steps === 1 && queued ? `<br><span style="color:var(--amber)">${queued} REDAN I KÖN</span>` : '');
+      btn.addEventListener('click', () => queueDev(c.id, kind, p.steps));
+      wrap.appendChild(btn);
+    }
+    el.appendChild(wrap);
   }
   // vad din samlade nivå ger dig just nu
   if (mine) {
@@ -995,93 +1004,189 @@ function renderCityPanel(cid) {
   const c = globe.getCountry(cid);
   $('#cptitle').textContent = `\u{1F3D9} ${c?.name.toUpperCase() || ''} — STÄDER & BYGGNADER`;
   const body = $('#cpbody');
+  const scroll = body.scrollTop;   // panelen ritas om när byggen blir klara — behåll skrollningen
   body.innerHTML = '';
-  const cities = state.cities[cid] || [];
-  // delat land: du bygger bara i städerna i din del — resten är ett annat land
-  const part = isSplit(cid) ? s.partial[cid] : null;
-  const idx = cities.map((city, i) => ({ city, i }))
-    .filter(({ city }) => !part || inPart(partPolys(part), part.discs || [], city.ll));
-  // huvudstaden ALLTID överst — den har gratis-kasernen och får aldrig sorteras bort
-  idx.sort((a, b) => (b.city.c ? 1 : 0) - (a.city.c ? 1 : 0)
-    || (a.city.tier ?? 2) - (b.city.tier ?? 2)
-    || (b.city.p || 0) - (a.city.p || 0));
-  const rows = idx.slice(0, 14);
-  if (!rows.length) {
+  const idx = cityPanelCities(cid);
+  if (!idx.length) {
     body.innerHTML = '<div style="font-size:8px;color:var(--holo-dim)">INGA STÄDER REGISTRERADE</div>';
     return;
   }
+  // V5.17: ALLA städer visas, och du bockar för dem du vill bygga i
+  const keys = idx.map(({ i }) => cid + ':' + i);
+  const sel = (state.citySel ||= {})[cid] = new Set([...(state.citySel[cid] || [])].filter((k) => keys.includes(k)));
+  const by = buildingYield();
   const info = document.createElement('div');
   info.style.cssText = 'font-size:7px;color:var(--holo-dim);margin-bottom:8px;line-height:1.8';
-  info.textContent = `VARJE STAD HAR ${CITY_SLOTS} BYGGPLATSER. KASERN/FABRIK/FLYGBAS GÖR ENHETER BYGGBARA I LANDET — ANDRA GER POÄNG, RÅVAROR OCH HANDEL.`;
+  info.innerHTML = `${idx.length} STÄDER · ${CITY_SLOTS} BYGGPLATSER I VARJE · ALLA BYGGEN PÅGÅR SAMTIDIGT. BOCKA FÖR STÄDER (ELLER VÄLJ ALLA) OCH BYGG I ALLA PÅ EN GÅNG. `
+    + `STORA STÄDER VÄGER TYNGST, FÖR DÄR BOR FLEST. EFTER 14 AV SAMMA SORT I ETT LAND GER VARJE NY LITE MINDRE (MARKNADEN MÄTTAS).<br>HELA RIKET: <span class="dp">+${money(Math.round(by.money))}/DAG</span>`
+    + (by.rp >= 0.5 ? ` <span class="dp">+${Math.round(by.rp)} \u{1F52C}/DAG</span>` : '')
+    + (by.upkeep >= 0.5 ? ` · DRIFT <span class="dn">-${money(Math.round(by.upkeep))}/DAG</span> (${Math.round(by.driftPct)} % AV INKOMSTEN)` : '');
   body.appendChild(info);
-  for (const { city, i } of rows) {
+  // verktygsraden: välj städer och bygg i dem
+  const tools = document.createElement('div');
+  tools.className = 'cptools';
+  const pickBtn = (label, fn) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.addEventListener('click', () => { fn(); renderCityPanel(cid); });
+    tools.appendChild(b);
+  };
+  pickBtn('\u{2611} ALLA', () => { keys.forEach((k) => sel.add(k)); });
+  pickBtn('\u{2610} INGA', () => { sel.clear(); });
+  for (const n of [5, 10, 25]) if (keys.length > n) pickBtn(`${n} STÖRSTA`, () => { sel.clear(); keys.slice(0, n).forEach((k) => sel.add(k)); });
+  const go = document.createElement('button');
+  go.className = 'go';
+  go.textContent = state.cityPanelExpand === '*' ? '\u{2715} STÄNG BYGGMENYN' : `\u{1F528} BYGG I VALDA (${sel.size})`;
+  go.disabled = !sel.size;
+  go.addEventListener('click', () => { state.cityPanelExpand = state.cityPanelExpand === '*' ? null : '*'; renderCityPanel(cid); });
+  tools.appendChild(go);
+  const cnt = document.createElement('span');
+  cnt.className = 'cpsel';
+  cnt.textContent = `${sel.size} AV ${keys.length} VALDA`;
+  tools.appendChild(cnt);
+  body.appendChild(tools);
+  if (state.cityPanelExpand === '*' && sel.size) body.appendChild(buildChooser(cid, keys.filter((k) => sel.has(k)), true));
+  for (const { city, i } of idx) {
     const key = cid + ':' + i;
     const built = s.cityB?.[key] || [];
     const queued = (s.buildQueue || []).filter((q) => q.cityKey === key);
     const row = document.createElement('div');
-    row.className = 'cityrow';
+    row.className = 'cityrow' + (sel.has(key) ? ' sel' : '');
+    const chk = document.createElement('button');
+    chk.className = 'citycheck';
+    chk.textContent = sel.has(key) ? '\u{2713}' : '';
+    chk.title = 'VÄLJ STADEN';
+    chk.addEventListener('click', () => { if (sel.has(key)) sel.delete(key); else sel.add(key); renderCityPanel(cid); });
     const name = document.createElement('div');
     name.className = 'cityname';
-    name.innerHTML = `${city.c ? '\u{2B50} ' : ''}${city.n.toUpperCase()}${city.c ? ' <small>(HUVUDSTAD)</small>' : (city.tier ?? 2) === 3 ? ' <small>(SMÅSTAD)</small>' : ''}`;
-    row.appendChild(name);
-    const slots = document.createElement('div');
-    slots.className = 'cityslots';
-    for (let sl = 0; sl < CITY_SLOTS; sl++) {
-      const el = document.createElement('button');
-      el.className = 'cityslot';
-      if (built[sl]) {
-        const B = BUILDINGS[built[sl]];
-        el.innerHTML = `${B.icon} ${B.name}`;
-        el.classList.add('built');
-        el.title = B.desc;
-      } else if (sl < built.length + queued.length) {
-        const q = queued[sl - built.length];
-        el.innerHTML = `\u{23F3} ${BUILDINGS[q.building].name} (${q.left}D)`;
-        el.classList.add('queued');
-      } else if (sl === built.length + queued.length) {
-        el.innerHTML = '+ BYGG';
-        el.addEventListener('click', () => {
-          state.cityPanelExpand = state.cityPanelExpand === key ? null : key;
-          renderCityPanel(cid);
-        });
-      } else {
-        el.innerHTML = '\u{00B7}';
-        el.disabled = true;
-      }
-      slots.appendChild(el);
+    name.innerHTML = `${city.c ? '\u{2B50} ' : ''}${city.n.toUpperCase()}${city.c ? ' <small>(HUVUDSTAD)</small>' : (city.tier ?? 2) === 3 ? ' <small>(SMÅSTAD)</small>' : ''}`
+      + ` <small>${people(Math.round((city.p || 0) / PEOPLE_PER_MAN))} INV. · ${built.length + queued.length}/${CITY_SLOTS}</small>`;
+    name.addEventListener('click', () => chk.click());
+    const icons = document.createElement('div');
+    icons.className = 'cityicons';
+    for (const b of built) {
+      const el = document.createElement('span');
+      el.className = 'b';
+      el.textContent = BUILDINGS[b]?.icon || '?';
+      el.title = BUILDINGS[b]?.name || b;
+      icons.appendChild(el);
     }
-    row.appendChild(slots);
+    for (const q of queued) {
+      const el = document.createElement('span');
+      el.className = 'q';
+      el.textContent = BUILDINGS[q.building]?.icon || '\u{23F3}';
+      el.title = `${BUILDINGS[q.building]?.name} — ${q.left} DAGAR KVAR`;
+      icons.appendChild(el);
+    }
+    if (built.length + queued.length < CITY_SLOTS) {
+      const add = document.createElement('button');
+      add.textContent = state.cityPanelExpand === key ? '\u{2715}' : '+ BYGG';
+      add.addEventListener('click', () => {
+        state.cityPanelExpand = state.cityPanelExpand === key ? null : key;
+        renderCityPanel(cid);
+      });
+      icons.appendChild(add);
+    }
+    row.append(chk, name, icons);
     body.appendChild(row);
-    if (state.cityPanelExpand === key) {
-      const chooser = document.createElement('div');
-      chooser.className = 'citychooser';
-      for (const [bid, B] of Object.entries(BUILDINGS)) {
-        const btn = document.createElement('button');
-        btn.className = 'armybtn';
-        btn.innerHTML = `${B.icon} ${B.name}<br>${money(B.money)} \u{2022} ${B.days}D<br><small>${B.desc}</small>`;
-        const resReq = B.research && (s.nation.research[B.research[0]] || 0) < B.research[1]
-          ? `KRÄVER FORSKNING: ${RESEARCH[B.research[0]].name.toUpperCase()} T${B.research[1]}` : null;
-        const dupe = built.includes(bid) || queued.some((q) => q.building === bid) ? 'FINNS REDAN I STADEN' : null;
-        const blocked = dupe || resReq || (!canAfford(B.money) ? poorWhy(B.money) : null);
-        if (blocked) { btn.disabled = true; btn.title = blocked; }
-        btn.addEventListener('click', () => {
-          if (blocked) { warn(blocked); return; }
-          // omkontroll vid klicket — saldot kan ha ändrats sedan panelen ritades
-          if (!canAfford(B.money)) { warn('FÖR LITE PENGAR'); renderCityPanel(cid); return; }
-          if (!s.claims[cid]) { warn('LANDET ÄR INTE LÄNGRE DITT'); $('#citypanel').classList.remove('show'); return; }
-          s.res.money -= B.money;
-          (s.buildQueue ||= []).push({ building: bid, cityKey: key, cityName: city.n, name: `${B.icon} ${B.name}`, left: B.days, total: B.days, dest: cid });
-          state.cityPanelExpand = null;
-          renderBuildCorner();
-          renderResbar();
-          renderCityPanel(cid);
-          toast(`\u{1F528} ${B.name} PÅBÖRJAD I ${city.n.toUpperCase()} — KLAR OM ${B.days} DAGAR`, 'amber');
-        });
-        chooser.appendChild(btn);
-      }
-      body.appendChild(chooser);
-    }
+    if (state.cityPanelExpand === key) body.appendChild(buildChooser(cid, [key], false));
   }
+  body.scrollTop = scroll;
+}
+
+// städerna i panelen: i ett delat land bara de i din del, huvudstaden alltid först
+function cityPanelCities(cid) {
+  const s = state.solo;
+  const cities = state.cities[cid] || [];
+  const part = isSplit(cid) ? s.partial[cid] : null;
+  const idx = cities.map((city, i) => ({ city, i }))
+    .filter(({ city }) => !part || inPart(partPolys(part), part.discs || [], city.ll));
+  idx.sort((a, b) => (b.city.c ? 1 : 0) - (a.city.c ? 1 : 0)
+    || (a.city.tier ?? 2) - (b.city.tier ?? 2)
+    || (b.city.p || 0) - (a.city.p || 0));
+  return idx;
+}
+
+// V5.17: vilka av städerna kan få byggnaden (ledig plats, inte redan där, inom landets tak)
+function buildTargets(cid, keys, bid) {
+  const s = state.solo;
+  const B = BUILDINGS[bid];
+  const q = s.buildQueue || [];
+  let room = Infinity;
+  if (B.perCountry) {
+    const have = cityBuildingsIn(cid).filter((x) => x === bid).length
+      + q.filter((x) => x.building === bid && x.dest === cid).length;
+    room = Math.max(0, B.perCountry - have);
+  }
+  const out = [];
+  for (const key of keys) {
+    if (out.length >= room) break;
+    const built = s.cityB?.[key] || [];
+    const queued = q.filter((x) => x.cityKey === key);
+    if (built.includes(bid) || queued.some((x) => x.building === bid)) continue;
+    if (built.length + queued.length >= CITY_SLOTS) continue;
+    out.push(key);
+  }
+  return out;
+}
+
+// byggmenyn — för en stad eller för alla valda (multi)
+function buildChooser(cid, keys, multi) {
+  const s = state.solo;
+  const box = document.createElement('div');
+  box.className = 'citychooser';
+  const owned = ownedResources();
+  let lastCat = null;
+  const order = Object.keys(BUILD_CATS);
+  const list = Object.entries(BUILDINGS).sort((a, b) => order.indexOf(a[1].cat) - order.indexOf(b[1].cat));
+  for (const [bid, B] of list) {
+    if (B.cat !== lastCat) {
+      lastCat = B.cat;
+      const h = document.createElement('div');
+      h.className = 'bcat';
+      h.textContent = '▸ ' + (BUILD_CATS[B.cat] || '');
+      box.appendChild(h);
+    }
+    const targets = buildTargets(cid, keys, bid);
+    const n = targets.length;
+    const canBuy = Math.min(n, Math.floor(Math.max(0, spendable()) / B.money));
+    const resReq = B.research && (s.nation.research[B.research[0]] || 0) < B.research[1]
+      ? `KRÄVER FORSKNING: ${RESEARCH[B.research[0]].name.toUpperCase()} T${B.research[1]}` : null;
+    const missing = (B.needs || []).filter((r) => !owned.has(r));
+    const needReq = missing.length ? 'KRÄVER ' + missing.map((r) => RESOURCES[r].name.toUpperCase()).join(', ') : null;
+    const blocked = resReq || needReq
+      || (!n ? (multi ? 'FINNS REDAN (ELLER INGEN PLATS) I DE VALDA STÄDERNA' : B.perCountry ? `HÖGST ${B.perCountry} I LANDET — ELLER FINNS REDAN` : 'FINNS REDAN I STADEN') : null)
+      || (!canBuy ? poorWhy(B.money) : null);
+    const btn = document.createElement('button');
+    btn.className = 'armybtn';
+    const fx = buildingEffects(B, STATS);
+    btn.innerHTML = `${B.icon} ${B.name}<br>${money(B.money)} \u{2022} ${B.days}D<small style="display:block">${B.desc}</small>`
+      + (fx.length ? `<span class="bfx">${fx.join(' · ')}</span>` : '')
+      + (multi && n ? `<span class="bn">${canBuy < n ? `RÄCKER TILL ${canBuy} AV ${n} STÄDER` : `I ${n} STÄDER: ${money(B.money * n)}`}`
+        + (B.drift ? ` · DRIFT +${fmtNum(B.drift * popShareOf(targets.slice(0, canBuy || n)))} % AV INKOMSTEN` : '') + '</span>' : '');
+    if (blocked) { btn.disabled = true; btn.title = blocked; }
+    btn.addEventListener('click', () => {
+      if (blocked) { warn(blocked); return; }
+      if (!s.claims[cid]) { warn('LANDET ÄR INTE LÄNGRE DITT'); $('#citypanel').classList.remove('show'); return; }
+      // omkontroll vid klicket — saldot kan ha ändrats sedan panelen ritades
+      const list = buildTargets(cid, keys, bid).slice(0, Math.floor(Math.max(0, spendable()) / B.money));
+      if (!list.length) { warn(poorWhy(B.money)); renderCityPanel(cid); return; }
+      for (const key of list) {
+        s.res.money -= B.money;
+        const city = cityOfKey(key);
+        (s.buildQueue ||= []).push({ building: bid, cityKey: key, cityName: city?.n || '', name: `${B.icon} ${B.name}`, left: B.days, total: B.days, dest: cid });
+      }
+      if (!multi) state.cityPanelExpand = null;
+      renderBuildCorner();
+      renderResbar();
+      renderCityPanel(cid);
+      toast(list.length > 1
+        ? `\u{1F528} ${B.name} PÅBÖRJAD I ${list.length} STÄDER (-${money(B.money * list.length)}) — KLAR OM ${B.days} DAGAR`
+        : `\u{1F528} ${B.name} PÅBÖRJAD I ${cityOfKey(list[0])?.n.toUpperCase() || ''} — KLAR OM ${B.days} DAGAR`, 'amber');
+    });
+    box.appendChild(btn);
+  }
+  return box;
 }
 
 // ---------- handel: råvaruavtal med andra länder ----------
@@ -1396,6 +1501,7 @@ function initNation(countryId) {
   s.nextEvent = 1 + Math.floor(Math.random() * 25);   // första händelsen kommer tidigt
   // V5.16: lagarna är i kraft från start, inget missnöje än, statistiken börjar i verkligheten
   s.lawFx = null; s.ideoFx = null; s.griev = {}; s.lawLog = []; s.indLag = null; s.indHist = [];
+  s.lawSince = {}; s.utopiaWarned = {};   // V5.17: när ytterlighetslagarna antogs
   recomputeNation();
   $('#resbar').style.display = 'flex';
   renderResbar();
@@ -1425,6 +1531,8 @@ function recomputeNation() {
     faith: chaosMods(s.faith?.chaos || 0),   // V5.12: religiöst kaos
     bank: crisisMods(s.bank?.crisis || 0),   // V5.13: statsbankruttens kris
     protest: protestMods(grievTotal(s.griev)),   // V5.16: missnöjet — protester och strejker
+    utopia: utopiaMods(),                        // V5.17: utopier som spricker
+    buildings: buildingMods(),                   // V5.17: stadsbyggnaderna (täckning i riket)
   };
   s.stats = computeStats(s.nation, s.nationSources);
   syncFaith();
@@ -1462,7 +1570,7 @@ function relOf(cid) {
   if (!s?.nation || !cid || cid === s.home) return 100;
   s.rel ||= {};
   if (s.rel[cid] == null) {
-    s.rel[cid] = naturalRelation(s.nation, ideoOf(cid), religionFor(s.home), religionFor(cid));
+    s.rel[cid] = naturalRelTo(cid);   // V5.17: brutala lagar fördöms
   }
   return s.rel[cid];
 }
@@ -1520,7 +1628,7 @@ function tickDiplomacy() {
   for (let i = 0; i < Math.min(8, keys.length); i++) {
     const cid = keys[(s.relCursor = ((s.relCursor || 0) + 1) % keys.length)];
     if (isAlly(cid)) continue;
-    const target = naturalRelation(s.nation, ideoOf(cid), religionFor(s.home), religionFor(cid));
+    const target = naturalRelTo(cid);
     const cur = s.rel[cid];
     if (Math.abs(cur - target) > 0.5) s.rel[cid] = cur + Math.sign(target - cur) * 0.35;
   }
@@ -1967,6 +2075,23 @@ function noteLawChange(cat, from, to) {
   if (!s?.clock || !LAWS[cat] || from === to) return;
   const r = grievFromChange(cat, lawOption(cat, from)?.mods, lawOption(cat, to)?.mods);
   (s.lawLog ||= []).unshift({ cat, from, to, day: s.clock.day, kind: r.kind, delta: Math.round(r.delta) });
+  // V5.17: när lagen antogs — utopins klocka börjar om, omvärlden reagerar på brutala val
+  (s.lawSince ||= {})[cat] = s.clock.day;
+  if (s.utopiaWarned) delete s.utopiaWarned[cat];
+  const neu = lawOption(cat, to);
+  if (neu?.brutal) {
+    const sh = neu.shame || 6;
+    for (const cid of Object.keys(s.rel || {})) {
+      if (s.claims?.[cid]) continue;
+      relChange(cid, -Math.round(sh * shameWeight(axesOf(ideoOf(cid)).auth)));
+    }
+    toast(`\u{1F480} VÄRLDEN FÖRDÖMER ${LAW_SV[cat].toUpperCase()}: ${neu.name.toUpperCase()} — RELATIONERNA SJUNKER`, 'red', 8000);
+    logEvent(`\u{1F480} ${neu.name.toUpperCase()} INFÖRS — OMVÄRLDEN FÖRDÖMER (${LAW_SV[cat].toUpperCase()})`, { mine: true });
+  }
+  if (neu?.utopia) {
+    toast(`\u{2728} ${neu.name.toUpperCase()}: FOLKET JUBLAR — DRÖMMEN BÖRJAR I DAG`, 'amber', 7000);
+    logEvent(`\u{2728} UTOPIN ${neu.name.toUpperCase()} INFÖRS (${LAW_SV[cat].toUpperCase()})`, { mine: true });
+  }
   s.lawLog.length = Math.min(s.lawLog.length, 30);
   if (r.amt) addGriev(r.kind, r.amt);
   const k = GRIEV_KINDS[r.kind];
@@ -2004,6 +2129,97 @@ function undoLaw(cat) {
   noteLawChange(cat, e.to, e.from);
   toast(`\u{21A9}\u{FE0F} ${LAW_SV[cat].toUpperCase()} ÅTERSTÄLLS: ${lawOption(cat, e.from)?.name.toUpperCase() || ''}`, 'amber', 6000);
   return true;
+}
+
+// ----- V5.17 YTTERLIGHETER: utopier och brutala lagar -----
+// Aktiva ytterlighetsval: { utopia: [{cat, o, age, f}], brutal: [{cat, o, age}] }.
+// f = hur långt utopin har spruckit (0..1, stingFactor).
+function extremeLaws() {
+  const s = state.solo;
+  const out = { utopia: [], brutal: [] };
+  if (!s?.nation?.laws) return out;
+  const day = s.clock?.day || 0;
+  for (const [cat, id] of Object.entries(s.nation.laws)) {
+    const o = lawOption(cat, id);
+    if (!o?.utopia && !o?.brutal) continue;
+    const since = ((s.lawSince ||= {})[cat] ??= day);   // en revolution kan ha skrivit lagen
+    const age = Math.max(0, day - since);
+    if (o.utopia) out.utopia.push({ cat, o, age, f: stingFactor(age) });
+    else out.brutal.push({ cat, o, age });
+  }
+  out.utopia.sort((a, b) => b.f - a.f || b.age - a.age);
+  out.brutal.sort((a, b) => a.age - b.age);
+  return out;
+}
+const INVERTED_STATS = new Set(Object.keys(STATS).filter((k) => STATS[k].inverted));
+// utopiernas verklighet som egen källa i nationsvärdena
+function utopiaMods() {
+  const out = {};
+  for (const u of extremeLaws().utopia) {
+    for (const [k, v] of Object.entries(utopiaFx(u.o, u.f, INVERTED_STATS))) out[k] = (out[k] || 0) + v;
+  }
+  return roundMods(out);
+}
+// hur hårt omvärlden fördömer dina brutala lagar (summa shame)
+function brutalShame() {
+  return extremeLaws().brutal.reduce((a, b) => a + (b.o.shame || 6), 0);
+}
+// relationen ett land vill ha till dig: ideologin + fördömandet av brutala lagar
+function naturalRelTo(cid) {
+  const s = state.solo;
+  const base = naturalRelation(s.nation, ideoOf(cid), religionFor(s.home), religionFor(cid));
+  const sh = brutalShame();
+  return sh ? Math.max(-95, Math.round(base - sh * shameWeight(axesOf(ideoOf(cid)).auth))) : base;
+}
+// utopin spricker: varna en gång när det börjar märkas, och fyll på missnöjet
+function tickExtremes() {
+  const s = state.solo;
+  const ex = extremeLaws();
+  if (ex.utopia.length && s.clock.day % 6 === 0) recomputeNation();   // stinget växer dag för dag
+  if (s.clock.day % 5 !== 0) return;
+  s.utopiaWarned ||= {};
+  for (const u of ex.utopia) {
+    if (u.f > 0.3) addGriev(LAW_KIND[u.cat] || 'ekonomi', u.f * 1.1);
+    const step = u.f >= 0.95 ? 3 : u.f >= 0.6 ? 2 : u.f >= 0.2 ? 1 : 0;
+    if (step > (s.utopiaWarned[u.cat] || 0)) {
+      s.utopiaWarned[u.cat] = step;
+      const msg = step === 1 ? 'BÖRJAR SPRICKA — DRÖMMEN MÖTER VERKLIGHETEN'
+        : step === 2 ? 'SPRICKER PÅ ALLVAR — FOLKET BÖRJAR TVIVLA'
+        : 'HAR SPRUCKIT HELT — DET FUNGERADE INTE';
+      toast(`\u{2728} UTOPIN I ${LAW_SV[u.cat].toUpperCase()} (${u.o.name.toUpperCase()}) ${msg}`, step >= 2 ? 'red' : 'amber', 8000);
+      logEvent(`\u{2728} ${u.o.name.toUpperCase()}: ${msg}`, { mine: true });
+    }
+  }
+  // brutala lagar: folket glömmer inte — ett stilla tillskott av missnöje
+  for (const b of ex.brutal) addGriev(LAW_KIND[b.cat] || 'frihet', 0.5 + (b.o.shame || 6) / 40);
+}
+
+// vilken lag ett undo-val gäller: true = {lag}, 'utopi'/'brutal' = {utopi}/{brutal}, annars kategorin
+function undoCat(ch) {
+  return ch.undo === true ? ch.vars?.lagcat : ch.undo === 'utopi' ? ch.vars?.utopicat
+    : ch.undo === 'brutal' ? ch.vars?.brutalcat : ch.undo;
+}
+// riv en utopi eller brutal lag: tillbaka till hur den var, annars ett steg mot startläget
+function undoExtreme(cat) {
+  const s = state.solo;
+  const cur = lawOption(cat, s?.nation?.laws?.[cat]);
+  if (!cur || (!cur.utopia && !cur.brutal)) return false;
+  const e = (s.lawLog || []).find((x) => x.cat === cat);
+  const prev = e && e.to === cur.id ? lawOption(cat, e.from) : null;
+  if (prev && !prev.utopia && !prev.brutal && undoLaw(cat)) return true;
+  const opts = LAWS[cat].options;
+  const at = opts.indexOf(cur);
+  const def = Math.max(0, opts.findIndex((o) => o.default));
+  const dir = Math.sign(def - at) || 1;
+  for (let i = at + dir; i >= 0 && i < opts.length; i += dir) {
+    const o = opts[i];
+    if (o.utopia || o.brutal || lawLockedBy(s.nation, cat, o.id)) continue;
+    s.nation.laws[cat] = o.id;
+    noteLawChange(cat, cur.id, o.id);
+    toast(`↩️ ${LAW_SV[cat].toUpperCase()}: ${cur.name.toUpperCase()} RIVS — NU ${o.name.toUpperCase()}`, 'amber', 6000);
+    return true;
+  }
+  return false;
 }
 
 // Missnöjet klingar av (ungefär halverat på två månader) — men fylls på av ett
@@ -2119,6 +2335,26 @@ function realityBox() {
         : 'FÅ UPP KASSAN ÖVER NOLL: HÖJ INCOME ELLER DRA NER PÅ UTGIFTERNA.') + '</div>');
   } else {
     lines.push(`<div class="rsub">\u{1F3E6} BANKENS KREDIT: STATSKASSAN KAN GÅ ${money(cl)} UNDER NOLL — SÅ LÄNGE INCOME ÄR ${DEFICIT_FLOOR} ELLER HÖGRE.</div>`);
+  }
+  // V5.17: stadsbyggnaderna — vad de ger och vad de kostar att driva
+  const by = buildingYield();
+  if (by.money >= 0.5 || by.upkeep >= 0.5 || by.rp >= 0.5) {
+    lines.push(`<div class="rsub">🏗️ BYGGNADERNA: <span class="dp">+${money(Math.round(by.money))}/DAG</span>`
+      + (by.rp >= 0.5 ? ` <span class="dp">+${Math.round(by.rp)} 🔬</span>` : '')
+      + (by.upkeep >= 0.5 ? ` · DRIFT <span class="dn">-${money(Math.round(by.upkeep))}/DAG</span> (${Math.round(by.driftPct)} % AV INKOMSTEN)` : '') + '</div>');
+  }
+  // V5.17: utopier som spricker och brutala lagar som omvärlden fördömer
+  const ex = extremeLaws();
+  for (const u of ex.utopia) {
+    const col = u.f >= 0.6 ? 'var(--red)' : u.f > 0 ? 'var(--amber)' : '#4ae37a';
+    lines.push(`<div class="rline"><span>\u{2728} UTOPI: ${u.o.name.toUpperCase()}</span><b style="color:${col}">`
+      + (u.f > 0 ? `SPRICKER ${Math.round(u.f * 100)} %` : 'DRÖMMEN HÅLLER — ÄN SÅ LÄNGE') + '</b></div>'
+      + `<div class="gbar"><div style="width:${Math.round(u.f * 100)}%;background:${col}"></div></div>`);
+  }
+  if (ex.brutal.length) {
+    const sh = brutalShame();
+    lines.push(`<div class="rline"><span>\u{1F480} BRUTALA LAGAR (${ex.brutal.length})</span><b style="color:var(--red)">VÄRLDEN FÖRDÖMER: -${Math.round(sh * shameWeight(20))} HOS FRIA LÄNDER</b></div>`
+      + `<div class="rsub">${ex.brutal.map((b) => b.o.name.toUpperCase()).join(' \u{00B7} ')}</div>`);
   }
   const goal = policyGoalStats();
   const moving = Object.keys(STATS).filter((k) => Math.round(goal[k].total - s.stats[k].total) !== 0).length;
@@ -2918,6 +3154,70 @@ function allBuildings() {
   return out;
 }
 
+// V5.17: staden bakom en byggnyckel 'cid:index'
+function cityOfKey(key) {
+  const i = key.lastIndexOf(':');
+  return state.cities?.[key.slice(0, i)]?.[+key.slice(i + 1)] || null;
+}
+// V5.17: täckningen — hur stor del av rikets folk som bor i en stad med varje sorts byggnad
+const cityPopCache = {};
+function countryCityPop(cid) {
+  const list = state.cities?.[cid] || [];
+  const key = cid + ':' + list.length;   // småstäderna läggs till efter laddningen
+  return (cityPopCache[key] ??= list.reduce((a, c) => a + (c.p || 0), 0));
+}
+function buildingCover() {
+  const s = state.solo;
+  const cover = {}, count = {};
+  if (!s?.cityB || !state.cities) return { cover, count };
+  const total = Object.keys(s.claims || {}).reduce((a, cid) => a + countryCityPop(cid), 0);
+  for (const [k, arr] of Object.entries(s.cityB)) {
+    if (!s.claims[k.split(':')[0]]) continue;
+    const p = total ? (cityOfKey(k)?.p || 0) / total : 0;
+    for (const b of new Set(arr)) { cover[b] = (cover[b] || 0) + p; count[b] = (count[b] || 0) + 1; }
+  }
+  return { cover, count };
+}
+// rikets andel av folket i de här städerna (byggmenyn: vad driften blir)
+function popShareOf(keys) {
+  const total = Object.keys(state.solo?.claims || {}).reduce((a, cid) => a + countryCityPop(cid), 0);
+  return total ? keys.reduce((a, k) => a + (cityOfKey(k)?.p || 0), 0) / total : 0;
+}
+// V5.17: byggnadernas avkastning och drift per dag.
+// Avkastningen (pengar, forskning, rekryter) är som förut i landets första 14 städer per
+// sort, sedan mättas marknaden. Driften (drift) är en andel av rikets dagsinkomst: sjukhus
+// i varje stad kostar 7 % av inkomsten, i städer med halva folket 3,5 %.
+function buildingYield() {
+  const s = state.solo;
+  const out = { money: 0, rp: 0, man: 0, upkeep: 0 };
+  const n = {};   // 'cid|byggnad' → antal hittills
+  let driftPct = 0;
+  for (const [k, arr] of Object.entries(s?.cityB || {})) {
+    const cid = k.split(':')[0];
+    if (!s.claims[cid]) continue;
+    for (const b of arr) {
+      const B = BUILDINGS[b];
+      if (!B) continue;
+      out.upkeep += B.upkeep || 0;
+      driftPct += B.driftFix || 0;
+      if (!B.daily) continue;
+      const key = cid + '|' + b;
+      const w = yieldWeight(n[key] = (n[key] ?? -1) + 1);
+      out.money += (B.daily.money || 0) * w;
+      out.rp += (B.daily.rp || 0) * w;
+      out.man += (B.daily.man || 0) * w;
+    }
+  }
+  const { cover } = buildingCover();
+  for (const [b, share] of Object.entries(cover)) driftPct += (BUILDINGS[b]?.drift || 0) * Math.min(1, share);
+  out.driftPct = driftPct;
+  out.upkeep += driftPct / 100 * (moneyPerDay() + out.money);
+  return out;
+}
+function buildingMods() {
+  return coverageMods(buildingCover().cover);
+}
+
 function cityBuildingsIn(cid) {
   const out = [];
   for (const [k, arr] of Object.entries(state.solo?.cityB || {})) {
@@ -3040,6 +3340,7 @@ function tickDay() {
   // V5.16: första dagen under noll — det dröjer inte länge innan någon reagerar
   if (s.res.money < 0 && !s.inDeficit) { s.inDeficit = true; s.nextEvent = Math.min(s.nextEvent ?? 99, 4 + Math.floor(Math.random() * 12)); }
   else if (s.res.money >= 0) s.inDeficit = false;
+  tickExtremes(); // V5.17: utopier spricker, brutala lagar glöms inte
   tickGriev();    // V5.16: missnöjet klingar av eller växer
   tickIndHist();  // V5.16: bilder av statistiken för trenderna
   tickDiplomacy();
@@ -3070,9 +3371,9 @@ function tickDay() {
       toast(`${s.sanction.icon} ${s.sanction.name} — ${s.sanction.desc} (-${money(hit)}/DAG)`, 'red', 8000);
     }
   }
-  // integrationskontorens upkeep
-  const offices = allBuildings().filter((b) => BUILDINGS[b]?.upkeep).length;
-  s.res.money -= offices * 6;
+  // V5.17: byggnadernas drift (integrationskontor, sjukhus, skolor …), efter stadens storlek
+  const by = buildingYield();
+  s.res.money -= Math.round(by.upkeep);
   // ockupationsoron sätts (inte ackumuleras). V5.16: pengarna får gå under noll
   // (underskott), politisk makt får det inte
   if (occUnrest > 0) s.occUnrest = Math.min(45, occUnrest); else delete s.occUnrest;
@@ -3086,13 +3387,13 @@ function tickDay() {
   s.rpAcc -= wholeRp;
   s.res.pp += Math.max(0, Math.round(2 + raw('polpower') * 0.04));
 
-  // stadsbyggnadernas dagliga avkastning
-  for (const b of allBuildings()) {
-    const d = BUILDINGS[b]?.daily;
-    if (!d) continue;
-    s.res.money += d.money || 0;
-    s.res.rp += d.rp || 0;
-    s.res.man += d.man || 0;
+  // stadsbyggnadernas dagliga avkastning (V5.17: efter stadens storlek, bråkdelar sparas)
+  s.bldAcc ||= { money: 0, rp: 0, man: 0 };
+  for (const k of ['money', 'rp', 'man']) {
+    s.bldAcc[k] += by[k];
+    const whole = Math.floor(s.bldAcc[k]);
+    s.res[k] += whole;
+    s.bldAcc[k] -= whole;
   }
   // handelsavtalens dagliga kostnad — utan pengar spricker avtalet.
   // Erövrar man avtalslandet äger man råvaran själv → avtalet upplöses gratis.
@@ -3168,19 +3469,23 @@ function tickDay() {
     applyState();
   }
 
-  // byggkön: en enhet i taget, tar dagar att färdigställa.
+  // byggkön: förbanden byggs ett i taget, stadsbyggnaderna (V5.17) alla samtidigt.
   // Är armén hemma ansluter enheten direkt — annars bildas en GARNISON hemma.
   if (s.buildQueue?.length) {
-    const b = s.buildQueue[0];
-    if (--b.left <= 0) {
-      s.buildQueue.shift();
+    const firstUnit = s.buildQueue.find((q) => !q.building);
+    const doneB = {};   // byggnad → { n, city }, så att 86 universitet blir EN rad
+    const touched = new Set();
+    for (const b of [...s.buildQueue]) {
+      if (!b.building && b !== firstUnit) continue;
+      if (--b.left > 0) continue;
+      s.buildQueue.splice(s.buildQueue.indexOf(b), 1);
       const dest = b.dest || s.home;
       if (b.building) {
         // stadsbyggnad färdig
         ((s.cityB ||= {})[b.cityKey] ||= []).push(b.building);
-        toast(`\u{2705} ${BUILDINGS[b.building].icon} ${BUILDINGS[b.building].name} FÄRDIG I ${b.cityName?.toUpperCase() || cname(dest)}`, 'amber', 6000);
-        if ($('#citypanel').classList.contains('show')) renderCityPanel(state.cityPanelCid);
-        if (selectedCountry?.id === dest) refreshInfoPanel();
+        const d = (doneB[b.building] ||= { n: 0, city: b.cityName });
+        d.n++;
+        touched.add(dest);
       } else if (s.army && s.army.at === dest && !s.armyMoving && !s.chase) {
         // en marscherande armé kan inte ta emot nya enheter — de blir garnison i huvudstaden
         s.army.units.push(mkUnit(b.type, 0));
@@ -3189,8 +3494,17 @@ function tickDay() {
         ((s.garrisons ||= {})[dest] ||= []).push(mkUnit(b.type, 0));
         toast(`\u{2705} ${b.name} KLAR I ${cname(dest)} — FLYTTA ARMÉN DIT FÖR ATT SLÅ IHOP`, 'amber', 6000);
       }
-      updateArmyMarker();
     }
+    for (const [bid, d] of Object.entries(doneB)) {
+      const B = BUILDINGS[bid];
+      toast(`\u{2705} ${B.icon} ${B.name} FÄRDIG ${d.n > 1 ? `I ${d.n} STÄDER` : `I ${d.city?.toUpperCase() || ''}`}`, 'amber', 6000);
+    }
+    if (touched.size) {
+      recomputeNation();   // V5.17: byggnaderna ger nationsvärden
+      if ($('#citypanel').classList.contains('show')) renderCityPanel(state.cityPanelCid);
+      if (selectedCountry && touched.has(selectedCountry.id)) refreshInfoPanel();
+    }
+    updateArmyMarker();
     renderBuildCorner();
   }
 
@@ -3223,18 +3537,30 @@ function tickDay() {
     renderBuildCorner();
   }
 
-  // V5: utvecklingsbyggen (infrastruktur / stadsnivå) färdigställs
+  // V5: utvecklingsbyggen (infrastruktur / stadsnivå) färdigställs. V5.17: ingen gräns
+  // för hur många — varje land och slag bygger sitt första steg samtidigt som de andra.
   if (s.devQueue?.length) {
-    const b = s.devQueue[0];
-    if (--b.left <= 0) {
-      s.devQueue.shift();
+    const busy = new Set();
+    const done = [];
+    for (const b of [...s.devQueue]) {
+      const chain = b.cid + ':' + b.kind;
+      if (busy.has(chain)) continue;
+      busy.add(chain);
+      if (--b.left > 0) continue;
+      s.devQueue.splice(s.devQueue.indexOf(b), 1);
       raiseDev(worldCtx().world, b.cid, b.kind, DEV_STEP);
-      const lvl = devOf(worldCtx().world, b.cid)[b.kind];
+      done.push(b);
+    }
+    if (done.length) {
       recomputeNation();
-      toast(`${DEV_KINDS[b.kind].icon} ${DEV_KINDS[b.kind].name} I ${cname(b.cid)} \u{2192} NIVÅ ${lvl} (${devLabel(lvl)})`, 'amber', 6000);
-      logEvent(`${DEV_KINDS[b.kind].icon} ${cname(b.cid)}: ${DEV_KINDS[b.kind].name} NIVÅ ${lvl}`, { mine: true });
+      for (const b of done.slice(0, 3)) {
+        const lvl = devOf(worldCtx().world, b.cid)[b.kind];
+        toast(`${DEV_KINDS[b.kind].icon} ${DEV_KINDS[b.kind].name} I ${cname(b.cid)} \u{2192} NIVÅ ${lvl} (${devLabel(lvl)})`, 'amber', 6000);
+        logEvent(`${DEV_KINDS[b.kind].icon} ${cname(b.cid)}: ${DEV_KINDS[b.kind].name} NIVÅ ${lvl}`, { mine: true });
+      }
+      if (done.length > 3) toast(`\u{1F6A7} ${done.length - 3} UTBYGGNADER TILL ÄR KLARA I DAG`, 'amber', 6000);
       if (state.infraLayer) refreshInfraLayer();
-      if (selectedCountry?.id === b.cid) refreshInfoPanel();
+      if (selectedCountry && done.some((b) => b.cid === selectedCountry.id)) refreshInfoPanel();
     }
     renderBuildCorner();
   }
@@ -3282,6 +3608,7 @@ function eventCtx() {
   for (const [k, v] of Object.entries(s.stats || {})) st[k] = v.total;
   const ind = myIndicators() || {};
   const rt = hasIndicatorData() && s.nation ? bankRating() : null;
+  const ex = extremeLaws();
   return {
     st, day: s.clock?.day || 0,
     money: s.res?.money || 0, pp: s.res?.pp || 0, rp: s.res?.rp || 0, man: s.res?.man || 0,
@@ -3314,6 +3641,13 @@ function eventCtx() {
     migRate: ind.pop ? (ind.netmig || 0) / ind.pop * 100 : 0,
     demo: ind.demo ?? 5,
     trend: (id) => trendOf(id, ind),
+    // V5.17 YTTERLIGHETER: utopier som spricker och brutala lagar
+    utopias: ex.utopia.length,
+    utopiaCrack: ex.utopia.reduce((a, u) => Math.max(a, u.f), 0),
+    utopiaAge: ex.utopia.reduce((a, u) => Math.max(a, u.age), 0),
+    brutals: ex.brutal.length,
+    brutalAge: ex.brutal.length ? Math.min(...ex.brutal.map((b) => b.age)) : 0,
+    shame: ex.brutal.reduce((a, b) => a + (b.o.shame || 6), 0),
   };
 }
 
@@ -3458,6 +3792,15 @@ function eventInstance(ev, vars = null) {
     const e = lastLawChange(v.kind);
     if (e) { v.lagcat = e.cat; v.lag = LAW_SV[e.cat]; } else v.lag = 'den nya lagen';
   }
+  // V5.17: {utopi}/{utopilag} = den mest spruckna utopin, {brutal}/{brutallag} = den senaste brutala lagen
+  if (!v.utopicat || !v.brutalcat) {
+    const ex = extremeLaws();
+    const u = ex.utopia[0], b = ex.brutal[0];
+    if (!v.utopicat && u) { v.utopicat = u.cat; v.utopi = u.o.name; v.utopilag = LAW_SV[u.cat]; }
+    if (!v.brutalcat && b) { v.brutalcat = b.cat; v.brutal = b.o.name; v.brutallag = LAW_SV[b.cat]; }
+    v.utopi ||= 'utopin'; v.utopilag ||= 'den nya lagen';
+    v.brutal ||= 'den hårda lagen'; v.brutallag ||= 'den nya lagen';
+  }
   const f = Math.max(1, Math.sqrt(moneyPerDay() / 80)) * (0.8 + Math.random() * 0.45);
   const jit = () => 0.8 + Math.random() * 0.45;
   const scale = (o) => {
@@ -3502,7 +3845,7 @@ function effectHtml(ch) {
   if (ch.law) bits.push(`<span class="ec">\u{1F4DC} LAGEN ÄNDRAS</span>`);
   // V5.16: lagen tillbaka, missnöjet och chocker i statistiken
   if (ch.undo) {
-    const cat = ch.undo === true ? ch.vars?.lagcat : ch.undo;
+    const cat = undoCat(ch);
     if (cat && LAW_SV[cat]) bits.push(`<span class="ec">\u{21A9}\u{FE0F} ${LAW_SV[cat].toUpperCase()} ÅTERSTÄLLS</span>`);
   }
   if (ch.griev) bits.push(`<span class="${ch.griev < 0 ? 'ep' : 'en'}">${ch.griev > 0 ? '+' : ''}${ch.griev} MISSNÖJE${ch.kind && GRIEV_KINDS[ch.kind] ? ' (' + GRIEV_KINDS[ch.kind].name + ')' : ''}</span>`);
@@ -3607,7 +3950,11 @@ function applyChoice(ch) {
     } else if (locked) toast(`\u{1F512} ${LAWS[cat].name.toUpperCase()}: ${locked.toUpperCase()} — LAGEN STÅR KVAR`, '', 5000);
   }
   // V5.16: lagen tillbaka, missnöjet och chocker i statistiken
-  if (ch.undo) undoLaw(ch.undo === true ? ch.vars?.lagcat : ch.undo);
+  if (ch.undo) {
+    // V5.17: 'utopi'/'brutal' river den utopi eller brutala lag händelsen handlar om
+    const cat = undoCat(ch);
+    if (ch.undo === 'utopi' || ch.undo === 'brutal') undoExtreme(cat); else undoLaw(cat);
+  }
   if (ch.griev) {
     const g = s.griev || {}, tot = grievTotal(g);
     if (ch.kind) addGriev(ch.kind, ch.griev);
@@ -3644,22 +3991,42 @@ function refreshInfraLayer() {
   bar.style.background = `linear-gradient(90deg, ${DEV_RAMP.map((r) => `${r.color} ${r.at}%`).join(', ')})`;
 }
 
-// Lägg ett utvecklingssteg i kön för ett land du äger.
-function queueDev(cid, kind) {
+// Lägg utvecklingssteg i kön för ett land du äger. V5.17: inget tak på kön — så många
+// steg du har råd med (varje steg byggs efter det förra i samma land och slag).
+function devPlan(cid, kind, steps) {
+  const s = state.solo;
+  const lvl = devOf(worldCtx().world, cid)[kind] || 0;
+  const already = (s.devQueue || []).filter((q) => q.cid === cid && q.kind === kind).length;
+  const out = { steps: 0, money: 0, rp: 0, days: 0 };
+  for (let i = 0; i < steps; i++) {
+    const at = lvl + (already + i) * DEV_STEP;
+    if (at >= DEV_MAX) break;
+    const c = stepCost(at);
+    out.steps++; out.money += c.money; out.rp += c.rp; out.days += c.days;
+  }
+  return out;
+}
+function queueDev(cid, kind, steps = 1) {
   const s = state.solo;
   const world = worldCtx().world;
   const lvl = devOf(world, cid)[kind] || 0;
-  if (lvl >= DEV_MAX) { warn(`${DEV_KINDS[kind].name} ÄR REDAN PÅ MAXNIVÅ`); return; }
-  const already = (s.devQueue || []).filter((q) => q.cid === cid && q.kind === kind).length;
-  const cost = stepCost(lvl + already * DEV_STEP);
-  if ((s.devQueue || []).length >= 4) { warn('MAX 4 BYGGPROJEKT I KÖN'); return; }
-  if (!canAfford(cost.money)) { warn(`KRÄVER ${money(cost.money)} — DU HAR ${money(s.res.money)}`); return; }
-  if (s.res.rp < cost.rp) { warn(`KRÄVER ${cost.rp} \u{1F52C} — DU HAR ${s.res.rp}`); return; }
-  s.res.money -= cost.money;
-  s.res.rp -= cost.rp;
-  (s.devQueue ||= []).push({ cid, kind, left: cost.days, total: cost.days });
+  let done = 0, days = 0, why = null;
+  for (let i = 0; i < steps; i++) {
+    const already = (s.devQueue || []).filter((q) => q.cid === cid && q.kind === kind).length;
+    const at = lvl + already * DEV_STEP;
+    if (at >= DEV_MAX) { why = why || `${DEV_KINDS[kind].name} ÄR REDAN PÅ MAXNIVÅ`; break; }
+    const cost = stepCost(at);
+    if (!canAfford(cost.money)) { why = `KRÄVER ${money(cost.money)} — ${poorWhy(cost.money)}`; break; }
+    if (s.res.rp < cost.rp) { why = `KRÄVER ${cost.rp} \u{1F52C} — DU HAR ${s.res.rp}`; break; }
+    s.res.money -= cost.money;
+    s.res.rp -= cost.rp;
+    (s.devQueue ||= []).push({ cid, kind, left: cost.days, total: cost.days });
+    done++; days += cost.days;
+  }
+  if (!done) { warn(why || 'GÅR INTE ATT BYGGA UT'); return; }
   renderResbar(); renderBuildCorner(); refreshInfoPanel();
-  toast(`${DEV_KINDS[kind].icon} ${DEV_KINDS[kind].name} I ${cname(cid)} PÅBÖRJAD — KLAR OM ${cost.days} DAGAR`, 'amber', 6000);
+  toast(`${DEV_KINDS[kind].icon} ${DEV_KINDS[kind].name} I ${cname(cid)}: ${done > 1 ? `${done} STEG (+${done * DEV_STEP})` : 'ETT STEG'} PÅBÖRJAT — KLART OM ${days} DAGAR`
+    + (done < steps && why ? ` (${why})` : ''), 'amber', 7000);
 }
 
 // ---------- byggkö-widgeten i hörnet ----------
@@ -3678,12 +4045,26 @@ function renderBuildCorner() {
     </div>`;
   };
   const rows = [];
-  (s.buildQueue || []).forEach((b, i) => rows.push(row('\u{1F528}', b.name, b.left, b.total, i === 0)));
+  // V5.17: förbanden ett i taget, stadsbyggnaderna samtidigt och grupperade per sort
+  (s.buildQueue || []).filter((b) => !b.building).forEach((b, i) => rows.push(row('\u{1F528}', b.name, b.left, b.total, i === 0)));
+  const groups = {};
+  for (const b of s.buildQueue || []) if (b.building) (groups[b.building] ||= []).push(b);
+  for (const [bid, list] of Object.entries(groups)) {
+    const B = BUILDINGS[bid];
+    const lead = list.reduce((a, b) => (b.left < a.left ? b : a));
+    rows.push(row('\u{1F528}', list.length > 1 ? `${B.icon} ${B.name} \u{00D7} ${list.length}` : `${lead.name} — ${(lead.cityName || '').toUpperCase()}`, lead.left, lead.total, true));
+  }
   // V5.15: flera projekt pågår samtidigt och dagarna räknas med forskningstakten
   const resOn = activeResearch(), resSpeed = researchSpeed();
   (s.researchQueue || []).forEach((r) => rows.push(row('\u{1F52C}', r.name,
     Math.max(0, Math.ceil(r.left / resSpeed)), Math.ceil(r.total / resSpeed), resOn.includes(r))));
-  (s.devQueue || []).forEach((d, i) => rows.push(row(DEV_KINDS[d.kind].icon, `${DEV_KINDS[d.kind].name} — ${cname(d.cid)}`, d.left, d.total, i === 0)));
+  // V5.17: en rad per land och slag (det första steget byggs, resten väntar)
+  const chains = {};
+  for (const d of s.devQueue || []) (chains[d.cid + ':' + d.kind] ||= []).push(d);
+  for (const list of Object.values(chains)) {
+    const d = list[0];
+    rows.push(row(DEV_KINDS[d.kind].icon, `${DEV_KINDS[d.kind].name} — ${cname(d.cid)}${list.length > 1 ? ` (+${list.length - 1} STEG I KÖ)` : ''}`, d.left, d.total, true));
+  }
   for (const [tid, w] of Object.entries(s.wars || {})) {
     if (w.status === 'justifying') rows.push(row('\u{2696}\u{FE0F}', `KRIG: ${cname(tid)}`, w.days, w.total || w.days, true));
   }
@@ -5453,6 +5834,22 @@ function renderBankTab(body) {
 }
 
 // ---------- LAGAR-fliken ----------
+// V5.17: förhandsrutans rad för ✨ utopier och 💀 brutala val
+function extremeNote(cat, o) {
+  const s = state.solo;
+  if (o.utopia) {
+    const cur = s.nation.laws[cat] === o.id ? extremeLaws().utopia.find((u) => u.cat === cat) : null;
+    const how = cur
+      ? (cur.f > 0 ? `SPRICKER: ${Math.round(cur.f * 100)} %` : `HÅLLER ÄN — ${Math.max(0, STING_START - cur.age)} DAGAR KVAR TILL FÖRSTA SPRICKAN`)
+      : `LÅTER FANTASTISKT — MEN HUR DET GÅR I LÄNGDEN VISAR SIG FÖRST EFTER ETT PAR ÅR (${Math.round((STING_START + STING_DAYS) / YEAR_DAYS)} SPELÅR)`;
+    return `<span class="lawx utopia">\u{2728} UTOPI: ${how}</span>`;
+  }
+  if (o.brutal) {
+    return `<span class="lawx brutal">\u{1F480} BRUTALT: FUNGERAR DIREKT, MEN VÄRLDEN FÖRDÖMER DIG (RELATIONERNA SJUNKER MED UPP TILL ${Math.round((o.shame || 6) * 1.5)} HOS FRIA LÄNDER SÅ LÄNGE LAGEN GÄLLER) OCH FOLKET GLÖMMER INTE</span>`;
+  }
+  return '';
+}
+
 function renderLawsTab(body) {
   const s = state.solo;
   const ideoName = (IDEOLOGIES[s.nation.ideology]?.name || '').toUpperCase();
@@ -5468,7 +5865,8 @@ function renderLawsTab(body) {
     <div style="font-size:7px;color:var(--holo-dim);line-height:1.9;margin-bottom:10px;border-left:2px solid ${hCol};padding-left:6px">
       \u{1F9ED} IDEOLOGISK HARMONI: <span style="color:${hCol}">${h}% — ${hTxt}</span><br>
       <span style="font-size:6px">${ideoName} HAR EN \u{00C5}SIKT OM VARJE LAG. \u{2605} = PARTIETS LINJE (HALVA PRISET). MOT LINJEN KOSTAR DUBBELT.</span>
-    </div>`;
+    </div>
+    <div style="font-size:6px;color:var(--holo-dim);line-height:1.9;margin-bottom:10px">\u{2728} = UTOPI: LÅTER UNDERBART, MEN VERKLIGHETEN KOMMER IKAPP. \u{1F480} = BRUTALT: FUNGERAR DIREKT, MEN VÄRLDEN FÖRDÖMER DIG OCH FOLKET MINNS. FÖR DEN SOM VILL SPELA PÅ EN HÅRDARE NIVÅ.</div>`;
   // vald lag väntar på godkännande: grön bock / rött kryss högst upp
   const pend = state.pendingLaw;
   if (pend) {
@@ -5546,9 +5944,13 @@ function renderLawsTab(body) {
       const cost = Math.round(lawChangeCost(cat, s.nation.laws[cat], o.id) * lawCostFactor(s.nation, cat, o.id));
       const isFav = wantIdx != null && def.options[wantIdx]?.id === o.id;
       if (isFav) btn.classList.add('fav');
-      btn.textContent = (locked ? '\u{1F512} ' : isFav ? '\u{2605} ' : '') + o.name.toUpperCase();
+      // V5.17: ✨ utopier och 💀 brutala val syns redan på knappen
+      if (o.utopia) btn.classList.add('utopia');
+      if (o.brutal) btn.classList.add('brutal');
+      btn.textContent = (locked ? '\u{1F512} ' : isFav ? '\u{2605} ' : '')
+        + (o.utopia ? '\u{2728} ' : o.brutal ? '\u{1F480} ' : '') + o.name.toUpperCase();
       // beskrivningen förklarar vad lagen FAKTISKT innebär om den aktiveras
-      const lawDesc = o.desc ? `<span class="lawdesc">${o.desc}</span>` : '';
+      const lawDesc = extremeNote(cat, o) + (o.desc ? `<span class="lawdesc">${o.desc}</span>` : '');
       btn.addEventListener('mouseenter', () => {
         if (locked) { setPreview(`<span class="dn">\u{1F512} ${locked.toUpperCase()}</span>` + lawDesc); return; }
         if (isCur) { setPreview(`<span class="dc">${o.name.toUpperCase()} — NUVARANDE LAG</span>` + lawDesc); return; }
@@ -5828,8 +6230,7 @@ function researchIncome() {
   const s = state.solo;
   const raw = Math.max(0, s.stats?.research?.raw ?? s.stats?.research?.total ?? 0);
   const rdPct = s.rdNow ?? 1;
-  let bld = 0;
-  for (const b of allBuildings()) bld += BUILDINGS[b]?.daily?.rp || 0;
+  const bld = buildingYield().rp;   // V5.17: efter stadens storlek
   const base = 1, stat = raw * 0.08, rd = (rdPct / 100) * moneyPerDay() * 3;
   return { base, stat, rd, rdPct, bld, total: base + stat + rd + bld };
 }
@@ -7865,6 +8266,7 @@ function saveGame() {
           eventQueue: s.eventQueue || [],   // V5.15: följdhändelser som väntar
           // V5.16: lagar som slår igenom, missnöjet, lagändringarna och statistikens historik
           lawFx: s.lawFx, ideoFx: s.ideoFx, griev: s.griev || {}, lawLog: s.lawLog || [], indHist: s.indHist || [],
+          lawSince: s.lawSince || {}, utopiaWarned: s.utopiaWarned || {},   // V5.17
         },
         world: state.world || {},
         history: (state.history || []).slice(0, 120),
@@ -7918,6 +8320,7 @@ function saveSession() {
       faith: s.faith, ident: s.ident, bank: s.bank,   // V5.12–5.13
       eventQueue: s.eventQueue || [],   // V5.15
       lawFx: s.lawFx, ideoFx: s.ideoFx, griev: s.griev || {}, lawLog: s.lawLog || [], indHist: s.indHist || [],   // V5.16
+      lawSince: s.lawSince || {}, utopiaWarned: s.utopiaWarned || {},   // V5.17
     }));
   } catch (e) { /* privat läge / fullt lager — strunt samma */ }
 }
@@ -7962,6 +8365,7 @@ function restoreSession(snap, home) {
   s.eventQueue = snap.eventQueue || [];   // V5.15
   s.lawFx = snap.lawFx || null; s.ideoFx = snap.ideoFx || null;   // V5.16
   s.griev = snap.griev || {}; s.lawLog = snap.lawLog || []; s.indHist = snap.indHist || [];
+  s.lawSince = snap.lawSince || {}; s.utopiaWarned = snap.utopiaWarned || {};   // V5.17
   s.ident = snap.ident || null;   // V5.12
   s.bank = snap.bank || null;   // V5.13
   s.stateFlags = snap.stateFlags || {};
@@ -8290,4 +8694,5 @@ window.__imperium = {
   MODIFIERS, EVENTS, RESEARCH, LAWS, IDEOLOGIES, devOf, raiseDev,
   openEventDialog, eventInstance, battleBoost, researchIncome, activeResearch,   // V5.15
   myIndicators, noteLawChange, applyShock, creditLine, spendable, policyGoalStats, eventCtx, applyChoice,   // V5.16
+  extremeLaws, utopiaMods, buildingMods, buildingYield, openCityPanel, renderCityPanel, undoExtreme, BUILDINGS, moneyPerDay,   // V5.17
 };

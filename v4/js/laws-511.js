@@ -15,12 +15,21 @@ import * as p8 from './laws511/part8.js';   // V5.14: brott och rätt
 import * as p9 from './laws511/part9.js';   // V5.14: ekonomi
 import * as p10 from './laws511/part10.js'; // V5.14: natur och råvaror
 import * as p11 from './laws511/part11.js'; // V5.14: samhälle
+// V5.17 YTTERLIGHETER: ett ✨ utopiskt och ett 💀 brutalt val i varje lag (del 12–16)
+// och åtta nya lagar (del 17). Valen bär `utopia`+`sting` eller `brutal`+`shame`.
+import * as p12 from './laws511/part12.js';
+import * as p13 from './laws511/part13.js';
+import * as p14 from './laws511/part14.js';
+import * as p15 from './laws511/part15.js';
+import * as p16 from './laws511/part16.js';
+import * as p17 from './laws511/part17.js';
 
 export const EXTRAS_511 = {};
 export const FX_511 = {};
 export const NEW_511 = {};
-for (const p of [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11]) {
-  Object.assign(EXTRAS_511, p.EXTRAS || {});
+for (const p of [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17]) {
+  // samma lag kan få val från flera delar — listorna läggs efter varandra
+  for (const [cat, list] of Object.entries(p.EXTRAS || {})) (EXTRAS_511[cat] ||= []).push(...list);
   Object.assign(NEW_511, p.NEW || {});
   for (const [cat, opts] of Object.entries(p.FX || {})) Object.assign((FX_511[cat] ||= {}), opts);
 }
