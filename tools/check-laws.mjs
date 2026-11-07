@@ -11,7 +11,7 @@ const { STATS } = await import(R('stats.js'));
 const { IND, LAW_EFFECTS } = await import(R('statistics.js'));
 const { LAW_KIND, LAW_SV, GRIEV_IDS } = await import(R('realism.js'));
 
-const PARTS = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
+const PARTS = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
 const errs = [], warns = [];
 const E = (m) => errs.push(m), W = (m) => warns.push(m);
 const IDEOS = new Set(Object.keys(IDEOLOGIES));
@@ -55,7 +55,10 @@ function checkDesc(where, desc) {
   if (/−/.test(desc)) E(`${where}: desc innehåller U+2212 (pixelfonten saknar tecknet)`);
 }
 
-function checkFlags(where, o) {
+// V5.19: reglerna för ✨/💀 gäller värdena som de skrevs (mods0) — buff-lagret i tuning.js
+// skalar dem efteråt och kontrolleras för sig längst ner
+function checkFlags(where, o0) {
+  const o = o0.mods0 ? { ...o0, mods: o0.mods0 } : o0;
   if (o.utopia) {
     if (o.utopia !== true) E(`${where}: utopia ska vara true`);
     if (o.brutal) E(`${where}: kan inte vara både utopia och brutal`);
@@ -111,7 +114,7 @@ for (const p of PARTS) {
       checkFx(where, fxOf(cat, o.id));
       if (o.utopia) u++; if (o.brutal) b++;
     }
-    if (u < 1 || b < 1) W(`part${p} ${cat}: ${u} utopier och ${b} brutala val (väntat minst 1 av varje)`);
+    if (p < 23 && (u < 1 || b < 1)) W(`part${p} ${cat}: ${u} utopier och ${b} brutala val (väntat minst 1 av varje)`);   // del 23 lägger bara till enstaka val
   }
   for (const [cat, opts] of Object.entries(fxs)) {
     for (const id of Object.keys(opts)) if (!LAWS[cat]?.options.some((o) => o.id === id)) E(`part${p} FX ${cat}.${id}: valet finns inte`);
@@ -176,9 +179,38 @@ for (const [k, I] of Object.entries(IDEOLOGIES)) {
   }
 }
 
+// ---------- V5.19: buffarna och debuffarna ----------
+const { TIERS, LAW_TUNE, IDEO_TUNE } = await import(R('tuning.js'));
+for (const [key, tid] of Object.entries(LAW_TUNE)) {
+  const [cat, id] = key.split('.');
+  const o = LAWS[cat]?.options.find((x) => x.id === id);
+  if (!o) E(`tuning: ${key} finns inte`);
+  else if (o.tune?.tier !== tid) E(`tuning: ${key} fick inte nivån ${tid}`);
+  if (!TIERS[tid]) E(`tuning: okänd nivå ${tid}`);
+}
+for (const [key, tid] of Object.entries(IDEO_TUNE)) {
+  const [iid, did] = key.split('.');
+  const obj = did ? IDEOLOGIES[iid]?.doctrines?.[did] : IDEOLOGIES[iid];
+  if (!obj) E(`tuning: ideologin ${key} finns inte`);
+  else if (obj.tune?.tier !== tid) E(`tuning: ${key} fick inte nivån ${tid}`);
+}
+let nTuned = 0;
+for (const [cat, L] of Object.entries(LAWS)) {
+  for (const o of L.options) {
+    if (!o.tune) { if (o.utopia || o.brutal) E(`tuning: ${cat}.${o.id} är ✨/💀 men saknar nivå`); continue; }
+    nTuned++;
+    for (const [k, v] of Object.entries(o.mods)) if (!Number.isFinite(v) || Math.abs(v) > 60) E(`tuning: ${cat}.${o.id} ${k} = ${v}`);
+    for (const [id, arr] of Object.entries(LAW_EFFECTS[cat]?.[o.id] || {})) {
+      if (arr[0] === '*' && !(arr[1] > 0 && arr[1] <= 20)) E(`tuning: ${cat}.${o.id} FX ${id} × ${arr[1]}`);
+      if (!Number.isFinite(arr[1])) E(`tuning: ${cat}.${o.id} FX ${id} = ${arr[1]}`);
+    }
+  }
+}
+console.log(`buff-lagret: ${nTuned} val och ${Object.keys(IDEO_TUNE).length} ideologier/doktriner har en nivå`);
+
 const nU = Object.values(LAWS).flatMap((L) => L.options).filter((o) => o.utopia).length;
 const nB = Object.values(LAWS).flatMap((L) => L.options).filter((o) => o.brutal).length;
-console.log(`${Object.keys(LAWS).length} lagar, ${total} val (${newIds.size} nya i del 12–22: ${nU} utopier, ${nB} brutala)`);
+console.log(`${Object.keys(LAWS).length} lagar, ${total} val (${newIds.size} nya i del 12–23: ${nU} utopier, ${nB} brutala)`);
 if (warns.length) console.log(`\n${warns.length} varningar:\n` + warns.slice(0, 40).map((w) => '  ! ' + w).join('\n'));
 if (errs.length) { console.log(`\n✗ ${errs.length} fel:\n` + errs.slice(0, 80).map((e) => '  ✗ ' + e).join('\n')); process.exit(1); }
 console.log('✓ lagarna är hela');

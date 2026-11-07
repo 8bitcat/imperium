@@ -7,6 +7,7 @@
 
 import { LAW_EXTRAS } from './laws-extra.js';
 import { NEW_LAWS } from './laws-more.js';
+import { applyLawTuning } from './tuning.js';
 
 export const LAW_STEP_COST = 15; // Political power per steg
 
@@ -283,8 +284,9 @@ export const LAWS = {
         desc: 'Varken marknad eller planekonomi: privat ägande behålls men underordnas nationens intresse genom korporativa förbund av stat, företag och arbetare. Industrin går för högtryck mot statens mål, konflikter mellan arbete och kapital upphör och ekonomin blir ett verktyg för din politik. Priset är att den ekonomiska friheten begränsas och att välståndet per person växer långsammare än i en fri marknad.' },
       { id: 'planned', name: 'Planned', mods: { statepower: 8, factory: 5, welfare: 5, gdp: -6, freedom: -5 },
         desc: 'Marknaden finns kvar men staten styr investeringar och nyckelsektorer enligt plan. Ger viss industriell kraft och trygghet. Tillväxten och friheten dämpas.' },
-      { id: 'market', name: 'Market', default: true, mods: {},
-        desc: 'Fungerande marknadsekonomi med statlig reglering. Varken bonus eller straff. Utgångsläget.' },
+      // V5.19: marknaden är startläget men har egna effekter (buffad i tuning.js)
+      { id: 'market', name: 'Market', default: true, mods: { gdp: 5, income: 4, factory: 3, research: 3, stability: 3, corruption: -3 },
+        desc: 'Fungerande marknadsekonomi med statlig reglering. Företagen konkurrerar fritt, staten sätter spelreglerna och ser till att ingen fuskar. Ekonomin växer stadigt och forskningen får pengar från både staten och näringslivet. Utgångsläget.' },
       { id: 'plain', name: 'Plain', mods: { gdp: 10, income: 5, freedom: 8, welfare: -8, statepower: -8, corruption: -3 },
         desc: 'Oreglerad marknad där staten håller sig undan nästan helt. Välståndet och friheten växer och korruptionen får mindre att gripa tag i. Trygghetssystemen tunnas ut och staten tappar sina ekonomiska verktyg.' },
     ],
@@ -748,6 +750,9 @@ for (const [cat, list] of Object.entries(LAW_EXTRAS)) {
     opts.splice(at + 1, 0, option);
   }
 }
+
+// V5.19: buffarna och debuffarna (tuning.js) läggs på när alla val är på plats
+applyLawTuning(LAWS);
 
 export function defaultLaws() {
   const laws = {};

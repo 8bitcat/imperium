@@ -26,6 +26,7 @@ import { FAITHS, FAITH_KEYS, sharesOf, compositionOf } from './faith.js';
 import { DEMOCRACY } from './democracy-data.js';     // V5.16: EIU:s demokratiindex
 import { regimeOf, DEMO_SUBS } from './realism.js';
 import { RATINGS } from './bank.js';
+import { applyFxTuning } from './tuning.js';   // V5.19: buffarna och debuffarna
 
 export const IND_GROUPS = [
   { id: 'eko', name: 'EKONOMI', icon: '\u{1F4B0}' },
@@ -1881,6 +1882,9 @@ for (const [cat, opts] of Object.entries(LAW_EFFECTS_518)) {
     if (LAWS[cat].options.some((o) => o.id === opt)) addLawFx(cat, opt, fx);
   }
 }
+
+// V5.19: buffade val syns starkare i statistiken, debuffade svagare (tuning.js)
+applyFxTuning(LAW_EFFECTS, LAWS, IND);
 
 // startläget per lagkategori (det verkliga datat har redan landets politik)
 const DEFAULT_LAW = Object.fromEntries(Object.entries(LAWS).map(([cat, L]) =>

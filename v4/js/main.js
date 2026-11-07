@@ -9,7 +9,9 @@ import { BattleB } from './battleB.js';
 import { STATS, STAT_GROUPS, computeStats, statGoodness, UNCAPPED } from './stats.js';
 import { LAWS, defaultLaws, lawMods, lawChangeCost, lawOption } from './laws.js';
 import { IDEOLOGIES, countryIdeology, ideologyMods, lawLockedBy, enforceRequirements, IDEOLOGY_COST, DOCTRINE_COST, IDEOLOGY_TRACKS, trackOf, switchBlockedBy, branchesOf,
-  ideologyHarmony, lawCostFactor, preferredIndex, ideologyDistance, tradeCostFactor, tradeBlockedBy, allyBlockedBy, blocBlockedBy, axesOf } from './ideologies.js';
+  ideologyHarmony, lawCostFactor, preferredIndex, ideologyDistance, tradeCostFactor, tradeBlockedBy, allyBlockedBy, blocBlockedBy, axesOf,
+  ideoTune, ideologyCost, doctrineCost } from './ideologies.js';
+import { tuneNote } from './tuning.js';   // V5.19 BUFFAR OCH DEBUFFAR
 import { RESEARCH, researchMods, combatBonus, hasUnlock, logisticsRange, satCoverage, espionageTier,
   tierOf, tierCost, tierDays, missingNeeds, unitUpgrades, UNIT_STATS, ENDLESS_NAME, roman } from './research.js';
 import { MODIFIERS, modifierMods, tickModifiers, tickTrend, grant as grantMod, revoke as revokeMod, activeList as modList } from './modifiers.js';
@@ -36,7 +38,7 @@ import { newSaveId, writeSave, listSaves, readSave, deleteSave, renameSave, copy
 import { svName, alpha2 } from './names.js';
 import { YEAR_DAYS, DEFICIT_FLOOR, RECENT_DAYS, GRIEV_KINDS, GRIEV_IDS, LAW_KIND, LAW_SV, grievFromChange, protestMods,
   grievTotal, SHOCKS, DEMO_SUBS, NO_LAG, lagStep, migrantCap, regimeOf,
-  STING_START, STING_DAYS, stingFactor, utopiaFx, shameWeight } from './realism.js';   // V5.16 VERKLIGHETEN + V5.17 YTTERLIGHETER
+  STING_START, STING_DAYS, stingFactor, utopiaFx, shameWeight, LAW_PHASE_DAYS } from './realism.js';   // V5.16 VERKLIGHETEN + V5.17 YTTERLIGHETER
 import { PASS_COVERS, PASS_EMBLEMS, passportHtml, defaultIdent } from './passport.js';
 import { BANK_MONTH, MONTHS_PER_YEAR, RATINGS, PLAN_YEARS, DEFAULT_PLAN, MISS_LIMIT, DEFAULT_DAYS, CRISIS_DAYS, LOAN_SHARE,
   ratingOf, annuity, creditRoom, crisisMods } from './bank.js';
@@ -69,9 +71,9 @@ function puppetColor() { const c = soloColor(); return lumOf(c) > 200 ? mixHex(c
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.18.0';
+export const VERSION = '5.19.0';
 export const VERSION_DATE = '2026-11-07';
-export const VERSION_NAME = 'LAG OCH ORDNING';
+export const VERSION_NAME = 'BUFFAR OCH DEBUFFAR';
 
 const globe = new Globe($('#globe'));
 
@@ -1505,6 +1507,7 @@ function initNation(countryId) {
   s.nextEvent = 1 + Math.floor(Math.random() * 25);   // första händelsen kommer tidigt
   // V5.16: lagarna är i kraft från start, inget missnöje än, statistiken börjar i verkligheten
   s.lawFx = null; s.ideoFx = null; s.griev = {}; s.lawLog = []; s.indLag = null; s.indHist = [];
+  s.lawFxBy = null;   // V5.19: varje lags genomslag för sig
   s.crimeHist = []; s.crimeNews = []; s.crimeStart = 0;   // V5.18
   s.lawSince = {}; s.utopiaWarned = {};   // V5.17: när ytterlighetslagarna antogs
   recomputeNation();
@@ -2042,23 +2045,58 @@ function applyGameToIndicators(out) {
 const myTreasury = () => (state.solo?.res?.money || 0) * 1e8;   // 1 💰 = 100 miljoner $
 
 // Lagarna och ideologin glider mot sitt mål: ungefär en månad för en stor ändring.
+// V5.19: varje lag glider för sig (s.lawFxBy = {lag: {värde: nu}}) i det nya valets takt —
+// en buffad lag (tuning.js) slår igenom upp till tre gånger fortare, en debuffad långsammare.
+// s.lawFx är summan, som allt annat läser.
+function lawFxByOf(s) {
+  if (s.lawFxBy) return s.lawFxBy;
+  // ett äldre parti: lagarna räknas som i kraft, och det som ännu inte slagit igenom
+  // (skillnaden mot den gamla summan) ligger i _rest och glider bort i vanlig takt
+  const by = {}, rest = { ...(s.lawFx || lawMods(s.nation.laws)) };
+  for (const [cat, id] of Object.entries(s.nation.laws)) {
+    const m = lawOption(cat, id)?.mods;
+    if (!m || !Object.keys(m).length) continue;
+    by[cat] = { ...m };
+    for (const [k, v] of Object.entries(m)) rest[k] = (rest[k] || 0) - v;
+  }
+  for (const k of Object.keys(rest)) if (Math.abs(rest[k]) < 0.01) delete rest[k];
+  if (Object.keys(rest).length) by._rest = rest;
+  return (s.lawFx = sumFx(by), s.lawFxBy = by);
+}
+function sumFx(by) {
+  const out = {};
+  for (const m of Object.values(by)) for (const [k, v] of Object.entries(m)) out[k] = (out[k] || 0) + v;
+  return out;
+}
 function tickPolicyPhase() {
   const s = state.solo;
   if (!s?.nation) return false;
   let moved = false;
-  const glide = (cur, goal) => {
+  const glide = (cur, goal, speed = 1) => {
     for (const k of new Set([...Object.keys(cur), ...Object.keys(goal)])) {
       const g = goal[k] || 0, c = cur[k] || 0, d = g - c;
       if (!d) continue;
-      const n = c + Math.sign(d) * Math.min(Math.abs(d), Math.max(0.34, Math.abs(d) * 0.07));
+      const n = c + Math.sign(d) * Math.min(Math.abs(d), Math.max(0.34, Math.abs(d) * 0.07) * speed);
       if (Math.abs(g - n) < 0.01) { if (g) cur[k] = g; else delete cur[k]; } else cur[k] = n;
       moved = true;
     }
   };
-  glide(s.lawFx ||= {}, lawMods(s.nation.laws));
-  glide(s.ideoFx ||= {}, ideologyMods(s.nation));
+  const by = lawFxByOf(s);
+  for (const cat of new Set([...Object.keys(by), ...Object.keys(s.nation.laws)])) {
+    if (cat === '_rest') continue;
+    const o = lawOption(cat, s.nation.laws[cat]);
+    const goal = o?.mods || {};
+    if (!by[cat] && !Object.keys(goal).length) continue;
+    glide((by[cat] ||= {}), goal, o?.tune?.speed || 1);
+    if (!Object.keys(by[cat]).length) delete by[cat];
+  }
+  if (by._rest) { glide(by._rest, {}); if (!Object.keys(by._rest).length) delete by._rest; }
+  if (moved) s.lawFx = sumFx(by);
+  glide(s.ideoFx ||= {}, ideologyMods(s.nation), ideoTune(s.nation)?.speed || 1);
   return moved;
 }
+// V5.19: ungefär hur många dagar ett val tar på sig att slå igenom
+const phaseDays = (t) => Math.round(LAW_PHASE_DAYS / (t?.speed || 1));
 
 // vart nationsvärdena är på väg när lagarna slagit igenom helt
 function policyGoalStats() {
@@ -2149,7 +2187,7 @@ function extremeLaws() {
     if (!o?.utopia && !o?.brutal) continue;
     const since = ((s.lawSince ||= {})[cat] ??= day);   // en revolution kan ha skrivit lagen
     const age = Math.max(0, day - since);
-    if (o.utopia) out.utopia.push({ cat, o, age, f: stingFactor(age) });
+    if (o.utopia) out.utopia.push({ cat, o, age, f: stingFactor(age, o) });
     else out.brutal.push({ cat, o, age });
   }
   out.utopia.sort((a, b) => b.f - a.f || b.age - a.age);
@@ -6153,9 +6191,10 @@ function extremeNote(cat, o) {
   const s = state.solo;
   if (o.utopia) {
     const cur = s.nation.laws[cat] === o.id ? extremeLaws().utopia.find((u) => u.cat === cat) : null;
+    const st = o.stingStart ?? STING_START, sd = o.stingDays ?? STING_DAYS;   // V5.19: buffade utopier spricker senare
     const how = cur
-      ? (cur.f > 0 ? `SPRICKER: ${Math.round(cur.f * 100)} %` : `HÅLLER ÄN — ${Math.max(0, STING_START - cur.age)} DAGAR KVAR TILL FÖRSTA SPRICKAN`)
-      : `LÅTER FANTASTISKT — MEN HUR DET GÅR I LÄNGDEN VISAR SIG FÖRST EFTER ETT PAR ÅR (${Math.round((STING_START + STING_DAYS) / YEAR_DAYS)} SPELÅR)`;
+      ? (cur.f > 0 ? `SPRICKER: ${Math.round(cur.f * 100)} %` : `HÅLLER ÄN — ${Math.max(0, st - cur.age)} DAGAR KVAR TILL FÖRSTA SPRICKAN`)
+      : `LÅTER FANTASTISKT — MEN HUR DET GÅR I LÄNGDEN VISAR SIG FÖRST EFTER ETT PAR ÅR (${Math.round((st + sd) / YEAR_DAYS)} SPELÅR)`;
     return `<span class="lawx utopia">\u{2728} UTOPI: ${how}</span>`;
   }
   if (o.brutal) {
@@ -6180,7 +6219,8 @@ function renderLawsTab(body) {
       \u{1F9ED} IDEOLOGISK HARMONI: <span style="color:${hCol}">${h}% — ${hTxt}</span><br>
       <span style="font-size:6px">${ideoName} HAR EN \u{00C5}SIKT OM VARJE LAG. \u{2605} = PARTIETS LINJE (HALVA PRISET). MOT LINJEN KOSTAR DUBBELT.</span>
     </div>
-    <div style="font-size:6px;color:var(--holo-dim);line-height:1.9;margin-bottom:10px">\u{2728} = UTOPI: LÅTER UNDERBART, MEN VERKLIGHETEN KOMMER IKAPP. \u{1F480} = BRUTALT: FUNGERAR DIREKT, MEN VÄRLDEN FÖRDÖMER DIG OCH FOLKET MINNS. FÖR DEN SOM VILL SPELA PÅ EN HÅRDARE NIVÅ.</div>`;
+    <div style="font-size:6px;color:var(--holo-dim);line-height:1.9;margin-bottom:10px">\u{2728} = UTOPI: LÅTER UNDERBART, MEN VERKLIGHETEN KOMMER IKAPP. \u{1F480} = BRUTALT: FUNGERAR DIREKT, MEN VÄRLDEN FÖRDÖMER DIG OCH FOLKET MINNS. FÖR DEN SOM VILL SPELA PÅ EN HÅRDARE NIVÅ.<br>
+      <span class="tbuff">\u{2191} BUFFAD</span>: STARKARE, SLÅR IGENOM FORTARE OCH KOSTAR MINDRE (\u{2191}\u{2191} = MYCKET). <span class="tdebuff">\u{2193} DEBUFFAD</span>: SVAGARE, LÅNGSAMMARE OCH DYRARE.</div>`;
   // vald lag väntar på godkännande: grön bock / rött kryss högst upp
   const pend = state.pendingLaw;
   if (pend) {
@@ -6217,7 +6257,7 @@ function renderLawsTab(body) {
       recomputeNation();
       renderResbar();
       renderNationTab();
-      toast(`${pDef.name.toUpperCase()}: ${pOpt.name.toUpperCase()} (-${pend.cost} \u{2696}\u{FE0F}) — SLÅR IGENOM UNDER ~1 MÅNAD, I STATISTIKEN UNDER ÅR`, 'amber', 6000);
+      toast(`${pDef.name.toUpperCase()}: ${pOpt.name.toUpperCase()} (-${pend.cost} \u{2696}\u{FE0F}) — SLÅR IGENOM UNDER ~${phaseDays(pOpt.tune)} DAGAR, I STATISTIKEN UNDER ÅR`, 'amber', 6000);
     });
     const no = document.createElement('button');
     no.className = 'lcbtn no';
@@ -6273,16 +6313,20 @@ function renderLawsTab(body) {
       if (pend && pend.cat === cat && pend.oid === o.id) btn.classList.add('pend');
       // V5: ideologin har en åsikt om VARJE lag. Att gå mot den kostar dubbelt,
       // att gå mot den halva priset — och partiets favorit är utmärkt med ★.
-      const cost = Math.round(lawChangeCost(cat, s.nation.laws[cat], o.id) * lawCostFactor(s.nation, cat, o.id));
+      // V5.19: ett buffat val är billigare att anta, ett debuffat dyrare (tuning.js)
+      const cost = Math.round(lawChangeCost(cat, s.nation.laws[cat], o.id) * lawCostFactor(s.nation, cat, o.id) * (o.tune?.cost || 1));
       const isFav = wantIdx != null && def.options[wantIdx]?.id === o.id;
       if (isFav) btn.classList.add('fav');
       // V5.17: ✨ utopier och 💀 brutala val syns redan på knappen
       if (o.utopia) btn.classList.add('utopia');
       if (o.brutal) btn.classList.add('brutal');
+      // V5.19: buffade och debuffade val (tuning.js) bär sitt märke sist; ✨/💀 visar redan sitt
+      const tTag = o.tune && !o.utopia && !o.brutal ? ' ' + o.tune.tag : '';
+      if (tTag) btn.classList.add(o.tune.good >= 1 ? 'tbuff' : 'tdebuff');
       btn.textContent = (locked ? '\u{1F512} ' : isFav ? '\u{2605} ' : '')
-        + (o.utopia ? '\u{2728} ' : o.brutal ? '\u{1F480} ' : '') + o.name.toUpperCase();
+        + (o.utopia ? '\u{2728} ' : o.brutal ? '\u{1F480} ' : '') + o.name.toUpperCase() + tTag;
       // beskrivningen förklarar vad lagen FAKTISKT innebär om den aktiveras
-      const lawDesc = extremeNote(cat, o) + (o.desc ? `<span class="lawdesc">${o.desc}</span>` : '');
+      const lawDesc = extremeNote(cat, o) + tuneNote(o.tune) + (o.desc ? `<span class="lawdesc">${o.desc}</span>` : '');
       btn.addEventListener('mouseenter', () => {
         if (locked) { setPreview(`<span class="dn">\u{1F512} ${locked.toUpperCase()}</span>` + lawDesc); return; }
         if (isCur) { setPreview(`<span class="dc">${o.name.toUpperCase()} — NUVARANDE LAG</span>` + lawDesc); return; }
@@ -6321,17 +6365,18 @@ function renderIdeologyTab(body) {
     dr.className = 'docrow';
     for (const [did, d] of Object.entries(cur.doctrines)) {
       const b = document.createElement('button');
-      b.className = 'lawopt' + (s.nation.doctrine === did ? ' cur' : '');
-      b.textContent = d.name.toUpperCase();
+      const dCost = doctrineCost(s.nation.ideology, did);   // V5.19: buffade doktriner är billigare
+      b.className = 'lawopt' + (s.nation.doctrine === did ? ' cur' : '') + (d.tune ? (d.tune.good >= 1 ? ' tbuff' : ' tdebuff') : '');
+      b.textContent = d.name.toUpperCase() + (d.tune ? ' ' + d.tune.tag : '');
       b.addEventListener('mouseenter', () => {
         const curDoc = s.nation.doctrine && cur.doctrines?.[s.nation.doctrine];
-        setPreview(`<span class="dc">DOKTRIN ${d.name.toUpperCase()} — ${DOCTRINE_COST} \u{2696}\u{FE0F}</span> &nbsp; ` + deltaHtml(diffMods(d.mods, curDoc?.mods)));
+        setPreview(`<span class="dc">DOKTRIN ${d.name.toUpperCase()} — ${dCost} \u{2696}\u{FE0F}</span> &nbsp; ` + deltaHtml(diffMods(d.mods, curDoc?.mods)) + tuneNote(d.tune));
       });
       b.addEventListener('mouseleave', () => setPreview());
       b.addEventListener('click', () => {
         if (s.nation.doctrine === did) return;
-        if (s.res.pp < DOCTRINE_COST) { warn(`KRÄVER ${DOCTRINE_COST} \u{2696}\u{FE0F} POLITICAL POWER`); return; }
-        s.res.pp -= DOCTRINE_COST;
+        if (s.res.pp < dCost) { warn(`KRÄVER ${dCost} \u{2696}\u{FE0F} POLITICAL POWER`); return; }
+        s.res.pp -= dCost;
         s.nation.doctrine = did;
         recomputeNation(); renderResbar(); renderNationTab();
         toast(`DOKTRIN: ${d.name.toUpperCase()}`, 'amber');
@@ -6344,7 +6389,9 @@ function renderIdeologyTab(body) {
 
   const gt = document.createElement('div');
   gt.className = 'gtitle';
-  gt.textContent = `▸ BYT IDEOLOGI (${IDEOLOGY_COST} \u{2696}\u{FE0F} + TILLFÄLLIG ORO)`;
+  // V5.19: priset beror på ideologin — buffade är billigare, debuffade dyrare
+  const ic = Object.keys(IDEOLOGIES).map(ideologyCost);
+  gt.textContent = `▸ BYT IDEOLOGI (${Math.min(...ic)}–${Math.max(...ic)} \u{2696}\u{FE0F} + TILLFÄLLIG ORO)`;
   body.appendChild(gt);
   // Ideologierna står i lodräta LED — man vandrar ett steg i taget, uppifrån
   // och ner, och byter led bara via ledens toppar.
@@ -6366,13 +6413,15 @@ function renderIdeologyTab(body) {
       const card = document.createElement('div');
       card.className = 'ideocard' + (isCur ? ' cur' : blocked ? ' far' : ' reach');
       if (branch) card.style.cssText = 'margin-left:12px;border-style:dashed';
-      card.innerHTML = `<div class="iname">${ideo.icon} ${ideo.name.toUpperCase()}</div>`
+      // V5.19: buffade och debuffade ideologier (tuning.js) bär sitt märke
+      const tg = ideo.tune ? ` <span class="${ideo.tune.good >= 1 ? 'tbuff' : 'tdebuff'}">${ideo.tune.tag}</span>` : '';
+      card.innerHTML = `<div class="iname">${ideo.icon} ${ideo.name.toUpperCase()}${tg}</div>`
         + `<div class="imods">${modSummary(ideo.mods, 3)}</div>`;
       card.addEventListener('mouseenter', () => {
-        if (isCur) { setPreview('<span class="dc">NUVARANDE IDEOLOGI</span>'); return; }
-        if (blocked) { setPreview(`<span class="dn">\u{1F512} ${blocked}</span>`); return; }
+        if (isCur) { setPreview('<span class="dc">NUVARANDE IDEOLOGI</span>' + tuneNote(ideo.tune)); return; }
+        if (blocked) { setPreview(`<span class="dn">\u{1F512} ${blocked}</span>` + tuneNote(ideo.tune)); return; }
         const dm = diffMods(ideo.mods, ideologyMods(s.nation));
-        setPreview(`<span class="dc">${ideo.name.toUpperCase()} — ${IDEOLOGY_COST} \u{2696}\u{FE0F} + TILLFÄLLIG ORO</span> &nbsp; ` + deltaHtml(dm) + indicatorPreview(dm));
+        setPreview(`<span class="dc">${ideo.name.toUpperCase()} — ${ideologyCost(iid)} \u{2696}\u{FE0F} + TILLFÄLLIG ORO</span> &nbsp; ` + deltaHtml(dm) + indicatorPreview(dm) + tuneNote(ideo.tune));
       });
       card.addEventListener('mouseleave', () => setPreview());
       card.addEventListener('click', () => {
@@ -6418,9 +6467,10 @@ function renderIdeologyTab(body) {
     const reqTxt = pick.requires
       ? '<br><span style="color:var(--red)">TVINGAR OM LAGAR: ' + Object.keys(pick.requires).map((c) => LAWS[c].name.toUpperCase()).join(', ') + '</span>'
       : '';
+    const pCost = ideologyCost(natIdeoPick);   // V5.19: buffade ideologier är billigare
     box.innerHTML = `<div style="font-size:9px;color:var(--amber);margin-bottom:4px">${pick.icon} BYT TILL ${pick.name.toUpperCase()}?</div>
       <div>SÅ PÅVERKAS DINA VÄRDEN: ${deltaHtml(diffMods(pick.mods, ideologyMods(s.nation)))}</div>
-      <div style="color:var(--holo-dim)">KOSTAR ${IDEOLOGY_COST} \u{2696}\u{FE0F} (DU HAR ${s.res.pp}) + 30 TILLFÄLLIG ORO${reqTxt}</div>`;
+      <div style="color:var(--holo-dim)">KOSTAR ${pCost} \u{2696}\u{FE0F} (DU HAR ${s.res.pp}) + 30 TILLFÄLLIG ORO • SLÅR IGENOM UNDER ~${phaseDays(pick.tune)} DAGAR${reqTxt}</div>${tuneNote(pick.tune)}`;
     const btnRow = document.createElement('div');
     btnRow.style.cssText = 'display:flex;gap:8px;margin-top:8px';
     const okBtn = document.createElement('button');
@@ -6428,8 +6478,8 @@ function renderIdeologyTab(body) {
     okBtn.style.margin = '0';
     okBtn.textContent = 'BEKRÄFTA BYTET';
     okBtn.addEventListener('click', () => {
-      if (s.res.pp < IDEOLOGY_COST) { warn(`KRÄVER ${IDEOLOGY_COST} \u{2696}\u{FE0F} POLITICAL POWER — DU HAR ${s.res.pp}`); return; }
-      s.res.pp -= IDEOLOGY_COST;
+      if (s.res.pp < pCost) { warn(`KRÄVER ${pCost} \u{2696}\u{FE0F} POLITICAL POWER — DU HAR ${s.res.pp}`); return; }
+      s.res.pp -= pCost;
       s.nation.ideology = natIdeoPick;
       s.nation.doctrine = pick.doctrines ? Object.keys(pick.doctrines)[0] : null;
       const lawsBefore = { ...s.nation.laws };
@@ -8639,6 +8689,7 @@ function gamePayload() {
         eventQueue: s.eventQueue || [],   // V5.15: följdhändelser som väntar
         // V5.16: lagar som slår igenom, missnöjet, lagändringarna och statistikens historik
         lawFx: s.lawFx, ideoFx: s.ideoFx, griev: s.griev || {}, lawLog: s.lawLog || [], indHist: s.indHist || [],
+        lawFxBy: s.lawFxBy || null,   // V5.19
         lawSince: s.lawSince || {}, utopiaWarned: s.utopiaWarned || {},   // V5.17
         crimeHist: s.crimeHist || [], crimeNews: s.crimeNews || [], crimeStart: s.crimeStart || 0,   // V5.18
       },
@@ -8716,6 +8767,7 @@ function saveSession() {
       faith: s.faith, ident: s.ident, bank: s.bank,   // V5.12–5.13
       eventQueue: s.eventQueue || [],   // V5.15
       lawFx: s.lawFx, ideoFx: s.ideoFx, griev: s.griev || {}, lawLog: s.lawLog || [], indHist: s.indHist || [],   // V5.16
+      lawFxBy: s.lawFxBy || null,   // V5.19
       lawSince: s.lawSince || {}, utopiaWarned: s.utopiaWarned || {},   // V5.17
       crimeHist: s.crimeHist || [], crimeNews: s.crimeNews || [], crimeStart: s.crimeStart || 0,   // V5.18
     }));
@@ -8760,6 +8812,7 @@ function restoreSession(snap, home) {
   s.faith = snap.faith || null;   // V5.12
   s.eventQueue = snap.eventQueue || [];   // V5.15
   s.lawFx = snap.lawFx || null; s.ideoFx = snap.ideoFx || null;   // V5.16
+  s.lawFxBy = snap.lawFxBy || null;   // V5.19
   s.griev = snap.griev || {}; s.lawLog = snap.lawLog || []; s.indHist = snap.indHist || [];
   s.lawSince = snap.lawSince || {}; s.utopiaWarned = snap.utopiaWarned || {};   // V5.17
   s.crimeHist = snap.crimeHist || []; s.crimeNews = snap.crimeNews || []; s.crimeStart = snap.crimeStart || 0;   // V5.18

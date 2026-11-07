@@ -14,6 +14,7 @@
 import { LAWS } from './laws.js';
 import { LAW_EXTRAS } from './laws-extra.js';
 import { NEW_LAWS } from './laws-more.js';
+import { applyIdeoTuning, ideoTune as ideoTuneOf } from './tuning.js';
 
 export const IDEOLOGY_COST = 150;   // Political power för ideologibyte
 export const DOCTRINE_COST = 50;    // Political power för doktrinbyte
@@ -183,7 +184,8 @@ export const IDEOLOGIES = {
     mods: { ideopower: 15, integration: 10, milpower: 10, manpower: 5, immigration: -12, freedom: -8, justtime: -8 },
     locks: { immigration: ['noborders', 'open', 'humanitarian'], culture: ['multi'], globalism: ['major', 'big'] },
     doctrines: {
-      ethno: { name: 'Ethno-Nationalism', mods: { integration: 8, immigration: -15, approval: -8, unrest: 8, freedom: -8 }, axes: { auth: 15 } },
+      // V5.19: egna vinster att buffa (Henry: "buffa mycket")
+      ethno: { name: 'Ethno-Nationalism', mods: { integration: 8, ideopower: 8, stability: 6, milpower: 4, immigration: -15, approval: -8, unrest: 8, freedom: -8 }, axes: { auth: 15 } },
       civic: { name: 'Civic-Nationalism', mods: { stability: 6, approval: 3 }, axes: { auth: -10 } },
       left: { name: 'Left-Wing', mods: { welfare: 6, factory: 5, gdp: -4 }, axes: { econ: -40 } },
     },
@@ -402,6 +404,19 @@ for (const [cat, list] of Object.entries(LAW_EXTRAS)) {
     }
   }
 }
+
+// V5.19: de hårdaste partierna får också välja Henrys nya 💀 i statsskicket
+for (const id of ['fascism', 'natsoc']) {
+  const req = IDEOLOGIES[id].requires?.government;
+  if (req && !req.includes('xtotal')) req.push('xtotal');
+}
+
+// V5.19: buffarna och debuffarna (tuning.js) — ideologins och doktrinens värden,
+// hur fort de slår igenom och vad bytet kostar
+applyIdeoTuning(IDEOLOGIES);
+export const ideoTune = (nation) => ideoTuneOf(IDEOLOGIES, nation?.ideology, nation?.doctrine);
+export const ideologyCost = (id) => Math.round(IDEOLOGY_COST * (IDEOLOGIES[id]?.tune?.cost || 1));
+export const doctrineCost = (id, did) => Math.round(DOCTRINE_COST * (IDEOLOGIES[id]?.doctrines?.[did]?.tune?.cost || IDEOLOGIES[id]?.tune?.cost || 1));
 
 // Ideologins läge på axlarna, doktrinen inräknad.
 export function axesOf(nation) {

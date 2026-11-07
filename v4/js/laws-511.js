@@ -29,11 +29,13 @@ import * as p19 from './laws511/part19.js';
 import * as p20 from './laws511/part20.js';
 import * as p21 from './laws511/part21.js';
 import * as p22 from './laws511/part22.js';
+// V5.19 BUFFAR OCH DEBUFFAR: Henrys sex nya ytterlighetsval (del 23)
+import * as p23 from './laws511/part23.js';
 
 export const EXTRAS_511 = {};
 export const FX_511 = {};
 export const NEW_511 = {};
-for (const p of [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22]) {
+for (const p of [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22, p23]) {
   // samma lag kan få val från flera delar — listorna läggs efter varandra
   for (const [cat, list] of Object.entries(p.EXTRAS || {})) (EXTRAS_511[cat] ||= []).push(...list);
   Object.assign(NEW_511, p.NEW || {});

@@ -33,10 +33,11 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | Fil | Innehåll |
 |---|---|
 | `stats.js` | 22 nationsvärden + `computeStats` (V5.16: källan `protest` = missnöjet). Nya stat-nycklar MÅSTE finnas här, annars noll effekt utan fel. V5.15: varje värde har `total` (−100…100, det statistiken och allt gammalt läser) och `raw` (inget tak uppåt); `UNCAPPED` = de som producerar och visas med raw |
-| `laws.js` · `ideologies.js` · `research.js` | lagar (133 kategorier, 1 439 alternativ — V5.17: ett ✨ och ett 💀 i varje; V5.18: +40 lagar) · 19 ideologier/doktriner + axlar + sidogrenar · 27 grenar × 9 namngivna nivåer + OÄNDLIGT många till (`tierOf`, `tierCost`, `tierDays`), förkunskaper mellan grenar (`NEEDS`), förbandens egenskaper (`unit`: hp/rng/mv/heal → `unitUpgrades`) |
+| `laws.js` · `ideologies.js` · `research.js` | lagar (133 kategorier, 1 445 alternativ — V5.17: ett ✨ och ett 💀 i varje; V5.18: +40 lagar; V5.19: +6 ytterlighetsval) · 19 ideologier/doktriner + axlar + sidogrenar · 27 grenar × 9 namngivna nivåer + OÄNDLIGT många till (`tierOf`, `tierCost`, `tierDays`), förkunskaper mellan grenar (`NEEDS`), förbandens egenskaper (`unit`: hp/rng/mv/heal → `unitUpgrades`) |
 | `laws-extra.js` | V5.7: nya alternativ i befintliga lagar (`after`-position, `locks`, `effects`), splitsas in i LAWS vid laddning |
 | `laws-more.js` | V5.8: helt nya lagkategorier som bär sin egen `axis`/`dir`, `locks` och `effects` — läses av laws.js, ideologies.js och statistics.js |
-| `laws-511.js` + `laws511/part1–22.js` | V5.18: del 18–22 = 40 nya lagar (brott och rätt, ekonomi, vardag, stat, försvar). V5.17: del 12–16 = ✨/💀-valen, del 17 = åtta nya lagar. V5.11 LAGARNAS MAKT: tre nya val i varje lag (`EXTRAS` → laws-extra.js), fyra nya lagar (`NEW` → laws-more.js) och en stark statistikuppsättning för VARJE alternativ (`FX` → statistics.js, läggs sist och vinner per mått) |
+| `tuning.js` | V5.19 BUFFAR OCH DEBUFFAR: ett lager ovanpå lagar och ideologier. `LAW_TUNE` (lag.val → nivå) och `IDEO_TUNE` (ideologi eller ideologi.doktrin → nivå), nivåerna i `TIERS`. Läggs på sist i laws.js (`applyLawTuning`), ideologies.js (`applyIdeoTuning`) och statistics.js (`applyFxTuning`) |
+| `laws-511.js` + `laws511/part1–23.js` | V5.19: del 23 = Henrys sex nya ✨/💀-val. V5.18: del 18–22 = 40 nya lagar (brott och rätt, ekonomi, vardag, stat, försvar). V5.17: del 12–16 = ✨/💀-valen, del 17 = åtta nya lagar. V5.11 LAGARNAS MAKT: tre nya val i varje lag (`EXTRAS` → laws-extra.js), fyra nya lagar (`NEW` → laws-more.js) och en stark statistikuppsättning för VARJE alternativ (`FX` → statistics.js, läggs sist och vinner per mått) |
 | `events.js` · `modifiers.js` · `development.js` | 2 727 händelser med villkor (V5.18: +60 om brott i `events/brott.js`; V5.17: +139 om utopier och brutala lagar; V5.15: +1 044 i nio nya teman; V5.16: +785 i sju teman som följer av vad spelaren gör — reaktioner, protester, migration, statsfinanser, demokrati, samhällsliv, konsekvenser) · 48 modifierare · stadsnivå/infrastruktur 0–100 |
 | `war.js` · `integration.js` · `stance.js` | casus belli/krav/historiska riken (32 st — BARA grundlandet `core` kan utropa sitt rike, och ALLA `lands` krävs helt annekterade: lydstater och delvis tagna länder räknas inte, se `empireOwnedIds` i main.js) · integration av erövrat land · ländernas hållning |
 | `geopolitics.js` | V5.8: VÄRLDSLÄGET — kalla krig (spänning 0–100, incidenter, kris → ibland varmt krig), val i demokratier, revolutioner/kupper som river upp lagarna. Ren logik; main.js kopplar in den via `geoApi(ctx)` i `aiWorldTick` |
@@ -116,6 +117,14 @@ sedan går med som vanlig `player` (`state.hosting`). Kompisar går med på kode
 - Händelserna ligger i `events/brott.js` (prefix `br_`) och har villkoret `c.crimeRise`. Brotten kan chockas (`SHOCKS`).
 - 40 nya lagar finns i `laws511/part18–22.js`: brott och rätt, ekonomi och arbete, samhälle och vardag, stat och makt, försvar och framtid. LAGAR har en sökruta (`lawQuery`).
 
+**Buffar och debuffar (V5.19, `tuning.js`):** Henry pekar ut val och ideologier som ska bli starkare eller svagare.
+- Nivåerna: `buff2` (↑↑), `buff` (↑), `debuff` (↓) och `debuff2` (↓↓). Alla ✨ får `utopia` och alla 💀 får `brutal`. Varje nivå har `good` och `bad`, som är faktorer på nationsvärdena som är bra eller dåliga för landet (`inverted` räknas baklänges, invandringen skalas aldrig, tak ±60). Den har också `speed` (genomslaget) och `cost` (⚖️-priset). Utopinivån har dessutom `stingStart`/`stingDays`/`honeyFade` (spricker senare och långsammare, `stingFactor(age, o)` i realism.js).
+- Valet behåller originalet i `mods0` och får `tune`. `check-laws.mjs` granskar ✨/💀-reglerna mot `mods0` och lagret för sig.
+- Statistiken: `'+'` och `'*'` skalas åt det håll som är bra eller dåligt för måttet (`better`). `'~'`, `'='` och `'%pop'` lämnas som de är.
+- **Genomslaget per lag:** `s.lawFxBy` = {lag: {värde: nu}} glider i det nya valets takt (`tickPolicyPhase`). `s.lawFx` är summan, som allt annat läser. Äldre partier byggs om av `lawFxByOf` (skillnaden ligger i `_rest`). Ideologin glider i `ideoTune(nation).speed`.
+- Priserna: lagbyte × `o.tune.cost`, `ideologyCost(id)` och `doctrineCost(id, did)`. Knapparna får ↑/↓ sist (klasserna `tbuff`/`tdebuff`), och `tuneNote(t)` är raden i förhandsrutan.
+- Market (startläget i economic_system) har egna effekter sedan V5.19. Fascism och nationalsocialism får välja 💀 Extreme Totalitarianism (`xtotal`).
+
 **Statsskulden (V5.13):** `state.solo.bank` = { debt (💰), plan (år), months kvar, missed, defaultUntil, crisis, log }. Rikets BNP i spelets pengar = `bankY()` (fyra spelår av grundinkomsten). Startskulden = rikets verkliga statsskuld i % av BNP. `tickBank` betalar var 30:e dag; räcker pengarna inte läggs resten på skulden och efter 3 missade månader blir det statsbankrutt (halva skulden struken, betyget D i ett år, kris). Lagarnas och nationsvärdenas skuldeffekt (`s.debtPolicy` från `tickIndLag`) blir ett månadsunderskott eller -överskott (/40 per månad). Statsskuld och Räntekostnader i STATISTIK skrivs över med bankens siffror (`applyBankToIndicators`), och förhandsrutan för lagar visar skuldeffekten som "STATEN LÅNAR X % AV BNP MER PER ÅR".
 
 Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
@@ -149,7 +158,9 @@ Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
 ## Fällor som redan kostat tid
 
 - **Nya fält i `state.solo` måste in i BÅDE `gamePayload` (soloblocket) och `saveSession`** (och läsas
-  tillbaka i `restoreSession`). Annars tappar ett omladdat parti dem.
+  tillbaka i `restoreSession`). Annars tappar ett omladdat parti dem. (V5.19: `lawFxBy`.)
+- Ändra inte `option.mods` efter att laws.js laddats — tuning.js har redan skalat dem. Nya ✨/💀 skrivs
+  med sina råa värden och skalas automatiskt.
 - `saveGame()` är asynkron (IndexedDB). Ett test som laddar om sidan direkt efteråt måste `await`:a den.
 - Pixelfonten saknar U+2212 (−) — skriv vanligt bindestreck i text som visas.
 - `show(el)` sätter inline `display` och slår ut `.show`-klassen — blanda inte de två på samma element.

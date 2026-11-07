@@ -242,8 +242,9 @@ export function regimeOf(score) {
 export const STING_START = 20;
 export const STING_DAYS = 220;
 export const HONEY_FADE = 0.5;
-export function stingFactor(age) {
-  return Math.max(0, Math.min(1, ((age || 0) - STING_START) / STING_DAYS));
+// V5.19: en buffad utopi (tuning.js) bär egna stingStart/stingDays/honeyFade
+export function stingFactor(age, option) {
+  return Math.max(0, Math.min(1, ((age || 0) - (option?.stingStart ?? STING_START)) / (option?.stingDays ?? STING_DAYS)));
 }
 // inverted = nationsvärden där högt är dåligt (oro, korruption, krigstid)
 export function utopiaFx(option, f, inverted) {
@@ -251,7 +252,7 @@ export function utopiaFx(option, f, inverted) {
   if (!(f > 0) || !option?.utopia) return out;
   for (const [k, v] of Object.entries(option.mods || {})) {
     const good = inverted.has(k) ? -v : v;
-    if (good > 0) out[k] = (out[k] || 0) - v * HONEY_FADE * f;
+    if (good > 0) out[k] = (out[k] || 0) - v * (option.honeyFade ?? HONEY_FADE) * f;
   }
   for (const [k, v] of Object.entries(option.sting || {})) out[k] = (out[k] || 0) + v * f;
   return out;
