@@ -106,7 +106,8 @@ import { EVENTS as PROTESTER } from './events/protester.js';
 import { EVENTS as MIGRATION } from './events/migration.js';
 import { EVENTS as STATSFINANS } from './events/statsfinans.js';
 import { EVENTS as DEMOKRATI } from './events/demokrati.js';
-import { EVENTS as YTTERLIGHETER } from './events/ytterligheter.js';   // V5.17
+import { EVENTS as YTTERLIGHETER } from './events/ytterligheter.js';
+import { EVENTS as BROTT } from './events/brott.js';   // V5.18 LAG OCH ORDNING
 import { EVENTS as SAMHALLSLIV } from './events/samhallsliv.js';
 import { EVENTS as KONSEKVENSER } from './events/konsekvenser.js';
 
@@ -1119,7 +1120,7 @@ export const EVENTS = [
   ...NYA_IDEOLOGIER, ...MILITAR, ...VETENSKAP, ...SAMHALLE, ...OMVARLD, ...KALLA_KRIGET, ...NYA_LAGAR_58,
   ...VARDAG, ...KATASTROF, ...AFFARER, ...DIPLOMATI, ...INTRIGER, ...FRAMTID, ...KURIOSA, ...KEDJOR, ...RIKET,
   ...REAKTIONER, ...PROTESTER, ...MIGRATION, ...STATSFINANS, ...DEMOKRATI, ...SAMHALLSLIV, ...KONSEKVENSER,
-  ...YTTERLIGHETER,
+  ...YTTERLIGHETER, ...BROTT,
 ];
 
 export const EVENT_BY_ID = Object.fromEntries(EVENTS.map((e) => [e.id, e]));

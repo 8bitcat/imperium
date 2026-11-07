@@ -877,6 +877,45 @@ export const INDICATORS = [
     fx: { factory: 5, research: -4 }, desc: 'Andel av elen från kol, olja och gas' },
   { id: 'gaselec', name: 'Gaskraft', group: 'inf', fmt: 'pct', better: null, mode: 'add', min: 0, max: 100,
     fx: { factory: 2 }, desc: 'Andel av elen från naturgas' },
+  // ================= V5.18 LAG OCH ORDNING: 19 nya brotts- och rättsmått =================
+  { id: 'shootings', name: 'Skjutningar', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { safety: -0.6, unrest: 0.4, statepower: -0.2 }, desc: 'Skjutningar per 100 000 invånare och år, med eller utan skadade' },
+  { id: 'bombings', name: 'Sprängningar', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { safety: -0.5, unrest: 0.4, stability: -0.2 }, desc: 'Sprängningar och sprängförsök per 100 000 invånare och år' },
+  { id: 'knifecrime', name: 'Knivbrott', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { safety: -0.5, unrest: 0.3, welfare: -0.15 }, desc: 'Brott där en kniv används eller bärs olagligt, per 100 000 invånare och år' },
+  { id: 'gangmurders', name: 'Gängmord', group: 'brt', fmt: 'pct', better: 'low', mode: 'add', min: 0, max: 90,
+    fx: { safety: -8, statepower: -5, corruption: 4 }, desc: 'Andel av morden som hänger ihop med kriminella gäng' },
+  { id: 'druguse', name: 'Narkotikabruk', group: 'brt', fmt: 'pct', better: 'low', mode: 'add', min: 0.2, max: 40,
+    fx: { welfare: -1.5, qol: -1, freedom: 1, safety: -1 }, desc: 'Andel vuxna som använt narkotika det senaste året' },
+  { id: 'drugdeaths', name: 'Narkotikadödsfall', group: 'brt', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { welfare: -0.4, qol: -0.25, hdi: -0.1 }, desc: 'Döda av narkotika per 100 000 invånare och år' },
+  { id: 'hacking', name: 'Dataintrång', group: 'ekb', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { statepower: -0.3, research: 0.1, corruption: 0.15 }, desc: 'Intrång i datorer, konton och system, per 100 000 invånare och år' },
+  { id: 'ransomware', name: 'Utpressningsattacker', group: 'ekb', fmt: 'permillion', better: 'low', mode: 'mul',
+    fx: { statepower: -0.3, factory: -0.1, research: 0.1 }, desc: 'Företag och myndigheter som fått sina datorer låsta av utpressare, per miljon invånare och år' },
+  { id: 'elderfraud', name: 'Bedrägerier mot äldre', group: 'ekb', fmt: 'per100k', better: 'low', mode: 'mul',
+    fx: { welfare: -0.2, statepower: -0.25, corruption: 0.1 }, desc: 'Bedrägerier mot personer över 65 år, per 100 000 invånare och år' },
+  { id: 'welfarefraud', name: 'Välfärdsfusk', group: 'ekb', fmt: 'pct', better: 'low', mode: 'add', min: 0.3, max: 30,
+    fx: { corruption: 4, statepower: -2, welfare: 1 }, desc: 'Andel av bidragen och ersättningarna som betalas ut felaktigt' },
+  { id: 'laborcrime', name: 'Arbetslivskriminalitet', group: 'ekb', fmt: 'pct', better: 'low', mode: 'add', min: 0.2, max: 50,
+    fx: { corruption: 5, welfare: -3, factory: 1.5 }, desc: 'Andel av de anställda som jobbar svart, under lönegolvet eller med falska papper' },
+  { id: 'darkfigure', name: 'Mörkertal', group: 'rtt', fmt: 'pct', better: 'low', mode: 'add', min: 10, max: 95,
+    fx: { corruption: 10, statepower: -4, freedom: -3 }, desc: 'Andel av alla brott som aldrig anmäls till polisen' },
+  { id: 'murdersolved', name: 'Uppklarade mord', group: 'rtt', fmt: 'pct', better: 'high', mode: 'add', min: 5, max: 98,
+    fx: { statepower: 8, corruption: -8, safety: 3 }, desc: 'Andel av morden där någon döms' },
+  { id: 'sentence', name: 'Strafftid', group: 'rtt', fmt: 'months', better: null, mode: 'mul',
+    fx: { statepower: 0.25, freedom: -0.25 }, desc: 'Hur länge den som döms till fängelse sitter, i genomsnitt' },
+  { id: 'prisonescape', name: 'Rymningar', group: 'rtt', fmt: 'per1000', better: 'low', mode: 'mul',
+    fx: { statepower: -0.5, corruption: 0.4 }, desc: 'Fångar som rymmer, per 1 000 fångar och år' },
+  { id: 'guards', name: 'Väktare', group: 'rtt', fmt: 'per100k', better: null, mode: 'mul',
+    fx: { safety: -0.2, income: 0.1, statepower: -0.15 }, desc: 'Väktare och ordningsvakter från privata bolag, per 100 000 invånare' },
+  { id: 'crimetotal', name: 'Anmälda brott', group: 'brt', fmt: 'per100k', better: 'low',
+    desc: 'Alla anmälda brott per 100 000 invånare och år (summan av brotten i statistiken)' },
+  { id: 'convicted', name: 'Lagförda', group: 'rtt', fmt: 'per100k', better: null,
+    desc: 'Personer som döms eller får strafföreläggande, per 100 000 invånare och år' },
+  { id: 'crimecount', name: 'Brott per år', group: 'brt', fmt: 'count', better: 'low', agg: 'derived',
+    desc: 'Alla anmälda brott i riket under ett år' },
 ];
 
 export const IND = Object.fromEntries(INDICATORS.map((d) => [d.id, d]));
@@ -1753,6 +1792,96 @@ for (const [cat, opts] of Object.entries(LAW_EFFECTS_516)) {
   }
 }
 
+// V5.18 LAG OCH ORDNING: de befintliga lagarnas effekter på de nya brottsmåtten
+const LAW_EFFECTS_518 = {
+  policing: {
+    abolished: { shootings: ['*', 1.6], gangmurders: ['+', 10], guards: ['*', 2.2], darkfigure: ['+', 15], murdersolved: ['+', -25], prisonescape: ['*', 1.3] },
+    unarmed: { shootings: ['*', 1.1], guards: ['*', 1.2], murdersolved: ['+', -3] },
+    community: { knifecrime: ['*', 0.85], shootings: ['*', 0.9], darkfigure: ['+', -6], murdersolved: ['+', 4] },
+    oversight: { darkfigure: ['+', -3], murdersolved: ['+', 2] },
+    tough: { shootings: ['*', 0.85], knifecrime: ['*', 0.85], darkfigure: ['+', -2], guards: ['*', 0.9] },
+    militarized: { shootings: ['*', 0.7], bombings: ['*', 0.75], gangmurders: ['+', -6], darkfigure: ['+', 5], guards: ['*', 0.8] },
+    predictive: { hacking: ['*', 0.9], knifecrime: ['*', 0.85], shootings: ['*', 0.8], murdersolved: ['+', 6], darkfigure: ['+', -3] },
+    secretpolice: { shootings: ['*', 0.6], bombings: ['*', 0.6], gangmurders: ['+', -10], darkfigure: ['+', 20] },
+    zerocrime: { shootings: ['*', 0.9], darkfigure: ['+', 12], guards: ['*', 1.4], prisonescape: ['*', 1.3] },
+    kinpunish: { shootings: ['*', 0.55], gangmurders: ['+', -15], darkfigure: ['+', 25], prisonescape: ['*', 0.6] },
+  },
+  punishments: {
+    forgiveness: { sentence: ['*', 0.3], prisonescape: ['*', 0.5], shootings: ['*', 1.3] },
+    abolition: { sentence: ['*', 0.25], shootings: ['*', 1.25] }, minimal: { sentence: ['*', 0.6] },
+    restorative: { sentence: ['*', 0.7], knifecrime: ['*', 0.95] }, low: { sentence: ['*', 0.8] },
+    tagging: { sentence: ['*', 0.75], prisonescape: ['*', 0.7] }, harsh: { sentence: ['*', 1.4], prisonescape: ['*', 1.2] },
+    threestrikes: { sentence: ['*', 2], prisonescape: ['*', 1.3] }, veryharsh: { sentence: ['*', 2.2], prisonescape: ['*', 1.4] },
+    penallabor: { sentence: ['*', 1.8], prisonescape: ['*', 1.6] }, kinpunish: { sentence: ['*', 2.5], shootings: ['*', 0.7] },
+  },
+  firearms: {
+    riflehome: { shootings: ['*', 2.5] }, bearing: { shootings: ['*', 2.2] }, free: { shootings: ['*', 2] },
+    shallissue: { shootings: ['*', 1.5] }, licensed: { shootings: ['*', 1.15] }, redflag: { shootings: ['*', 0.9] },
+    handgun: { shootings: ['*', 0.8], knifecrime: ['*', 1.1] }, buyback: { shootings: ['*', 0.75] },
+    ban: { shootings: ['*', 0.7], knifecrime: ['*', 1.15] }, stateonly: { shootings: ['*', 0.6], knifecrime: ['*', 1.2] },
+    militia: { shootings: ['*', 1.8], gangmurders: ['+', 5] },
+  },
+  drugs: {
+    freesupply: { druguse: ['*', 1.8], drugdeaths: ['*', 0.7] }, freemarket: { druguse: ['*', 1.7], drugdeaths: ['*', 1.3] },
+    legal: { druguse: ['*', 1.4], drugdeaths: ['*', 0.9], gangmurders: ['+', -5] },
+    softlegal: { druguse: ['*', 1.25], drugdeaths: ['*', 0.95], gangmurders: ['+', -3] },
+    decriminalized: { druguse: ['*', 1.1], drugdeaths: ['*', 0.8] }, harmreduction: { druguse: ['*', 1.05], drugdeaths: ['*', 0.7] },
+    compulsory: { druguse: ['*', 0.85], drugdeaths: ['*', 0.9] }, strict: { druguse: ['*', 0.85], drugdeaths: ['*', 1.1] },
+    war: { druguse: ['*', 0.8], drugdeaths: ['*', 1.3], shootings: ['*', 1.4], gangmurders: ['+', 10] },
+    deathpenalty: { druguse: ['*', 0.6], drugdeaths: ['*', 1.2], gangmurders: ['+', 5] },
+    detoxcamps: { druguse: ['*', 0.5], drugdeaths: ['*', 1.1] },
+  },
+  surveillance: {
+    nospies: { murdersolved: ['+', -6], hacking: ['*', 1.3] }, none: { hacking: ['*', 1.2], murdersolved: ['+', -4] },
+    encryption: { hacking: ['*', 0.85], ransomware: ['*', 0.85] }, facial: { murdersolved: ['+', 6], knifecrime: ['*', 0.9] },
+    mass: { murdersolved: ['+', 8] }, total: { murdersolved: ['+', 10] }, informant: { darkfigure: ['+', 10] },
+    telescreen: { darkfigure: ['+', 15], murdersolved: ['+', 5] },
+  },
+  rehabilitation: {
+    freshstart: { sentence: ['*', 0.5], prisonescape: ['*', 2] }, open: { prisonescape: ['*', 1.8], sentence: ['*', 0.8] },
+    veryhigh: { sentence: ['*', 0.8] }, private: { prisonescape: ['*', 0.8], sentence: ['*', 1.1] },
+    supermax: { prisonescape: ['*', 0.2], sentence: ['*', 1.5] }, reeducation: { sentence: ['*', 2], prisonescape: ['*', 0.5] },
+  },
+  alcohol_policy: {
+    prohibition: { shootings: ['*', 1.3], gangmurders: ['+', 8], drugdeaths: ['*', 1.2] },
+    sobernation: { shootings: ['*', 1.2], gangmurders: ['+', 5] },
+  },
+  cash: {
+    privatemoney: { ransomware: ['*', 1.5], hacking: ['*', 1.2] }, anonymous: { welfarefraud: ['+', 2], laborcrime: ['+', 2] },
+    crypto: { ransomware: ['*', 1.4], hacking: ['*', 1.2], elderfraud: ['*', 1.2] },
+    limits: { laborcrime: ['+', -1.5] }, cardfirst: { laborcrime: ['+', -2], elderfraud: ['*', 1.15] },
+    cbdc: { laborcrime: ['+', -3], welfarefraud: ['+', -1] }, tracked: { laborcrime: ['+', -4], welfarefraud: ['+', -1.5] },
+  },
+  internet: {
+    cyberfree: { hacking: ['*', 1.5], ransomware: ['*', 1.4], elderfraud: ['*', 1.2] }, free: { hacking: ['*', 1.2] },
+    realname: { hacking: ['*', 0.85], elderfraud: ['*', 0.85] }, firewall: { hacking: ['*', 0.7], ransomware: ['*', 0.8] },
+    intranet: { hacking: ['*', 0.4], ransomware: ['*', 0.4], elderfraud: ['*', 0.6] },
+    devicesban: { hacking: ['*', 0.2], ransomware: ['*', 0.2], elderfraud: ['*', 0.3] },
+  },
+  anti_corruption: {
+    aigov: { welfarefraud: ['+', -2.5] }, agency: { welfarefraud: ['+', -1.5], laborcrime: ['+', -1.5], prisonescape: ['*', 0.8] },
+    opengov: { welfarefraud: ['+', -1] }, immunity: { welfarefraud: ['+', 2] },
+    patronage: { welfarefraud: ['+', 4], laborcrime: ['+', 3], prisonescape: ['*', 1.5] },
+    kleptocracy: { welfarefraud: ['+', 8], laborcrime: ['+', 6], prisonescape: ['*', 2] },
+  },
+  welfare: {
+    freeall: { welfarefraud: ['+', 6] }, extreme: { welfarefraud: ['+', 3] }, ubi: { welfarefraud: ['+', -2] },
+    none: { welfarefraud: ['+', -2], laborcrime: ['+', 3] }, workfare: { laborcrime: ['+', 1] },
+  },
+  immigration: { kafala: { laborcrime: ['+', 12] }, guestworker: { laborcrime: ['+', 3] }, noborders: { laborcrime: ['+', 4] } },
+  juvenile_justice: { socialonly: { knifecrime: ['*', 1.15] }, bootcamp: { knifecrime: ['*', 0.9] }, adults: { sentence: ['*', 1.15] } },
+  trials: {
+    jury: { murdersolved: ['+', -3] }, quick: { murdersolved: ['+', 5], sentence: ['*', 1.1] },
+    notrial: { murdersolved: ['+', 15], sentence: ['*', 1.3] }, showtrials: { murdersolved: ['+', 10], sentence: ['*', 1.5] },
+  },
+};
+for (const [cat, opts] of Object.entries(LAW_EFFECTS_518)) {
+  if (!LAWS[cat]) continue;
+  for (const [opt, fx] of Object.entries(opts)) {
+    if (LAWS[cat].options.some((o) => o.id === opt)) addLawFx(cat, opt, fx);
+  }
+}
+
 // startläget per lagkategori (det verkliga datat har redan landets politik)
 const DEFAULT_LAW = Object.fromEntries(Object.entries(LAWS).map(([cat, L]) =>
   [cat, (L.options.find((o) => o.default) || L.options[Math.floor(L.options.length / 2)]).id]));
@@ -1950,7 +2079,27 @@ const RAIL_KM = { '484': 20800, '036': 33000, '170': 2100, '024': 2900, '068': 4
 const NO_IMPUTE = { marine: 1, ports: 1, energyimp: 1 };
 // brotten som vägs ihop till Brottslighet (100 = ett typiskt land i världen)
 const CRIME_KEYS = ['homicide', 'assault', 'threats', 'robbery', 'burglary', 'theft', 'cartheft', 'vandalism',
-  'kidnapping', 'extortion', 'fraud', 'gangs', 'youthcrime', 'harass', 'biketheft', 'graffiti'];
+  'kidnapping', 'extortion', 'fraud', 'gangs', 'youthcrime', 'harass', 'biketheft', 'graffiti',
+  'shootings', 'knifecrime'];   // V5.18
+// V5.18: alla anmälda brott per 100 000 (Anmälda brott) — ungdomsbrotten är redan med i de andra
+export const CRIME_SUM = ['homicide', 'assault', 'threats', 'robbery', 'burglary', 'theft', 'pickpocket', 'cartheft',
+  'shoplift', 'vandalism', 'arson', 'weapons', 'kidnapping', 'extortion', 'trafficking', 'hatecrime', 'dui',
+  'drugcrime', 'cybercrime', 'fraud', 'idtheft', 'smuggling', 'envcrime', 'harass', 'trespass', 'biketheft',
+  'graffiti', 'hitrun', 'animalcruelty', 'counterfeit', 'forgery', 'embezzle', 'insider', 'shootings', 'bombings',
+  'knifecrime', 'hacking', 'elderfraud'];
+// V5.18: brotten i tre familjer som följer olika orsaker (se followers)
+const CRIME_PROP = ['theft', 'burglary', 'cartheft', 'shoplift', 'biketheft', 'pickpocket', 'vandalism', 'graffiti', 'trespass'];
+const CRIME_VIOL = ['homicide', 'assault', 'threats', 'robbery', 'harass', 'knifecrime', 'arson'];
+const CRIME_ORG = ['gangs', 'extortion', 'drugcrime', 'weapons', 'trafficking', 'smuggling', 'kidnapping'];
+// V5.18: verkliga tal där de finns (polisen, BRÅ, Socialstyrelsen, CDC, ONS, UNODC — avrundade)
+const T518 = {
+  shootings: { '752': 3.4 },
+  bombings: { '752': 1.4 },
+  gangmurders: { '752': 45 },
+  knifecrime: { '826': 84 },
+  druguse: { '752': 4.5, '840': 18, '124': 25, '826': 7.5, '276': 7, '250': 11, '528': 10, '724': 10.5, '380': 10, '036': 11.5, '392': 1, '410': 0.7 },
+  drugdeaths: { '752': 5, '840': 32, '124': 20, '826': 9, '276': 2.6 },
+};
 let CRIME_MED = {};
 
 // V5.10: befolkningspyramiden — Världsbankens andel av männen (pm…) resp.
@@ -2141,6 +2290,36 @@ export function setIndicatorData(raw, facts) {
       b[k] = v;
       (EST[cid] ||= new Set()).add(k);
     }
+    // V5.18 LAG OCH ORDNING: nya brott och rättsmått, uppskattade som de andra
+    // (verkliga tal ur T518 där de finns). Skjutningar och sprängningar följer gängen,
+    // narkotikadöden följer bruket, nätbrotten följer internet och välståndet.
+    const t8 = (k) => T518[k]?.[cid];
+    const gng = Math.sqrt(Math.max(1, b.gangs) / 30);
+    const druguse = t8('druguse') ?? clampV(1 + 3 * Math.min(3, rich) ** 0.4 * (0.5 + 0.15 * (V + 2.5)), 0.3, 30);
+    const model518 = {
+      shootings: t8('shootings') ?? 0.2 + 0.6 * H ** 0.9 * gng * urb,
+      bombings: t8('bombings') ?? 0.01 + 0.04 * H ** 0.5 * gng * (1 + 3 * unst),
+      knifecrime: t8('knifecrime') ?? 20 * H ** 0.5 * urb * youth * Math.sqrt(law),
+      gangmurders: t8('gangmurders') ?? clampV(5 + 12 * Math.log(Math.max(1, b.gangs / 15)) + 8 * Math.log(H), 2, 85),
+      druguse,
+      drugdeaths: t8('drugdeaths') ?? 0.6 * druguse ** 0.9 * Math.min(2, Math.max(0.3, rich) ** 0.25),
+      hacking: 0.5 * Net * rich ** 0.3 * (0.6 + 0.4 * law),
+      ransomware: 0.5 + 3 * (Net / 100) * Math.min(4, rich) ** 0.6,
+      elderfraud: 150 * ((b.old ?? 8) / 15) * (0.5 + Net / 100) * Math.sqrt(corr),
+      welfarefraud: clampV(2 + 4 * corr + 0.1 * b.shadow, 0.5, 25),
+      laborcrime: clampV(0.5 + 0.25 * b.shadow + 0.05 * (b.migrants ?? 5), 0.3, 45),
+      darkfigure: clampV(78 - 0.5 * b.policetrust + 10 * (law - 0.5), 20, 92),
+      murdersolved: clampV(25 + 12 * (Ge + Rl) + 0.5 * b.clearance - 3 * Math.log(H), 8, 95),
+      sentence: clampV(6 + 10 * Math.sqrt(b.prisoners / 150), 3, 60),
+      prisonescape: clampV(0.4 + 8 * corr * (1 - eff) ** 1.2 * Math.sqrt(b.prisonocc / 100), 0.2, 60),
+      guards: 80 + 120 * Math.max(0.2, rich) ** 0.25 * C ** 0.6,
+    };
+    for (const [k, v] of Object.entries(model518)) {
+      if (Number.isFinite(b[k])) continue;
+      b[k] = v;
+      if (t8(k) == null || k === 'gangmurders') (EST[cid] ||= new Set()).add(k);
+    }
+    for (const k of ['crimetotal', 'convicted', 'crimecount']) (EST[cid] ||= new Set()).add(k);
     // V5.16 VERKLIGHETEN: demokratiindexet (EIU 2024). Saknas landet räknas det fram
     // ur Världsbankens styrningsmått med samma samband som för de 166 länder som har det.
     const dem = DEMOCRACY[cid];
@@ -2252,6 +2431,15 @@ export function setIndicatorData(raw, facts) {
 }
 
 export function hasIndicatorData() { return Object.keys(BASE).length > 0; }
+// V5.18: medianlandet i världen för ett mått (startläget) — jämförelserna i BROTT-fliken
+const MED_CACHE = {};
+export function worldMedian(id) {
+  if (id in MED_CACHE) return MED_CACHE[id];
+  const xs = Object.values(BASE).map((b) => b[id]).filter((x) => Number.isFinite(x));
+  if (!xs.length) return null;   // inget data ännu — sparas inte
+  xs.sort((a, b) => a - b);
+  return (MED_CACHE[id] = xs[Math.floor(xs.length / 2)]);
+}
 export function isEstimated(cid, key) { return !!EST[cid]?.has(key); }
 export function baseOf(cid) { return BASE[cid] || null; }
 
@@ -2399,13 +2587,56 @@ function followers(v, b, pop) {
   for (const k of ['poverty365', 'poverty685', 'natpov']) set(k, v[k] * ratio('poverty') ** 0.6);
   set('fossilelec', v.fossilelec - d0('renewelec') - d0('nuclear'));
   set('commute', v.commute + 0.1 * d0('urban'));
+  // V5.18 LAG OCH ORDNING: brotten följer sina orsaker. Elasticiteterna är ungefär
+  // kriminologins: arbetslöshet och klyftor driver stöld och våld, fler poliser och fler
+  // uppklarade brott avskräcker, alkohol följer misshandeln, gängen följer utanförskapet
+  // och skjutningarna följer gängen. I startläget är alla skillnader noll.
+  {
+    const pw = (r, e) => (r > 0 && Number.isFinite(r) ? r ** e : 1);
+    // kvoterna kläms: lagarna som avskaffar eller fördubblar polisen har redan sina
+    // direkta effekter på brotten, så orsakerna får bara finjustera ovanpå
+    const cl = (r, lo = 0.6, hi = 1.8) => clampV(Number.isFinite(r) && r > 0 ? r : 1, lo, hi);
+    const mulK = (ids, f) => { for (const id of ids) set(id, v[id] * f); };
+    const rPol = cl(ratio('police'));
+    // fler poliser och mer förtroende klarar upp fler brott
+    set('clearance', v.clearance + 6 * Math.log(rPol) + 0.12 * d0('policetrust'));
+    set('murdersolved', v.murdersolved + 0.6 * d0('clearance'));
+    set('darkfigure', v.darkfigure - 0.45 * d0('policetrust'));
+    const rClr = cl(ratio('clearance')), rAlc = cl(ratio('alcohol'), 0.4, 2.5), rDrug = cl(ratio('druguse'), 0.4, 2.5), rPri = cl(ratio('prisoners'));
+    const du = d0('unemp'), dyu = d0('youthunemp'), dg = d0('gini'), dx = d0('exclusion'), dp = d0('poverty');
+    const prop = clampV((1 + 0.022 * du + 0.01 * dyu + 0.004 * dp) * pw(rPol, -0.3) * pw(rPri, -0.08) * pw(rClr, -0.25) * pw(gdpR, 0.08), 0.6, 1.8);
+    const viol = clampV((1 + 0.012 * du + 0.025 * dg + 0.03 * dx) * pw(rPol, -0.15) * pw(rClr, -0.2) * pw(rAlc, 0.3) * pw(gdpR, -0.15), 0.6, 1.8);
+    const org = clampV((1 + 0.015 * dyu + 0.05 * dx + 0.02 * dg) * pw(rPol, -0.2) * pw(rClr, -0.3) * pw(rDrug, 0.3), 0.6, 1.8);
+    mulK(CRIME_PROP, prop);
+    mulK(CRIME_VIOL, viol);
+    mulK(CRIME_ORG, org);
+    set('youthcrime', v.youthcrime * clampV((1 + 0.025 * dyu + 0.03 * dx) * pw(rPol, -0.15), 0.6, 1.8));
+    set('dui', v.dui * pw(rAlc, 0.8) * pw(rPol, -0.2));
+    // fler poliser hittar fler narkotikabrott — de som syns i statistiken ökar
+    set('drugcrime', v.drugcrime * pw(rDrug, 0.6) * pw(rPol, 0.5));
+    set('drugdeaths', v.drugdeaths * pw(rDrug, 0.9));
+    const rG = cl(ratio('gangs'), 0.4, 2.5);
+    set('shootings', v.shootings * pw(rG, 0.8) * pw(cl(ratio('weapons')), 0.4));
+    set('bombings', v.bombings * pw(rG, 1));
+    set('gangmurders', v.gangmurders + 10 * Math.log(rG));
+    set('sentence', v.sentence * pw(rPri, 0.4));
+    set('prisonescape', v.prisonescape * pw(cl(ratio('prisonocc'), 0.5, 3), 0.5));
+    set('guards', v.guards * pw(prop, 0.5));
+  }
   // Brottslighet: brotten jämförda med medianlandet, vägda ihop (geometriskt medel)
-  let s = 0, n = 0;
+  let s = 0, n = 0, s0 = 0, n0 = 0;
   for (const k of CRIME_KEYS) {
-    const x = v[k], m = CRIME_MED[k];
+    const x = v[k], m = CRIME_MED[k], x0 = b0(k);
     if (x > 0 && m > 0) { s += Math.log(x / m); n++; }
+    if (x0 > 0 && m > 0) { s0 += Math.log(x0 / m); n0++; }
   }
   if (n) v.crimeidx = 100 * Math.exp(s / n);
+  // V5.18: tryggheten och förtroendet för polisen följer brotten
+  if (n && n0) {
+    const cr = Math.log(v.crimeidx / (100 * Math.exp(s0 / n0)));
+    set('feelsafe', v.feelsafe - 14 * cr);
+    set('policetrust', v.policetrust - 6 * cr);
+  }
 }
 
 // ---------- V5.12: tron ----------
@@ -2670,6 +2901,14 @@ export function refreshDerived(out) {
     out.regime = regimeOf(out.demo).id;
   }
   if (Number.isFinite(out.debt)) { out.debtusd = gdp * out.debt / 100; out.debtpc = pop ? out.debtusd / pop : 0; }
+  // V5.18: alla anmälda brott, de som lagförs och hur många brott det blir på ett år
+  let ct = 0, cn = 0;
+  for (const k of CRIME_SUM) if (Number.isFinite(out[k])) { ct += out[k]; cn++; }
+  if (cn) {
+    out.crimetotal = ct;
+    out.crimecount = ct * pop / 1e5;
+    if (Number.isFinite(out.clearance)) out.convicted = ct * out.clearance / 100 * 0.75;
+  }
   if (Number.isFinite(out.budgetbal)) out.deficitusd = gdp * out.budgetbal / 100;
   if (Number.isFinite(out.rating)) {
     const R = RATINGS[clampV(Math.round(out.rating), 0, RATINGS.length - 1)];
@@ -2742,6 +2981,7 @@ export const RANKINGS = [
   { id: 'assault', name: 'MINST MISSHANDEL' },
   { id: 'bribery', name: 'MINST MUTOR' },
   { id: 'clearance', name: 'FLEST UPPKLARADE BROTT' },
+  { id: 'shootings', name: 'FÄRST SKJUTNINGAR' },   // V5.18
   { id: 'gdppcppp', name: 'KÖPKRAFT PER INVÅNARE' },
   { id: 'renewelec', name: 'MEST FÖRNYBAR EL' },
   { id: 'measles', name: 'HÖGST VACCINATION' },

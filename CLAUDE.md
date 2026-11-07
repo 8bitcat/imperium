@@ -33,11 +33,11 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | Fil | Innehåll |
 |---|---|
 | `stats.js` | 22 nationsvärden + `computeStats` (V5.16: källan `protest` = missnöjet). Nya stat-nycklar MÅSTE finnas här, annars noll effekt utan fel. V5.15: varje värde har `total` (−100…100, det statistiken och allt gammalt läser) och `raw` (inget tak uppåt); `UNCAPPED` = de som producerar och visas med raw |
-| `laws.js` · `ideologies.js` · `research.js` | lagar (93 kategorier, 1 052 alternativ — V5.17: ett ✨ och ett 💀 i varje) · 19 ideologier/doktriner + axlar + sidogrenar · 27 grenar × 9 namngivna nivåer + OÄNDLIGT många till (`tierOf`, `tierCost`, `tierDays`), förkunskaper mellan grenar (`NEEDS`), förbandens egenskaper (`unit`: hp/rng/mv/heal → `unitUpgrades`) |
+| `laws.js` · `ideologies.js` · `research.js` | lagar (133 kategorier, 1 439 alternativ — V5.17: ett ✨ och ett 💀 i varje; V5.18: +40 lagar) · 19 ideologier/doktriner + axlar + sidogrenar · 27 grenar × 9 namngivna nivåer + OÄNDLIGT många till (`tierOf`, `tierCost`, `tierDays`), förkunskaper mellan grenar (`NEEDS`), förbandens egenskaper (`unit`: hp/rng/mv/heal → `unitUpgrades`) |
 | `laws-extra.js` | V5.7: nya alternativ i befintliga lagar (`after`-position, `locks`, `effects`), splitsas in i LAWS vid laddning |
 | `laws-more.js` | V5.8: helt nya lagkategorier som bär sin egen `axis`/`dir`, `locks` och `effects` — läses av laws.js, ideologies.js och statistics.js |
-| `laws-511.js` + `laws511/part1–17.js` | V5.17: del 12–16 = ✨/💀-valen, del 17 = åtta nya lagar. V5.11 LAGARNAS MAKT: tre nya val i varje lag (`EXTRAS` → laws-extra.js), fyra nya lagar (`NEW` → laws-more.js) och en stark statistikuppsättning för VARJE alternativ (`FX` → statistics.js, läggs sist och vinner per mått) |
-| `events.js` · `modifiers.js` · `development.js` | 2 667 händelser med villkor (V5.17: +139 om utopier och brutala lagar; V5.15: +1 044 i nio nya teman; V5.16: +785 i sju teman som följer av vad spelaren gör — reaktioner, protester, migration, statsfinanser, demokrati, samhällsliv, konsekvenser) · 48 modifierare · stadsnivå/infrastruktur 0–100 |
+| `laws-511.js` + `laws511/part1–22.js` | V5.18: del 18–22 = 40 nya lagar (brott och rätt, ekonomi, vardag, stat, försvar). V5.17: del 12–16 = ✨/💀-valen, del 17 = åtta nya lagar. V5.11 LAGARNAS MAKT: tre nya val i varje lag (`EXTRAS` → laws-extra.js), fyra nya lagar (`NEW` → laws-more.js) och en stark statistikuppsättning för VARJE alternativ (`FX` → statistics.js, läggs sist och vinner per mått) |
+| `events.js` · `modifiers.js` · `development.js` | 2 727 händelser med villkor (V5.18: +60 om brott i `events/brott.js`; V5.17: +139 om utopier och brutala lagar; V5.15: +1 044 i nio nya teman; V5.16: +785 i sju teman som följer av vad spelaren gör — reaktioner, protester, migration, statsfinanser, demokrati, samhällsliv, konsekvenser) · 48 modifierare · stadsnivå/infrastruktur 0–100 |
 | `war.js` · `integration.js` · `stance.js` | casus belli/krav/historiska riken (32 st — BARA grundlandet `core` kan utropa sitt rike, och ALLA `lands` krävs helt annekterade: lydstater och delvis tagna länder räknas inte, se `empireOwnedIds` i main.js) · integration av erövrat land · ländernas hållning |
 | `geopolitics.js` | V5.8: VÄRLDSLÄGET — kalla krig (spänning 0–100, incidenter, kris → ibland varmt krig), val i demokratier, revolutioner/kupper som river upp lagarna. Ren logik; main.js kopplar in den via `geoApi(ctx)` i `aiWorldTick` |
 | `diplomacy.js` · `blocs.js` · `ministers.js` · `ranking.js` | relationer/sanktioner · block + fanor · kabinett · världsrankning |
@@ -46,10 +46,11 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | `globe.js` · `globe3d.js` | pixelglob (d3) · WebGL-planet. All ritning går via `_project`/`_front` så den funkar i båda |
 | `net.js` · `data.js` · `names.js` | PeerJS (värden äger världen) · kartdata · svenska landsnamn |
 | `real.js` | V5.6: allt som VISAS i riktiga tal — 1 💰 = 100 miljoner $, 1 🧍 = 1 000 människor, förband i soldater. Spelet räknar internt i gamla enheter |
-| `statistics.js` | V5.16: 391 verkliga mått i 19 grupper (tidigare 316 i 15) (V5.14: +37 Världsbanksmått `RAW_KEYS_514`, +18 brott i `model3`, lagarnas effekter på dem i `LAW_EFFECTS_514`) per land (data/indicators.json; brott är modeller, märkta ~) som nationsvärden + lagar (`LAW_EFFECTS`) flyttar; rikes-ihopräkning, rankningar, befolkningspyramid (`realmPyramid`, Världsbankens 5-årsgrupper per kön; `T = null` = startläget) |
+| `statistics.js` | V5.18: 410 mått — +19 om brott och rätt (`model518`, `T518`, `LAW_EFFECTS_518`) och brottens orsaker i `followers`. V5.16: 391 verkliga mått i 19 grupper (tidigare 316 i 15) (V5.14: +37 Världsbanksmått `RAW_KEYS_514`, +18 brott i `model3`, lagarnas effekter på dem i `LAW_EFFECTS_514`) per land (data/indicators.json; brott är modeller, märkta ~) som nationsvärden + lagar (`LAW_EFFECTS`) flyttar; rikes-ihopräkning, rankningar, befolkningspyramid (`realmPyramid`, Världsbankens 5-årsgrupper per kön; `T = null` = startläget) |
 | `events/*.js` | V5.6: händelser per tema, ihopslagna i `events.js` |
 | `faith.js` · `country-data.js` | V5.12 TRON: folkets tro per land (`RELIGION_SHARES`, ungefär Pew 2020), statens tro via religionslagen (`faithKind`: state/neutral/none), omvändelse i steg per land och kaos när staten och folket tror olika (`chaosOf`, `chaosMods`) |
 | `bank.js` | V5.13 BANKEN: kreditbetyg AAA–D (`ratingOf`: skuld delat med välstånd + stabilitet, oro, korruption, krig, skuldbroms, missade betalningar), ränta/längsta plan/lånetak per betyg, annuitet (`annuity`), bankruttkris (`crisisMods`) |
+| `saves.js` | V5.18 SPARADE SPEL: partierna i IndexedDB (localStorage som reserv) — skriv, lista, läs, ta bort, byt namn, kopiera, ladda ner/upp, `persist` |
 | `passport.js` | V5.12 NAMNET: landets identitet (`defaultIdent` ur `OFFICIAL` i country-data.js: officiellt namn, ISO alpha-3, passfärg) och passet med riktiga MRZ-rader (`passportHtml`) |
 
 **Befolkningen lever (V5.7):** `state.facts[cid].p` ändras var 10:e dag (`tickPopulation`,
@@ -66,7 +67,7 @@ SKAPA RUM (`createRoom`) startar värden i en dold iframe `?server=1&name=…` (
 `SERVER`-flaggan, `globe.sleeping` = ingen ritning) som postar rumskoden till sidan, som
 sedan går med som vanlig `player` (`state.hosting`). Kompisar går med på koden (`#join`) eller
 `?room=KOD`. Färg i ett rum = värdens `player.color` (meddelandet `color`). Värdrummet sparas i
-`imperium.room` (`ROOM_KEY`, menyn: FORTSÄTT RUMMET), solo/TV i `imperium.game`.
+`imperium.room` (`ROOM_KEY`, menyn: FORTSÄTT RUMMET), solo/TV som egna partier i `saves.js` (V5.18, se Sparade spel).
 
 **Tron och namnet (V5.12):** fliken LANDET i NATION. `state.solo.faith` = { rel (statens tro), by: {cid: [[tro, andel]]} omvändelsesteg, chaos 0..1 } — `tickFaith` omvänder dagligen och ger incidenter; kaoset går in som egen källa `faith` i `computeStats` och via `setFaith` i statistiken. `religionFor(hemland)` följer statens tro. `state.solo.ident` = { off, short, code, cover, word, emblem, holder, renamed, day } — namnet byts EN gång; kortnamnet skrivs in i `globe.getCountry(cid).name` (`setCountryName`, originalet i `name0`) så det syns överallt. I rum skickas det som `realm` i `nation`-meddelandet (och `rename`), värden lägger det på `player.realm` och alla kör `applyIdent()` i `applyState`.
 
@@ -100,6 +101,21 @@ sedan går med som vanlig `player` (`state.hosting`). Kompisar går med på kode
 - Avkastningen (`daily`) är full i landets första 14 städer per sort och avtar sedan (`yieldWeight`).
 - Infrastruktur och stadsnivå har ingen kö-gräns. Varje land och slag bygger sitt första steg parallellt (`queueDev(cid, kind, steg)`, `devPlan`).
 
+**Sparade spel (V5.18, `saves.js`):** varje parti har en egen sparplats som aldrig försvinner av sig själv.
+- IndexedDB `imperium-saves`: `meta` är listan menyn visar och `data` är partiet som JSON-text. Går IndexedDB inte att öppna används localStorage (`imperium.saves.meta`, `imperium.save.<id>`). `persist()` ber webbläsaren att aldrig rensa.
+- `gamePayload()` bygger partiet. `saveGame()` skriver det och returnerar ett löfte, var 8:e sekund, när fliken göms och från panelen. `saveMeta()` är det menyn visar. Sparplatsen är `state.solo.saveId` (TV: `state.tvSaveId`), och ett eget namn ligger i `saveName`.
+- Menyn har FORTSÄTT (det senaste partiet) och 💾 SPARADE SPEL (`#saves`, `renderSavesPanel`): spela, byt namn, kopiera, ladda ner som fil, ta bort (två klick) och ladda upp. I spelet finns 💾 i resursraden med SPARA NU, SPARA SOM NYTT PARTI och NYTT PARTI.
+- Byter man parti mitt i ett annat sparas det först, och sidan laddas om (`reloadInto(id)`, sessionStorage `imperium.load`, `'new'` = nytt parti). Två världar blandas aldrig.
+- Det gamla enda sparet `imperium.game` (glömdes efter ett dygn) flyttas in en gång (`migrateLegacySave`). `imperium.room` och sessionen i spelarläget har inte heller någon tidsgräns längre.
+
+**Lag och ordning (V5.18):** brottsstatistiken på riktigt.
+- 19 nya mått i statistics.js: skjutningar, sprängningar, knivbrott, gängmord, narkotikabruk, narkotikadöd, dataintrång, utpressningsattacker, bedrägerier mot äldre, välfärdsfusk, arbetslivskriminalitet, mörkertal, uppklarade mord, strafftid, rymningar och väktare. Därtill summorna `crimetotal`, `crimecount` och `convicted`, som räknas i `refreshDerived` och står i `NO_LAG`. Verkliga tal ligger i `T518` och de gamla lagarnas effekter på måtten i `LAW_EFFECTS_518`.
+- **Brotten följer sina orsaker** (`followers`): arbetslöshet, klyftor, utanförskap, fattigdom, alkohol, droger, polis, uppklaring och fångar, i tre familjer (`CRIME_PROP`, `CRIME_VIOL`, `CRIME_ORG`). Skjutningar och sprängningar följer gängen, och tryggheten och polisförtroendet följer brottsligheten. Kvoterna kläms (ungefär 0,6–1,8), eftersom lagarna redan har direkta effekter på brotten. Annars räknas samma sak två gånger: polisen avskaffad gav 3,4 gånger mer brott innan.
+- Missnöjet `trygghet` (🚨 TRYGGHETEN) växer när brottsligheten stiger (`crimeRise()` = nu delat med start) eller när tryggheten är låg. `tickCrime` sköter `s.crimeStart`, `s.crimeHist` (en punkt var 30:e dag) och `s.crimeNews` (brottskrönikan), och alla tre sparas.
+- Fliken BROTT (`renderCrimeTab`) visar översikten, kurvan, brotten per familj mot världens medianland (`worldMedian`), rättskedjan, orsakerna, lagarna som höjer eller sänker brotten (`crimeLaws`), städerna (`crimeCities`, där polisstation och övervakningscentral sänker) och krönikan.
+- Händelserna ligger i `events/brott.js` (prefix `br_`) och har villkoret `c.crimeRise`. Brotten kan chockas (`SHOCKS`).
+- 40 nya lagar finns i `laws511/part18–22.js`: brott och rätt, ekonomi och arbete, samhälle och vardag, stat och makt, försvar och framtid. LAGAR har en sökruta (`lawQuery`).
+
 **Statsskulden (V5.13):** `state.solo.bank` = { debt (💰), plan (år), months kvar, missed, defaultUntil, crisis, log }. Rikets BNP i spelets pengar = `bankY()` (fyra spelår av grundinkomsten). Startskulden = rikets verkliga statsskuld i % av BNP. `tickBank` betalar var 30:e dag; räcker pengarna inte läggs resten på skulden och efter 3 missade månader blir det statsbankrutt (halva skulden struken, betyget D i ett år, kris). Lagarnas och nationsvärdenas skuldeffekt (`s.debtPolicy` från `tickIndLag`) blir ett månadsunderskott eller -överskott (/40 per månad). Statsskuld och Räntekostnader i STATISTIK skrivs över med bankens siffror (`applyBankToIndicators`), och förhandsrutan för lagar visar skuldeffekten som "STATEN LÅNAR X % AV BNP MER PER ÅR".
 
 Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
@@ -132,8 +148,9 @@ Land-id = ISO 3166-1 numeriskt som sträng (`'752'` = Sverige).
 
 ## Fällor som redan kostat tid
 
-- **Nya fält i `state.solo` måste in i BÅDE `saveGame` och `saveSession`** (och läsas
-  tillbaka) — annars tappar ett omladdat parti dem.
+- **Nya fält i `state.solo` måste in i BÅDE `gamePayload` (soloblocket) och `saveSession`** (och läsas
+  tillbaka i `restoreSession`). Annars tappar ett omladdat parti dem.
+- `saveGame()` är asynkron (IndexedDB). Ett test som laddar om sidan direkt efteråt måste `await`:a den.
 - Pixelfonten saknar U+2212 (−) — skriv vanligt bindestreck i text som visas.
 - `show(el)` sätter inline `display` och slår ut `.show`-klassen — blanda inte de två på samma element.
 - Topbaren är `pointer-events: none` — nya knappar där behöver `pointer-events: auto`.

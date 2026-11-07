@@ -123,6 +123,8 @@ function sampleCtx(emptyInd = false) {
       return { utopias: u, utopiaCrack: u ? Math.min(1, Math.random() * 1.2) : 0, utopiaAge: u ? Math.floor(rnd(0, 500)) : 0,
         brutals: b, brutalAge: b ? Math.floor(rnd(0, 400)) : 0, shame: b ? Math.round(rnd(4, 20) * b) : 0 };
     })(),
+    // V5.18 LAG OCH ORDNING: hur mycket brottsligheten ändrats sedan start (1 = som förut)
+    crimeRise: Math.random() < 0.5 ? rnd(0.85, 1.1) : rnd(0.6, 1.8),
   };
 }
 const SAMPLES = Array.from({ length: 400 }, () => sampleCtx());

@@ -1,5 +1,5 @@
-// IMPERIUM — kontroll av lagarna (V5.17). Kör: node tools/check-laws.mjs [--alla]
-// Utan flagga granskas de nya delarna (laws511/part12–17.js) noga och hela lagboken
+// IMPERIUM — kontroll av lagarna (V5.17, V5.18). Kör: node tools/check-laws.mjs [--alla]
+// Utan flagga granskas de nya delarna (laws511/part12–22.js) noga och hela lagboken
 // översiktligt. Slutkod 1 = fel.
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
@@ -11,7 +11,7 @@ const { STATS } = await import(R('stats.js'));
 const { IND, LAW_EFFECTS } = await import(R('statistics.js'));
 const { LAW_KIND, LAW_SV, GRIEV_IDS } = await import(R('realism.js'));
 
-const PARTS = [12, 13, 14, 15, 16, 17];
+const PARTS = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
 const errs = [], warns = [];
 const E = (m) => errs.push(m), W = (m) => warns.push(m);
 const IDEOS = new Set(Object.keys(IDEOLOGIES));
@@ -178,7 +178,7 @@ for (const [k, I] of Object.entries(IDEOLOGIES)) {
 
 const nU = Object.values(LAWS).flatMap((L) => L.options).filter((o) => o.utopia).length;
 const nB = Object.values(LAWS).flatMap((L) => L.options).filter((o) => o.brutal).length;
-console.log(`${Object.keys(LAWS).length} lagar, ${total} val (${newIds.size} nya i del 12–17: ${nU} utopier, ${nB} brutala)`);
+console.log(`${Object.keys(LAWS).length} lagar, ${total} val (${newIds.size} nya i del 12–22: ${nU} utopier, ${nB} brutala)`);
 if (warns.length) console.log(`\n${warns.length} varningar:\n` + warns.slice(0, 40).map((w) => '  ! ' + w).join('\n'));
 if (errs.length) { console.log(`\n✗ ${errs.length} fel:\n` + errs.slice(0, 80).map((e) => '  ✗ ' + e).join('\n')); process.exit(1); }
 console.log('✓ lagarna är hela');

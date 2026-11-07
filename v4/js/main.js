@@ -29,7 +29,11 @@ import { relLabel, naturalRelation, REL_EVENTS, sanctionFor, ALLY_MIN_REL, TRUCE
 import { scoreCountry, medalFor } from './ranking.js';
 import { money, people, soldiersOf, soldiersText, PEOPLE_PER_MAN } from './real.js';
 import { INDICATORS, IND, IND_GROUPS, RANKINGS, fmtInd, setIndicatorData, hasIndicatorData, isEstimated,
-  baseOf as baseOfInd, countryIndicators, realmIndicators, biggestChanges, rankBy, realmPyramid, setFaith, refreshDerived } from './statistics.js';
+  baseOf as baseOfInd, countryIndicators, realmIndicators, biggestChanges, rankBy, realmPyramid, setFaith, refreshDerived,
+  worldMedian } from './statistics.js';
+import { newSaveId, writeSave, listSaves, readSave, deleteSave, renameSave, copySave, exportSave, importSave,
+  persist as persistSaves, storageInfo } from './saves.js';   // V5.18 SPARADE SPEL
+import { svName, alpha2 } from './names.js';
 import { YEAR_DAYS, DEFICIT_FLOOR, RECENT_DAYS, GRIEV_KINDS, GRIEV_IDS, LAW_KIND, LAW_SV, grievFromChange, protestMods,
   grievTotal, SHOCKS, DEMO_SUBS, NO_LAG, lagStep, migrantCap, regimeOf,
   STING_START, STING_DAYS, stingFactor, utopiaFx, shameWeight } from './realism.js';   // V5.16 VERKLIGHETEN + V5.17 YTTERLIGHETER
@@ -65,9 +69,9 @@ function puppetColor() { const c = soloColor(); return lumOf(c) > 200 ? mixHex(c
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.17.0';
-export const VERSION_DATE = '2026-11-06';
-export const VERSION_NAME = 'YTTERLIGHETER';
+export const VERSION = '5.18.0';
+export const VERSION_DATE = '2026-11-07';
+export const VERSION_NAME = 'LAG OCH ORDNING';
 
 const globe = new Globe($('#globe'));
 
@@ -98,7 +102,7 @@ state.debug = {
   updateMarkers: () => updateMovingMarkers(), updateCountryArmies: () => updateCountryArmyMarkers(),
   startInteg: (cid) => startIntegration(cid), tickDay: () => tickDay(), applyState: () => applyState(),
   aiCanReach: (w, a, t) => aiCanReach(w, a, t), aiDistanceTo: (w, a, t) => aiDistanceTo(w, a, t),
-  aiReach: (w, c) => aiReach(w, c), warAlert: (a, t, w) => warAlert(a, t, w), saveGame: () => saveGame(), loadGame: () => loadGame(),
+  aiReach: (w, c) => aiReach(w, c), warAlert: (a, t, w) => warAlert(a, t, w), saveGame: () => saveGame(), loadGame: () => listSaves(),
   openDemands: (t, cb, r) => openDemands(t, cb, r), offerFlag: (ty, id) => offerFlag(ty, id),
   demandState: () => demandState, myFlag: () => myFlag(), research: RESEARCH,
   cabinetMods: (n) => cabinetMods(n), tickMinisters: () => tickMinisters(), levelOf: (m) => levelOf(m),
@@ -1501,6 +1505,7 @@ function initNation(countryId) {
   s.nextEvent = 1 + Math.floor(Math.random() * 25);   // första händelsen kommer tidigt
   // V5.16: lagarna är i kraft från start, inget missnöje än, statistiken börjar i verkligheten
   s.lawFx = null; s.ideoFx = null; s.griev = {}; s.lawLog = []; s.indLag = null; s.indHist = [];
+  s.crimeHist = []; s.crimeNews = []; s.crimeStart = 0;   // V5.18
   s.lawSince = {}; s.utopiaWarned = {};   // V5.17: när ytterlighetslagarna antogs
   recomputeNation();
   $('#resbar').style.display = 'flex';
@@ -2242,6 +2247,10 @@ function tickGriev() {
       const rate = ind.pop ? (ind.netmig || 0) / ind.pop * 100 : 0;
       const integ = s.stats?.integration?.total ?? 0;
       if (rate > 1) addGriev('migration', (rate - 1) * 1.75 * (1 + Math.max(0, -integ) / 50) / (1 + Math.max(0, integ) / 40));
+      // V5.18: brott som ökar och gator där folk inte vågar gå gör landet otryggt
+      const cr = crimeRise(ind);
+      if (cr > 1.06) addGriev('trygghet', Math.min(3, (cr - 1.06) * 5));
+      if ((ind.feelsafe ?? 80) < 45) addGriev('trygghet', (45 - ind.feelsafe) * 0.04);
     }
   }
   if (Math.round(grievTotal(g)) !== before) recomputeNation();
@@ -2284,6 +2293,95 @@ function trendOf(id, now) {
   return (now[id] - old.v[id]) * YEAR_DAYS / Math.max(30, day - old.day);
 }
 
+// V5.18 LAG OCH ORDNING: brottsligheten nu delat med den vid start (1 = som förut).
+// Startläget räknas om var 30:e dag (tickCrime), eftersom riket kan ha vuxit.
+function crimeRise(ind = myIndicators()) {
+  const s = state.solo;
+  if (!(s?.crimeStart > 0) && hasIndicatorData() && s?.home) {
+    s.crimeStart = realmIndicators(myRealmParts(), null, {}, baselineTotalsOf, null, true)?.crimeidx || 0;
+  }
+  const now = ind?.crimeidx;
+  return Number.isFinite(now) && s?.crimeStart > 0 ? now / s.crimeStart : 1;
+}
+
+// ---------- V5.18 LAG OCH ORDNING: brottskurvan och brottskrönikan ----------
+// Var 30:e dag: startläget räknas om (riket kan ha vuxit), en punkt läggs på kurvan
+// och krönikan får en rubrik om det brott som sticker ut mest just nu.
+function tickCrime() {
+  const s = state.solo;
+  if (!s?.home || s.clock.day % 30 !== 0 || !hasIndicatorData()) return;
+  const plain = realmIndicators(myRealmParts(), null, {}, baselineTotalsOf, null, true);
+  if (plain?.crimeidx > 0) s.crimeStart = plain.crimeidx;
+  const now = myIndicators();
+  if (!Number.isFinite(now?.crimeidx)) return;
+  (s.crimeHist ||= []).push({ d: s.clock.day, i: +now.crimeidx.toFixed(1), n: Math.round(now.crimecount || 0),
+    f: +(now.feelsafe ?? 0).toFixed(1), c: +(now.clearance ?? 0).toFixed(1) });
+  while (s.crimeHist.length > 160) s.crimeHist.shift();
+  crimeNewsTick(now, plain);
+}
+
+// rubriker per brott ({STAD} = en stad i riket, de stora oftare)
+const CRIME_NEWS = {
+  shootings: ['\u{1F52B}', ['SKOTTLOSSNING I {STAD} I NATT — POLISEN SPÄRRAR AV KVARTERET', 'NY SKJUTNING I {STAD} — GRANNARNA KRÄVER FLER POLISER',
+    'SKOTT MOT EN PORT I {STAD} — INGEN SKADAD']],
+  bombings: ['\u{1F4A5}', ['SPRÄNGNING I ETT TRAPPHUS I {STAD} — INGEN SKADAD', 'DETONATION VID EN PORTUPPGÅNG I {STAD} I NATT',
+    'BOMBTEKNIKER KALLADES TILL ETT GARAGE I {STAD}']],
+  burglary: ['\u{1F3E0}', ['INBROTTSVÅG I VILLAOMRÅDENA I {STAD}', 'TJUVAR TÖMDE TIO SOMMARSTUGOR UTANFÖR {STAD}']],
+  robbery: ['\u{1F4B0}', ['VÄRDETRANSPORT RÅNAD I {STAD}', 'BUTIKSRÅN I {STAD} — RÅNARNA FLYDDE PÅ MOPED']],
+  elderfraud: ['\u{260E}\u{FE0F}', ['TELEFONBEDRAGARE LURADE PENSIONÄRER I {STAD} PÅ MILJONER', 'FALSKA BANKMÄN RINGER ÄLDRE I {STAD} — POLISEN VARNAR']],
+  ransomware: ['\u{1F4BB}', ['HACKARE LÅSTE KOMMUNENS DATORER I {STAD}', 'SJUKHUSET I {STAD} DRABBAT AV EN UTPRESSNINGSATTACK']],
+  drugcrime: ['\u{1F48A}', ['REKORDBESLAG AV NARKOTIKA I HAMNEN I {STAD}', 'TULLEN STOPPADE EN LASTBIL MED NARKOTIKA VID {STAD}']],
+  drugdeaths: ['\u{1F691}', ['NY FARLIG DROG I {STAD} — VÅRDEN VARNAR', 'ÖVERDOSERNA ÖKAR I {STAD} — SPRUTBYTET HAR KÖ']],
+  gangs: ['\u{1F578}\u{FE0F}', ['GÄNGKONFLIKT I {STAD} — POLISEN INFÖR VISITATIONSZON', 'TONÅRINGAR VÄRVAS AV GÄNG I {STAD} — FÖRÄLDRARNA SLÅR LARM']],
+  knifecrime: ['\u{1F52A}', ['KNIVBRÅK UTANFÖR EN NATTKLUBB I {STAD}', 'POLISEN BESLAGTOG 40 KNIVAR VID EN KONTROLL I {STAD}']],
+  theft: ['\u{1F6B2}', ['CYKELSTÖLDERNA ÖKAR I {STAD}', 'FICKTJUVAR PÅ TÅGSTATIONEN I {STAD}']],
+  graffiti: ['\u{1F3A8}', ['KLOTTRARE MÅLADE ETT HELT PENDELTÅG I {STAD}']],
+  welfarefraud: ['\u{1F4C4}', ['BIDRAGSFUSK FÖR MILJONER AVSLÖJAT I {STAD}']],
+  laborcrime: ['\u{1F3D7}\u{FE0F}', ['SVARTJOBB PÅ STORBYGGET I {STAD} — 40 ARBETARE UTAN PAPPER']],
+  prisonescape: ['\u{26D3}\u{FE0F}', ['EN FÅNGE RYMDE FRÅN ANSTALTEN I {STAD}']],
+};
+const CRIME_GOOD = ['TRYGGHETEN ÖKAR I {STAD} — FLER VÅGAR GÅ UT PÅ KVÄLLEN', 'POLISEN I {STAD} KLARADE UPP EN STOR STÖLDLIGA',
+  'LUGNASTE MÅNADEN PÅ ÅR I {STAD}', 'FRITIDSGÅRDEN I {STAD} FULL VARJE KVÄLL — UNGDOMSBROTTEN MINSKAR'];
+const CRIME_ODD = ['TJUV STAL 300 KILO OST I {STAD}', 'RÅNARE GLÖMDE SIN PLÅNBOK PÅ BANKEN I {STAD}',
+  'KYRKKLOCKAN I {STAD} STULEN — HITTAD I EN LADA', 'PAPEGOJA AVSLÖJADE INBROTTSTJUV I {STAD}'];
+
+function crimeCityPick() {
+  const list = [];
+  for (const p of myRealmParts()) for (const c of state.cities?.[p.cid] || []) if (c.n) list.push(c);
+  if (!list.length) return realmName();
+  let r = Math.random() * list.reduce((a, c) => a + (c.p || 1e4) ** 0.7, 0);
+  for (const c of list) { r -= (c.p || 1e4) ** 0.7; if (r <= 0) return c.n; }
+  return list[0].n;
+}
+
+function crimeNewsTick(now, plain) {
+  const s = state.solo;
+  const add = (icon, text) => {
+    (s.crimeNews ||= []).unshift({ d: s.clock.day, i: icon, t: text.replace('{STAD}', String(crimeCityPick()).toUpperCase()) });
+    while (s.crimeNews.length > 14) s.crimeNews.shift();
+  };
+  // det som sticker ut: högt mot världen och på väg upp mot startläget
+  const w = Object.keys(CRIME_NEWS).map((k) => {
+    const med = worldMedian(k), x = now[k], x0 = plain?.[k];
+    if (!(x > 0) || !(med > 0)) return [k, 0];
+    return [k, Math.max(0, x / med - 0.6) * (1 + 2 * Math.max(0, (x0 > 0 ? x / x0 : 1) - 1))];
+  });
+  const tot = w.reduce((a, [, v]) => a + v, 0);
+  const pick = () => {
+    let r = Math.random() * tot;
+    for (const [k, v] of w) { r -= v; if (r <= 0) return k; }
+    return w[0][0];
+  };
+  const rise = crimeRise(now);
+  if (tot > 0) {
+    const k = pick();
+    add(CRIME_NEWS[k][0], CRIME_NEWS[k][1][Math.floor(Math.random() * CRIME_NEWS[k][1].length)]);
+    if (rise > 1.15 && Math.random() < 0.6) { const k2 = pick(); add(CRIME_NEWS[k2][0], CRIME_NEWS[k2][1][0]); }
+  }
+  if (rise < 0.95 && Math.random() < 0.5) add('\u{1F31F}', CRIME_GOOD[Math.floor(Math.random() * CRIME_GOOD.length)]);
+  if (Math.random() < 0.1) add('\u{1F9C0}', CRIME_ODD[Math.floor(Math.random() * CRIME_ODD.length)]);
+}
+
 // ----- underskottet: banken lånar ut till statskassan -----
 // Upp till ett halvt års inkomster och aldrig mer än banken lånar ut totalt —
 // och bara så länge Income är DEFICIT_FLOOR (-70) eller högre.
@@ -2315,6 +2413,14 @@ function realityBox() {
     const tr = trendOf('demo', ind);
     lines.push(`<div class="rline"><span>\u{1F5F3}\u{FE0F} DEMOKRATIINDEX</span><b style="color:${rg.color}">${fmtNum(ind.demo)} / 10 — ${rg.name}</b>`
       + (Math.abs(tr) >= 0.05 ? `<small class="${tr > 0 ? 'dp' : 'dn'}">${tr > 0 ? '+' : ''}${fmtNum(tr)} SENASTE ÅRET</small>` : '') + '</div>');
+  }
+  // V5.18: brottsligheten
+  if (Number.isFinite(ind?.crimeidx)) {
+    const pct = Math.round((crimeRise(ind) - 1) * 100);
+    const col = ind.crimeidx > 150 ? 'var(--red)' : ind.crimeidx > 90 ? 'var(--amber)' : '#4ae37a';
+    lines.push(`<div class="rline"><span>\u{1F6A8} BROTTSLIGHET</span><b style="color:${col}">${fmtInd('crimeidx', ind.crimeidx)}</b>`
+      + (Math.abs(pct) >= 2 ? `<small class="${pct > 0 ? 'dn' : 'dp'}">${pct > 0 ? '+' : ''}${pct} % SEDAN START</small>` : '')
+      + `<small>TRYGGHET ${fmtInd('feelsafe', ind.feelsafe)} \u{00B7} ${fmtInd('crimecount', ind.crimecount)} BROTT PER ÅR \u{00B7} SE FLIKEN BROTT</small></div>`);
   }
   const g = s.griev || {};
   const tot = grievTotal(g);
@@ -3343,6 +3449,7 @@ function tickDay() {
   tickExtremes(); // V5.17: utopier spricker, brutala lagar glöms inte
   tickGriev();    // V5.16: missnöjet klingar av eller växer
   tickIndHist();  // V5.16: bilder av statistiken för trenderna
+  tickCrime();    // V5.18: brottskurvan och brottskrönikan
   tickDiplomacy();
   tickBlocApplications();
   tickMinisters();
@@ -3648,6 +3755,8 @@ function eventCtx() {
     brutals: ex.brutal.length,
     brutalAge: ex.brutal.length ? Math.min(...ex.brutal.map((b) => b.age)) : 0,
     shame: ex.brutal.reduce((a, b) => a + (b.o.shame || 6), 0),
+    // V5.18 LAG OCH ORDNING: brottsligheten nu delat med den vid start (1 = som förut)
+    crimeRise: crimeRise(ind),
   };
 }
 
@@ -4976,6 +5085,7 @@ function modSummary(mods, max = 4) {
 // V5.8: 224 mått — en sökruta och hopfällbara grupper gör fliken överblickbar.
 // Ekonomi och brott är utfällda från start; en sökning visar träffar i alla grupper.
 let statQuery = '';
+let lawQuery = '';   // V5.18: sökrutan i LAGAR
 const statShut = new Set(IND_GROUPS.map((g) => g.id).filter((id) => !['eko', 'fin', 'dmk', 'brt', 'dem', 'rel'].includes(id)));   // V5.16: demokratin och statsfinanserna öppna
 const PYRAMID_GROUP = IND_GROUPS.some((x) => x.id === 'dem') ? 'dem' : 'bef';
 
@@ -5125,6 +5235,209 @@ function indicatorPreview(deltaMods, laws2 = null) {
     + (budget ? ' &nbsp;\u{00B7}&nbsp; ' + budget : '');
 }
 
+// ---------- V5.18 LAG OCH ORDNING: fliken BROTT ----------
+// Hela brottsläget på ett ställe: hur mycket och vilka brott, rättskedjan från brott
+// till fängelse, vad som driver brotten, lagarna som höjer och sänker dem, de
+// farligaste och tryggaste städerna och brottskrönikan.
+const CRIME_FAMILIES = [
+  { icon: '\u{1F52A}', name: 'VÅLD', ids: ['homicide', 'assault', 'threats', 'robbery', 'knifecrime', 'shootings', 'bombings', 'kidnapping', 'arson', 'harass', 'hatecrime'] },
+  { icon: '\u{1F3E0}', name: 'STÖLD & SKADEGÖRELSE', ids: ['theft', 'burglary', 'cartheft', 'biketheft', 'pickpocket', 'shoplift', 'vandalism', 'graffiti', 'trespass'] },
+  { icon: '\u{1F578}\u{FE0F}', name: 'GÄNG & NARKOTIKA', ids: ['gangs', 'gangmurders', 'extortion', 'weapons', 'drugcrime', 'druguse', 'drugdeaths', 'trafficking', 'smuggling'] },
+  { icon: '\u{1F4BB}', name: 'BEDRÄGERIER & NÄTBROTT', ids: ['fraud', 'elderfraud', 'cybercrime', 'idtheft', 'hacking', 'ransomware', 'counterfeit', 'forgery'] },
+  { icon: '\u{1F4BC}', name: 'EKOBROTT', ids: ['embezzle', 'insider', 'bribery', 'moneylaundering', 'taxevasion', 'welfarefraud', 'laborcrime', 'shadow'] },
+  { icon: '\u{1F697}', name: 'TRAFIK, NATUR & UNGA', ids: ['dui', 'hitrun', 'traffic', 'speeding', 'youthcrime', 'animalcruelty', 'envcrime', 'poaching', 'illegallog'] },
+];
+// vad som driver brotten: 'up' = mer av det ger mer brott
+const CRIME_DRIVERS = [
+  ['unemp', 'ARBETSLÖSHET', 'up', 'DRIVER STÖLD OCH VÅLD'], ['youthunemp', 'UNGDOMSARBETSLÖSHET', 'up', 'UNGA UTAN JOBB DRAS TILL GÄNGEN'],
+  ['gini', 'INKOMSTSKILLNADER', 'up', 'KLYFTOR GER VÅLD OCH RÅN'], ['exclusion', 'UTANFÖRSKAP', 'up', 'GÄNGEN VÄXER I UTANFÖRSKAPET'],
+  ['poverty', 'FATTIGDOM', 'up', 'FATTIGDOM GER STÖLD'], ['alcohol', 'ALKOHOL', 'up', 'GER MISSHANDEL OCH RATTFYLLERI'],
+  ['druguse', 'NARKOTIKABRUK', 'up', 'GÄNGEN LEVER PÅ NARKOTIKAN'], ['gangs', 'GÄNGMEDLEMMAR', 'up', 'GÄNGEN SKJUTER OCH SPRÄNGER'],
+  ['police', 'POLISER', 'down', 'POLISEN FÖREBYGGER OCH KLARAR UPP'], ['clearance', 'UPPKLARADE BROTT', 'down', 'BROTT SOM KLARAS UPP AVSKRÄCKER'],
+  ['policetrust', 'FÖRTROENDE FÖR POLISEN', 'down', 'FÖRTROENDE GER FLER VITTNEN'],
+  ['prisoners', 'FÅNGAR', 'down', 'DEN SOM SITTER INNE BEGÅR INGA BROTT, MEN DET ÄR DYRT'],
+];
+const crimeCount = (n) => (Number.isFinite(n) ? fmtInd('crimecount', n) : '–');
+
+function crimeSpark(hist, start) {
+  const pts = (hist || []).filter((h) => Number.isFinite(h.i));
+  if (pts.length < 2) return '<div class="crnote">KURVAN VÄXER FRAM MÅNAD FÖR MÅNAD — EN PUNKT VAR 30:E DAG</div>';
+  const W = 600, H = 70, vals = pts.map((p) => p.i);
+  let lo = Math.min(...vals, start || vals[0]), hi = Math.max(...vals, start || vals[0]);
+  if (hi - lo < 4) { hi += 2; lo -= 2; }
+  const x = (i) => (i / (pts.length - 1)) * W;
+  const y = (v) => H - 4 - ((v - lo) / (hi - lo)) * (H - 8);
+  const line = pts.map((p, i) => `${x(i).toFixed(1)},${y(p.i).toFixed(1)}`).join(' ');
+  return `<svg class="crspark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`
+    + (start ? `<line class="ref" x1="0" x2="${W}" y1="${y(start).toFixed(1)}" y2="${y(start).toFixed(1)}"/>` : '')
+    + `<polyline points="${line}"/></svg>`
+    + `<div class="crlbl"><span>DAG ${pts[0].d}</span><span>STRECKAT = STARTLÄGET (${fmtInd('crimeidx', start)})</span><span>DAG ${pts[pts.length - 1].d}</span></div>`;
+}
+
+// brottsligheten stad för stad: landets nivå, större städer lite mer, en polisstation
+// eller övervakningscentral i staden drar ner den
+function crimeCities(now, goal) {
+  const s = state.solo;
+  const T = statTotals(s.stats);
+  const k = goal?.crimeidx > 0 && now?.crimeidx > 0 ? now.crimeidx / goal.crimeidx : 1;
+  const out = [];
+  for (const p of myRealmParts()) {
+    const ci = realmIndicators([{ cid: p.cid, share: 1 }], T, {}, baselineTotalsOf, s.nation?.laws)?.crimeidx;
+    if (!Number.isFinite(ci)) continue;
+    const list = cityPanelCities(p.cid);
+    const ps = list.map(({ city }) => city.p || 1e4).sort((a, b) => a - b);
+    const med = ps[ps.length >> 1] || 1e5;
+    for (const { city, i } of list) {
+      const b = new Set(s.cityB?.[`${p.cid}:${i}`] || []);
+      let f = ((city.p || 1e4) / med) ** 0.08;
+      if (b.has('polis')) f *= 0.85;
+      if (b.has('overvakning')) f *= 0.9;
+      if (b.has('skola')) f *= 0.97;
+      out.push({ name: city.n || '?', v: ci * k * f, b, cap: !!city.c });
+    }
+  }
+  return out;
+}
+
+// lagarna som höjer och sänker brotten mest (hemlandet: lagen mot startläget)
+function crimeLaws() {
+  const s = state.solo;
+  const laws = s.nation?.laws || {};
+  const T = statTotals(s.stats);
+  const home = [{ cid: s.home, share: 1 }];
+  const base = realmIndicators(home, T, {}, baselineTotalsOf, laws)?.crimeidx;
+  if (!(base > 0)) return [];
+  const out = [];
+  for (const [cat, opt] of Object.entries(laws)) {
+    const L = LAWS[cat];
+    const def = L?.options.find((o) => o.default);
+    if (!def || def.id === opt) continue;
+    const o = L.options.find((x) => x.id === opt);
+    if (!o) continue;
+    const T2 = { ...T };
+    for (const [k, v] of Object.entries(o.mods || {})) T2[k] = (T2[k] || 0) - v;
+    const v2 = realmIndicators(home, T2, {}, baselineTotalsOf, { ...laws, [cat]: def.id })?.crimeidx;
+    if (v2 > 0) out.push({ cat, o, d: base / v2 - 1 });
+  }
+  return out;
+}
+
+function renderCrimeTab(body) {
+  const s = state.solo;
+  body.innerHTML = '';
+  const now = myIndicators(), goal = myIndicators(true);
+  if (!now || !Number.isFinite(now.crimeidx)) {
+    body.innerHTML = '<div class="natgroup crnote">BROTTSSTATISTIKEN LADDAS…</div>';
+    return;
+  }
+  const rows = computeIndicatorRows();
+  const placeOf = (id) => rankBy(rows, id).find((r) => r.mine)?.place;
+  const pop = now.pop || 1;
+  const per = (id) => (IND[id]?.fmt === 'per100k' ? (now[id] || 0) * pop / 1e5 : IND[id]?.fmt === 'permillion' ? (now[id] || 0) * pop / 1e6 : null);
+  // brotten per 100 000 visas som bara talet — enheten står i rubriken
+  const cv = (id, x) => (IND[id]?.fmt !== 'per100k' || !Number.isFinite(x) ? fmtInd(id, x) : x < 1 ? x.toFixed(2).replace('.', ',') : fmtNum(x));
+  const arrow = (id, short = false) => {
+    const v = now[id], t = goal?.[id], d = IND[id];
+    if (!Number.isFinite(t) || !Number.isFinite(v) || fmtInd(id, t) === fmtInd(id, v)) return '';
+    const good = d?.better === 'high' ? t > v : d?.better === 'low' ? t < v : null;
+    return ` <span class="${good == null ? 'flat' : good ? 'good' : 'bad'}">\u{2192} ${short ? cv(id, t) : fmtInd(id, t)}</span>`;
+  };
+  const wrap = document.createElement('div');
+  wrap.className = 'crtab';
+  const rise = crimeRise(now);
+  const pct = Math.round((rise - 1) * 100);
+  const pl = placeOf('crimeidx');
+  const prisonersN = (now.prisoners || 0) * pop / 1e5;
+  const tiles = [
+    ['\u{1F6A8}', 'BROTTSLIGHET', fmtInd('crimeidx', now.crimeidx) + arrow('crimeidx'),
+      `100 = ETT TYPISKT LAND${pl ? ` \u{00B7} #${pl} AV ${rows.length}` : ''}${Math.abs(pct) >= 1 ? ` \u{00B7} <span class="${pct > 0 ? 'bad' : 'good'}">${pct > 0 ? '+' : ''}${pct} % SEDAN START</span>` : ''}`],
+    ['\u{1F4CB}', 'ANMÄLDA BROTT PER ÅR', crimeCount(now.crimecount), `UNGEFÄR ${crimeCount((now.crimecount || 0) / 365)} OM DAGEN`],
+    ['\u{1F6E1}\u{FE0F}', 'TRYGGHET', fmtInd('feelsafe', now.feelsafe) + arrow('feelsafe'), 'KÄNNER SIG TRYGGA UTE PÅ KVÄLLEN'],
+    ['\u{1F50E}', 'UPPKLARADE BROTT', fmtInd('clearance', now.clearance) + arrow('clearance'), `MORDEN: ${fmtInd('murdersolved', now.murdersolved)}`],
+    ['\u{1F52B}', 'SKJUTNINGAR PER ÅR', crimeCount(per('shootings')), `${fmtInd('shootings', now.shootings)} \u{00B7} SPRÄNGNINGAR ${crimeCount(per('bombings'))}`],
+    ['\u{1F46E}', 'POLISER', crimeCount(per('police')), `${fmtInd('police', now.police)} \u{00B7} VÄKTARE ${crimeCount(per('guards'))}`],
+    ['\u{26D3}\u{FE0F}', 'FÅNGAR', crimeCount(prisonersN), `${fmtInd('prisoners', now.prisoners)} \u{00B7} FYLLT TILL ${fmtInd('prisonocc', now.prisonocc)}`],
+    ['\u{1F620}', 'OTRYGGHETEN', `${Math.round(s.griev?.trygghet || 0)} / 100`, 'MISSNÖJET ÖVER BROTTEN (LÄGET I LANDET)'],
+  ];
+  let h = `<div class="crintro">ALLA BROTT I RIKET, I VERKLIGA TAL. LAGAR, POLIS, ARBETSLÖSHET, KLYFTOR OCH GÄNG FLYTTAR DEM — PÅ ETT PAR ÅR, INTE PÅ EN DAG. PILEN VISAR VART DE ÄR PÅ VÄG. ~ = UPPSKATTAT.</div>`;
+  h += '<div class="crtiles">' + tiles.map(([i, t, v, sub]) => `<div class="crtile"><div class="ct">${i} ${t}</div><div class="cv">${v}</div><div class="cs">${sub}</div></div>`).join('') + '</div>';
+  // kurvan
+  h += `<div class="natgroup"><div class="gtitle">\u{1F4C8} BROTTSLIGHETEN ÖVER TID</div>${crimeSpark(s.crimeHist, s.crimeStart)}</div>`;
+  // brotten
+  for (const fam of CRIME_FAMILIES) {
+    const ids = fam.ids.filter((id) => IND[id] && Number.isFinite(now[id]));
+    if (!ids.length) continue;
+    h += `<div class="natgroup"><div class="gtitle">${fam.icon} ${fam.name} <span class="gcount">PER 100 000 OCH ÅR \u{00B7} MOT VÄRLDEN \u{00B7} PLATS</span></div>`;
+    for (const id of ids) {
+      const d = IND[id], v = now[id], med = worldMedian(id);
+      const r = med > 0 ? v / med : 1;
+      const pos = Math.max(2, Math.min(98, 50 + 25 * Math.log2(Math.max(1e-3, r))));
+      const bad = d.better === 'low' ? r > 1.05 : d.better === 'high' ? r < 0.95 : null;
+      const col = bad == null ? 'var(--amber)' : bad ? 'var(--red)' : '#4ae37a';
+      const n = per(id);
+      const place = placeOf(id);
+      h += `<div class="crrow"><span class="crn">${d.name.toUpperCase()}<small>${d.desc.toUpperCase()}</small></span>`
+        + `<span class="crv">${isEstimated(s.home, id) ? '<span class="est">~</span>' : ''}${cv(id, v)}${arrow(id, true)}${n != null ? `<small>${crimeCount(n)} PER ÅR</small>` : ''}</span>`
+        + `<span class="crb" title="JÄMFÖRT MED MEDIANLANDET I VÄRLDEN"><i style="left:${Math.min(50, pos)}%;width:${Math.abs(pos - 50)}%;background:${col}"></i><em>${med > 0 ? fmtNum(r) + '\u{00D7} VÄRLDEN' : ''}</em></span>`
+        + `<span class="crp">${place ? '#' + place : ''}</span></div>`;
+    }
+    h += '</div>';
+  }
+  // rättskedjan
+  const reported = now.crimecount || 0;
+  const committed = reported / Math.max(0.05, 1 - (now.darkfigure ?? 50) / 100);
+  const chain = [
+    ['\u{1F319}', 'BROTT SOM BEGÅS', committed, `MÖRKERTAL ${fmtInd('darkfigure', now.darkfigure)} — ANMÄLS ALDRIG`],
+    ['\u{1F4CB}', 'ANMÄLS', reported, 'TILL POLISEN'],
+    ['\u{1F50E}', 'KLARAS UPP', reported * (now.clearance || 0) / 100, `${fmtInd('clearance', now.clearance)} AV DE ANMÄLDA`],
+    ['\u{2696}\u{FE0F}', 'LAGFÖRS', (now.convicted || 0) * pop / 1e5, `VÄNTAN PÅ DOM ${fmtInd('courtwait', now.courtwait)} \u{00B7} HÄKTADE UTAN DOM ${fmtInd('detention', now.detention)}`],
+    ['\u{26D3}\u{FE0F}', 'SITTER I FÄNGELSE', prisonersN, `STRAFFTID ${fmtInd('sentence', now.sentence)} \u{00B7} RYMNINGAR ${fmtInd('prisonescape', now.prisonescape)}`],
+    ['\u{1F501}', 'ÅTERFALLER INOM TRE ÅR', prisonersN * (now.recidivism || 0) / 100, `${fmtInd('recidivism', now.recidivism)} AV DE SOM SLÄPPS`],
+  ];
+  h += `<div class="natgroup crfun"><div class="gtitle">\u{2696}\u{FE0F} RÄTTSKEDJAN — FRÅN BROTT TILL STRAFF</div>`
+    + chain.map(([i, t, n, sub]) => `<div class="fr"><span>${i} ${t}<small>${sub}</small></span>`
+      + `<span><span class="fb" style="width:${Math.max(1.5, 100 * Math.sqrt(Math.max(0, n) / Math.max(1, committed))).toFixed(1)}%"></span><span class="fn">${crimeCount(n)}</span></span></div>`).join('')
+    + '</div>';
+  // orsakerna
+  const plain = realmIndicators(myRealmParts(), null, {}, baselineTotalsOf, null, true) || {};
+  h += `<div class="natgroup"><div class="gtitle">\u{1F9ED} VAD DRIVER BROTTEN — VID START OCH NU</div>`;
+  for (const [id, name, dir, why] of CRIME_DRIVERS) {
+    const a = plain[id], b = now[id];
+    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+    const same = fmtInd(id, a) === fmtInd(id, b);
+    const worse = same ? null : (b > a) === (dir === 'up');
+    h += `<div class="crdrv"><span>${name}</span><span>${fmtInd(id, a)} \u{2192} <b class="${worse == null ? '' : worse ? 'bad' : 'good'}">${fmtInd(id, b)}</b></span>`
+      + `<small>${same ? 'SOM VID START' : (worse ? '\u{25B2} HÖJER BROTTEN' : '\u{25BC} SÄNKER BROTTEN') + ' \u{2014} ' + why}</small></div>`;
+  }
+  h += '</div>';
+  // lagarna
+  const cl = crimeLaws();
+  const up = cl.filter((x) => x.d > 0.01).sort((a, b) => b.d - a.d).slice(0, 6);
+  const down = cl.filter((x) => x.d < -0.01).sort((a, b) => a.d - b.d).slice(0, 6);
+  const lawLine = (x) => `<div><span>${(LAW_SV[x.cat] || LAWS[x.cat].name).toUpperCase()}: ${x.o.name.toUpperCase()}</span><span class="${x.d > 0 ? 'bad' : 'good'}">${x.d > 0 ? '+' : ''}${Math.round(x.d * 100)} %</span></div>`;
+  h += `<div class="natgroup"><div class="gtitle">\u{1F4DC} DINA LAGAR OCH BROTTEN</div><div class="crcols">`
+    + `<div class="crlist"><div class="sub">\u{25B2} HÖJER BROTTSLIGHETEN</div>${up.map(lawLine).join('') || '<div class="sub">INGEN AV DINA LAGAR</div>'}</div>`
+    + `<div class="crlist"><div class="sub">\u{25BC} SÄNKER BROTTSLIGHETEN</div>${down.map(lawLine).join('') || '<div class="sub">INGEN AV DINA LAGAR ÄN — PRÖVA POLISEN, STRAFFEN ELLER VAPENLAGARNA</div>'}</div>`
+    + '</div><div class="crnote">JÄMFÖRT MED OM LAGEN STOD KVAR I STARTLÄGET, I HEMLANDET.</div></div>';
+  // städerna
+  const cities = crimeCities(now, goal).sort((a, b) => b.v - a.v);
+  if (cities.length) {
+    const cityLine = (c) => `<div><span>${c.cap ? '\u{2B50} ' : ''}${escHtml(String(c.name).toUpperCase())}${c.b.has('polis') ? ' \u{1F693}' : ''}${c.b.has('overvakning') ? ' \u{1F4F9}' : ''}</span><span class="${c.v > 120 ? 'bad' : c.v < 70 ? 'good' : 'flat'}">${fmtNum(c.v)}</span></div>`;
+    const n = Math.min(6, Math.ceil(cities.length / 2));
+    h += `<div class="natgroup"><div class="gtitle">\u{1F3D9}\u{FE0F} STÄDERNA — BROTTSLIGHET (100 = ETT TYPISKT LAND)</div><div class="crcols">`
+      + `<div class="crlist"><div class="sub">FARLIGAST</div>${cities.slice(0, n).map(cityLine).join('')}</div>`
+      + `<div class="crlist"><div class="sub">TRYGGAST</div>${cities.slice(-n).reverse().map(cityLine).join('')}</div>`
+      + '</div><div class="crnote">\u{1F693} POLISSTATION OCH \u{1F4F9} ÖVERVAKNINGSCENTRAL SÄNKER BROTTEN I SIN STAD. DE STÖRSTA STÄDERNA HAR LITE MER BROTT.</div></div>';
+  }
+  // krönikan
+  h += `<div class="natgroup crnews"><div class="gtitle">\u{1F4F0} BROTTSKRÖNIKAN</div>`
+    + ((s.crimeNews || []).map((n) => `<div><span class="d">DAG ${n.d}</span>${n.i} ${escHtml(n.t)}</div>`).join('')
+      || '<div class="crnote">KRÖNIKAN FYLLS PÅ EN GÅNG I MÅNADEN</div>')
+    + '</div>';
+  wrap.innerHTML = h;
+  body.appendChild(wrap);
+}
+
 function renderNationTab() {
   const body = $('#natbody');
   document.querySelectorAll('.nattab').forEach((el) => el.classList.toggle('on', el.dataset.tab === natTab));
@@ -5132,6 +5445,7 @@ function renderNationTab() {
   $('#nation').dataset.tab = natTab;
   recomputeNation();
   if (natTab === 'statistik') return renderStatsTab(body);
+  if (natTab === 'brott') return renderCrimeTab(body);   // V5.18
   if (natTab === 'landet') return renderLandTab(body);   // V5.12
   if (natTab === 'banken') return renderBankTab(body);   // V5.13
   if (natTab === 'lagar') return renderLawsTab(body);
@@ -5917,9 +6231,27 @@ function renderLawsTab(body) {
     row.appendChild(no);
     body.appendChild(row);
   }
+  // V5.18: 133 lagar — sökrutan hittar en lag på namnet, det svenska namnet eller ett val
+  const typing = document.activeElement?.id === 'lawq';
+  const lbar = document.createElement('div');
+  lbar.className = 'statbar';
+  lbar.innerHTML = `<input id="lawq" type="search" autocomplete="off" placeholder="SÖK BLAND ${Object.keys(LAWS).length} LAGAR — T.EX. POLIS, SKATT, SPEL">`;
+  body.appendChild(lbar);
+  const lq = lbar.querySelector('#lawq');
+  lq.value = lawQuery;
+  const filterLaws = () => {
+    const q = lawQuery.trim().toUpperCase();
+    body.querySelectorAll('.lawcat').forEach((el) => { el.style.display = !q || el.dataset.k.includes(q) ? '' : 'none'; });
+  };
+  lq.addEventListener('input', () => { lawQuery = lq.value; filterLaws(); });
+  setTimeout(() => {
+    filterLaws();
+    if (typing) { lq.focus(); lq.setSelectionRange(lq.value.length, lq.value.length); }
+  });
   for (const [cat, def] of Object.entries(LAWS)) {
     const div = document.createElement('div');
     div.className = 'lawcat';
+    div.dataset.k = `${def.name} ${LAW_SV[cat] || ''} ${def.options.map((o) => o.name).join(' ')}`.toUpperCase();
     const cur = lawOption(cat, s.nation.laws[cat]);
     const wantIdx = preferredIndex(s.nation, cat);
     const wantOpt = wantIdx != null ? def.options[wantIdx] : null;
@@ -8235,72 +8567,136 @@ function backToLobby(by) {
   applyState();
 }
 
-// ---------- SPARAT SPEL: ett pågående parti överlever en omladdning ----------
+// ---------- SPARADE SPEL (V5.18): varje parti har en egen sparplats (saves.js) ----------
+// Partiet sparas var 8:e sekund, när fliken göms och när spelaren sparar själv. Inget
+// försvinner av sig självt, bara om spelaren tar bort det. Det gamla enda sparet
+// (imperium.game, glömdes efter ett dygn) flyttas in bland partierna första gången.
 const GAME_KEY = 'imperium.game';
-// V5.9: ett rum man skapat sparas för sig — annars skulle värden skriva över ens soloparti
+// V5.9: ett rum man skapat sparas för sig (den dolda värdramen) — annars skulle värden skriva över ens soloparti
 const ROOM_KEY = 'imperium.room';
-function saveGame() {
-  try {
-    if (state.mode === 'solo' && state.solo?.nation) {
-      const s = state.solo;
-      localStorage.setItem(GAME_KEY, JSON.stringify({
-        mode: 'solo', at: Date.now(), day: s.clock?.day || 1, version: VERSION,
-        solo: {
-          claims: s.claims, home: s.home, army: s.army, wars: s.wars, reparations: s.reparations,
-          aiOwned: s.aiOwned, aiEmpires: s.aiEmpires, permMods: s.permMods, nation: s.nation,
-          res: s.res, extra: s.extra, faction: s.faction, factionMods: s.factionMods,
-          leader: s.leader, leaderMods: s.leaderMods, buildQueue: s.buildQueue,
-          researchQueue: s.researchQueue, garrisons: s.garrisons, cityB: s.cityB, trade: s.trade,
-          integ: s.integ, countryArmies: s.countryArmies, aiWars: s.aiWars, aiGoals: s.aiGoals,
-          rel: s.rel, allies: s.allies, truces: s.truces, disarmed: s.disarmed, stance: s.stance,
-          partial: s.partial, bloc: s.bloc, aiBlocs: s.aiBlocs, flag: s.flag, stateFlags: s.stateFlags,
-          dev: s.dev, dream: s.dream, spaceNations: s.spaceNations, aiInteg: s.aiInteg,
-          // V5: modifierare, händelsehistorik, utvecklingsnivåer och lydstater
-          mods: s.mods, seenEvents: s.seenEvents, trend: s.trend, nextEvent: s.nextEvent,
-          devQueue: s.devQueue, devLevels: s.devLevels, aiPuppets: s.aiPuppets,
-          indLag: s.indLag,   // V5.6: hur långt politiken hunnit slå igenom i statistiken
-          known: [...(s.known || [])],
-          popMark: s.popMark, popStep: s.popStep,
-          coldWars: s.coldWars, revolutions: s.revolutions, rest: s.rest, color: s.color,   // V5.8
-          faith: s.faith, ident: s.ident, bank: s.bank,   // V5.12–5.13
-          eventQueue: s.eventQueue || [],   // V5.15: följdhändelser som väntar
-          // V5.16: lagar som slår igenom, missnöjet, lagändringarna och statistikens historik
-          lawFx: s.lawFx, ideoFx: s.ideoFx, griev: s.griev || {}, lawLog: s.lawLog || [], indHist: s.indHist || [],
-          lawSince: s.lawSince || {}, utopiaWarned: s.utopiaWarned || {},   // V5.17
-        },
-        world: state.world || {},
-        history: (state.history || []).slice(0, 120),
-        pops: savedPops(),   // V5.7: länder vars befolkning ändrats
-      }));
-    } else if (state.mode === 'tv') {
-      const w = state.hostWorld;
-      localStorage.setItem(SERVER ? ROOM_KEY : GAME_KEY, JSON.stringify({
-        mode: 'tv', at: Date.now(), code: net.code, version: VERSION,
-        // V5.9: ett rum som skapats via SPELA MED KOMPISAR — värden spelar själv
-        hostPlays: SERVER || undefined, hostName: SERVER ? PARAMS.get('name') || '' : undefined,
-        players: state.players.map(({ ...p }) => ({ ...p, offline: true })),
-        hostWorld: {
-          aiOwned: w.aiOwned, aiEmpires: w.aiEmpires, countryArmies: w.countryArmies,
-          aiWars: w.aiWars, aiGoals: w.aiGoals, dev: w.dev, dream: w.dream, leaders: w.leaders,
-          spaceNations: w.spaceNations, aiInteg: w.aiInteg, fails: w.fails,
-          devLevels: w.devLevels, aiPuppets: w.aiPuppets,   // V5
-          coldWars: w.coldWars, revolutions: w.revolutions, rest: w.rest,   // V5.8
-          known: [...(w.known || [])],
-        },
-        world: state.world || {},
-        history: (state.history || []).slice(0, 120),
-      }));
-    }
-  } catch (e) { /* fullt lager */ }
+const LOAD_KEY = 'imperium.load';   // sessionStorage: partiet som ska öppnas efter omladdningen ('new' = nytt parti)
+
+// det menyn visar om ett parti
+function saveMeta(g) {
+  if (g.mode === 'tv') {
+    return { id: state.tvSaveId, mode: 'tv', name: state.tvSaveName || `TV-RUM ${g.code || '?'}`, custom: !!state.tvSaveName,
+      code: g.code || '', players: (g.players || []).length, day: state.hostDay || 0, version: VERSION, at: g.at,
+      created: state.tvSaveCreated };
+  }
+  const s = state.solo;
+  const I = IDEOLOGIES[s.nation?.ideology];
+  const c = globe.getCountry(s.home);
+  return {
+    id: s.saveId, mode: 'solo', name: s.saveName || realmName() || 'MITT RIKE', custom: !!s.saveName,
+    home: s.home, a2: state.facts?.[s.home]?.a2 || alpha2(s.home) || '', country: c?.name0 || c?.name || '',
+    color: s.color || '', day: s.clock?.day || 1, countries: Object.keys(s.claims || {}).length,
+    ideo: I ? `${I.icon || ''} ${I.name}` : '', leader: s.leader?.n || '', money: Math.round(s.res?.money || 0),
+    version: VERSION, at: g.at, created: s.saveCreated, copy: s.saveCopy || undefined,
+  };
 }
 
-function loadGame(key = GAME_KEY) {
+let saveFailWarned = false;
+function saveGame() {
+  try {
+    const g = gamePayload();
+    if (!g) return Promise.resolve(false);
+    const json = JSON.stringify(g);
+    // V5.9: den dolda värdramen i ett rum sparar sitt rum för sig
+    if (SERVER) { localStorage.setItem(ROOM_KEY, json); return Promise.resolve(true); }
+    return writeSave(saveMeta(g), json).then((ok) => {
+      if (!ok && !saveFailWarned) { saveFailWarned = true; warn('PARTIET KUNDE INTE SPARAS — LAGRINGEN ÄR FULL. LADDA NER EN SPARFIL UNDER \u{1F4BE}'); }
+      return ok;
+    });
+  } catch (e) { return Promise.resolve(false); }
+}
+
+// hela partiet som ett objekt (null om inget parti pågår)
+function gamePayload() {
+  if (state.mode === 'solo' && state.solo?.nation) {
+    const s = state.solo;
+    s.saveId ||= newSaveId();
+    s.saveCreated ||= Date.now();
+    return ({
+      mode: 'solo', at: Date.now(), day: s.clock?.day || 1, version: VERSION,
+      solo: {
+        claims: s.claims, home: s.home, army: s.army, wars: s.wars, reparations: s.reparations,
+        aiOwned: s.aiOwned, aiEmpires: s.aiEmpires, permMods: s.permMods, nation: s.nation,
+        res: s.res, extra: s.extra, faction: s.faction, factionMods: s.factionMods,
+        leader: s.leader, leaderMods: s.leaderMods, buildQueue: s.buildQueue,
+        researchQueue: s.researchQueue, garrisons: s.garrisons, cityB: s.cityB, trade: s.trade,
+        integ: s.integ, countryArmies: s.countryArmies, aiWars: s.aiWars, aiGoals: s.aiGoals,
+        rel: s.rel, allies: s.allies, truces: s.truces, disarmed: s.disarmed, stance: s.stance,
+        partial: s.partial, bloc: s.bloc, aiBlocs: s.aiBlocs, flag: s.flag, stateFlags: s.stateFlags,
+        dev: s.dev, dream: s.dream, spaceNations: s.spaceNations, aiInteg: s.aiInteg,
+        // V5: modifierare, händelsehistorik, utvecklingsnivåer och lydstater
+        mods: s.mods, seenEvents: s.seenEvents, trend: s.trend, nextEvent: s.nextEvent,
+        devQueue: s.devQueue, devLevels: s.devLevels, aiPuppets: s.aiPuppets,
+        indLag: s.indLag,   // V5.6: hur långt politiken hunnit slå igenom i statistiken
+        known: [...(s.known || [])],
+        popMark: s.popMark, popStep: s.popStep,
+        coldWars: s.coldWars, revolutions: s.revolutions, rest: s.rest, color: s.color,   // V5.8
+        faith: s.faith, ident: s.ident, bank: s.bank,   // V5.12–5.13
+        eventQueue: s.eventQueue || [],   // V5.15: följdhändelser som väntar
+        // V5.16: lagar som slår igenom, missnöjet, lagändringarna och statistikens historik
+        lawFx: s.lawFx, ideoFx: s.ideoFx, griev: s.griev || {}, lawLog: s.lawLog || [], indHist: s.indHist || [],
+        lawSince: s.lawSince || {}, utopiaWarned: s.utopiaWarned || {},   // V5.17
+        crimeHist: s.crimeHist || [], crimeNews: s.crimeNews || [], crimeStart: s.crimeStart || 0,   // V5.18
+      },
+      world: state.world || {},
+      history: (state.history || []).slice(0, 120),
+      pops: savedPops(),   // V5.7: länder vars befolkning ändrats
+    });
+  } else if (state.mode === 'tv' && state.hostWorld) {
+    const w = state.hostWorld;
+    if (!SERVER) { state.tvSaveId ||= newSaveId(); state.tvSaveCreated ||= Date.now(); }
+    return ({
+      mode: 'tv', at: Date.now(), code: net.code, version: VERSION,
+      // V5.9: ett rum som skapats via SPELA MED KOMPISAR — värden spelar själv
+      hostPlays: SERVER || undefined, hostName: SERVER ? PARAMS.get('name') || '' : undefined,
+      players: state.players.map(({ ...p }) => ({ ...p, offline: true })),
+      hostWorld: {
+        aiOwned: w.aiOwned, aiEmpires: w.aiEmpires, countryArmies: w.countryArmies,
+        aiWars: w.aiWars, aiGoals: w.aiGoals, dev: w.dev, dream: w.dream, leaders: w.leaders,
+        spaceNations: w.spaceNations, aiInteg: w.aiInteg, fails: w.fails,
+        devLevels: w.devLevels, aiPuppets: w.aiPuppets,   // V5
+        coldWars: w.coldWars, revolutions: w.revolutions, rest: w.rest,   // V5.8
+        known: [...(w.known || [])],
+      },
+      world: state.world || {},
+      history: (state.history || []).slice(0, 120),
+    });
+  }
+  return null;
+}
+
+// V5.18: rummet i den dolda värdramen (ROOM_KEY). Inget bäst-före-datum längre.
+function loadGame(key = ROOM_KEY) {
   try {
     const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    const g = JSON.parse(raw);
-    return g && Date.now() - (g.at || 0) < 24 * 3600e3 ? g : null;
+    return raw ? JSON.parse(raw) : null;
   } catch (e) { return null; }
+}
+
+// V5.18: det gamla enda sparet flyttas in bland partierna (en gång, sedan tas det bort)
+async function migrateLegacySave() {
+  let raw = null;
+  try { raw = localStorage.getItem(GAME_KEY); } catch (e) { return; }
+  if (!raw) return;
+  let g;
+  try { g = JSON.parse(raw); } catch (e) { return; }
+  if (!g || (g.mode !== 'solo' && g.mode !== 'tv') || (g.mode === 'solo' && !g.solo?.nation)) return;
+  const home = g.solo?.home;
+  const ideo = IDEOLOGIES[g.solo?.nation?.ideology];
+  const meta = g.mode === 'tv'
+    ? { id: newSaveId(), mode: 'tv', name: `TV-RUM ${g.code || '?'}`, code: g.code || '', players: (g.players || []).length, day: 0, version: g.version, at: g.at || Date.now() }
+    : { id: newSaveId(), mode: 'solo', name: (g.solo.ident?.renamed && g.solo.ident.short) || svName(home, '') || 'MITT RIKE',
+      home, a2: alpha2(home) || '', country: svName(home, ''), color: g.solo.color || '', day: g.day || 1,
+      countries: Object.keys(g.solo.claims || {}).length, ideo: ideo ? `${ideo.icon || ''} ${ideo.name}` : '',
+      leader: g.solo.leader?.n || '', money: Math.round(g.solo.res?.money || 0), version: g.version, at: g.at || Date.now(),
+      created: g.at || Date.now() };
+  if (await writeSave(meta, raw) && await readSave(meta.id)) {
+    try { localStorage.removeItem(GAME_KEY); } catch (e) { /* strunt samma */ }
+  }
 }
 
 // ---------- sessionsminne: tappar man kontakten kan man återuppta sitt spel ----------
@@ -8321,6 +8717,7 @@ function saveSession() {
       eventQueue: s.eventQueue || [],   // V5.15
       lawFx: s.lawFx, ideoFx: s.ideoFx, griev: s.griev || {}, lawLog: s.lawLog || [], indHist: s.indHist || [],   // V5.16
       lawSince: s.lawSince || {}, utopiaWarned: s.utopiaWarned || {},   // V5.17
+      crimeHist: s.crimeHist || [], crimeNews: s.crimeNews || [], crimeStart: s.crimeStart || 0,   // V5.18
     }));
   } catch (e) { /* privat läge / fullt lager — strunt samma */ }
 }
@@ -8329,9 +8726,8 @@ function loadSession() {
   try {
     const raw = localStorage.getItem(SESS_KEY);
     if (!raw) return null;
-    const snap = JSON.parse(raw);
-    // en session är giltig i 12 timmar
-    return snap && Date.now() - (snap.at || 0) < 12 * 3600e3 ? snap : null;
+    // V5.18: ingen tidsgräns — rummet kan öppnas igen långt senare (FORTSÄTT RUMMET)
+    return JSON.parse(raw) || null;
   } catch (e) { return null; }
 }
 
@@ -8366,6 +8762,7 @@ function restoreSession(snap, home) {
   s.lawFx = snap.lawFx || null; s.ideoFx = snap.ideoFx || null;   // V5.16
   s.griev = snap.griev || {}; s.lawLog = snap.lawLog || []; s.indHist = snap.indHist || [];
   s.lawSince = snap.lawSince || {}; s.utopiaWarned = snap.utopiaWarned || {};   // V5.17
+  s.crimeHist = snap.crimeHist || []; s.crimeNews = snap.crimeNews || []; s.crimeStart = snap.crimeStart || 0;   // V5.18
   s.ident = snap.ident || null;   // V5.12
   s.bank = snap.bank || null;   // V5.13
   s.stateFlags = snap.stateFlags || {};
@@ -8499,10 +8896,13 @@ function closeSpectate() {
 $('#bClose').addEventListener('click', () => closeSpectate());
 
 // Återuppta ett pågående parti efter omladdning (nya versionen behåller spelet)
-function resumeGame(g) {
+function resumeGame(g, id = null, meta = null) {
   if (!g) return false;
   if (g.mode === 'solo') {
     startSolo(true);
+    // V5.18: partiet fortsätter på sin egen sparplats
+    Object.assign(state.solo, { saveId: id || newSaveId(), saveName: meta?.custom ? meta.name : null,
+      saveCreated: meta?.created || Date.now(), saveCopy: meta?.copy || undefined });
     const pending = () => {
       if (!globe.countries.length) { setTimeout(pending, 400); return; }
       const s = state.solo;
@@ -8537,6 +8937,7 @@ function resumeGame(g) {
   }
   if (g.mode === 'tv') {
     state.resumePending = true;   // V5.9: rummets dolda värd väntar med koden tills spelarna är tillbaka
+    if (!SERVER) Object.assign(state, { tvSaveId: id || newSaveId(), tvSaveName: meta?.custom ? meta.name : null, tvSaveCreated: meta?.created || Date.now() });
     startTV(g.code);
     const pending = () => {
       if (!globe.countries.length) { setTimeout(pending, 400); return; }
@@ -8593,19 +8994,222 @@ function announceVersion() {
 wireToggles();
 renderLegend();
 
-$('#btnTV').addEventListener('click', () => startTV());
-$('#btnSolo').addEventListener('click', () => startSolo());
+$('#btnTV').addEventListener('click', () => { persistSaves(); startTV(); });
+$('#btnSolo').addEventListener('click', () => { persistSaves(); startSolo(); });
+$('#btnSaves').addEventListener('click', () => openSavesPanel());
 
-// pågående parti? erbjud att fortsätta där man var
-const savedGame = loadGame();
-if (savedGame) {
+// ---------- V5.18 SPARADE SPEL: menyn, panelen och att byta parti ----------
+// pågående partier? erbjud att fortsätta det senaste, och visa alla
+async function refreshMenuSaves() {
+  await migrateLegacySave();
+  const list = await listSaves();
+  const last = list[0];
   const b = $('#btnContinue');
-  b.innerHTML = savedGame.mode === 'tv'
-    ? `&#8635; FORTSÄTT TV-SPELET (RUM ${savedGame.code || '?'})`
-    : `&#8635; FORTSÄTT SPELET (DAG ${savedGame.day || 1})`;
-  b.style.display = 'block';
-  b.addEventListener('click', () => resumeGame(savedGame));
+  if (last) {
+    b.innerHTML = last.mode === 'tv'
+      ? `&#8635; FORTSÄTT TV-SPELET (${escHtml(last.name)})`
+      : `&#8635; FORTSÄTT: ${escHtml(String(last.name).toUpperCase())} — DAG ${last.day || 1}`;
+    b.style.display = 'block';
+    b.onclick = () => openSave(last.id);
+  } else b.style.display = 'none';
+  $('#btnSaves').innerHTML = `&#128190; SPARADE SPEL${list.length ? ` (${list.length})` : ''}`;
 }
+
+const gameRunning = () => (state.mode === 'solo' && !!state.solo?.nation) || (state.mode === 'tv' && !SERVER && !!state.hostWorld);
+const currentSaveId = () => (state.mode === 'solo' ? state.solo?.saveId : state.mode === 'tv' ? state.tvSaveId : null);
+
+// öppna ett sparat parti. Pågår ett annat sparas det först, och sidan laddas om
+// (ett nytt parti mitt i ett annat skulle blanda ihop världarna).
+async function openSave(id) {
+  persistSaves();
+  if (gameRunning()) {
+    if (id === currentSaveId()) { overlay('#saves', false); return; }
+    await saveGame();
+    reloadInto(id);
+    return;
+  }
+  const r = await readSave(id);
+  if (!r?.data) { warn('PARTIET GÅR INTE ATT LÄSA'); refreshMenuSaves(); return; }
+  overlay('#saves', false);
+  overlay('#menu', false);
+  if (!resumeGame(r.data, id, r.meta)) { overlay('#menu', true); warn('PARTIET GÅR INTE ATT ÖPPNA'); }
+}
+function reloadInto(what) {
+  try { sessionStorage.setItem(LOAD_KEY, what); } catch (e) { /* utan sessionStorage: menyn visas */ }
+  location.reload();
+}
+
+// tid som "7 NOV 14:32" (i dag: "I DAG 14:32")
+function saveWhen(t) {
+  if (!t) return '';
+  const d = new Date(t), now = new Date();
+  const hm = d.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === now.toDateString()) return 'I DAG ' + hm;
+  return d.toLocaleDateString('sv-SE', { day: 'numeric', month: 'short', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' }).toUpperCase().replace('.', '') + ' ' + hm;
+}
+const kb = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`);
+
+let savesWasPaused = null;
+function openSavesPanel() {
+  // i ett rum äger värden världen — ditt land sparas där och i sessionen på mobilen
+  if (state.mode === 'player') { toast('I ETT RUM SPARAS DITT LAND HOS VÄRDEN — TAPPAR DU KONTAKTEN, GÅ MED IGEN MED SAMMA NAMN', 'amber', 7000); return; }
+  persistSaves();
+  const s = state.solo;
+  if (state.mode === 'solo' && s?.clock && savesWasPaused == null) { savesWasPaused = !!s.clock.paused; s.clock.paused = true; }
+  overlay('#saves', true);
+  renderSavesPanel();
+}
+function closeSavesPanel() {
+  overlay('#saves', false);
+  const s = state.solo;
+  if (state.mode === 'solo' && s?.clock && savesWasPaused != null) { s.clock.paused = savesWasPaused; renderResbar(); }
+  savesWasPaused = null;
+  if (!gameRunning()) refreshMenuSaves();
+}
+
+let saveConfirm = null;   // id som väntar på andra klicket på TA BORT
+async function renderSavesPanel(note = '') {
+  const box = $('#savelist');
+  const list = await listSaves();
+  const cur = gameRunning() ? currentSaveId() : null;
+  // partiet som spelas står överst
+  if (cur) list.sort((x, y) => (y.id === cur) - (x.id === cur));
+  const head = $('#savecur');
+  head.innerHTML = '';
+  if (gameRunning()) {
+    const nm = state.mode === 'solo' ? (state.solo.saveName || realmName()) : (state.tvSaveName || 'TV-SPELET');
+    head.innerHTML = `<div class="svnow">DU SPELAR: <b>${escHtml(String(nm).toUpperCase())}</b></div>`
+      + `<div class="svtools"><button class="btn amber" data-a="savenow">&#128190; SPARA NU</button>`
+      + `<button class="btn" data-a="saveas">&#128209; SPARA SOM NYTT PARTI</button>`
+      + `<button class="btn" data-a="newgame">&#9876; NYTT PARTI</button></div>`
+      + `<div class="svask" id="svasbox" style="display:none"><input id="svasname" class="field" maxlength="32" autocomplete="off" spellcheck="false">`
+      + `<button class="btn amber" data-a="saveasgo">SPARA KOPIAN</button></div>`;
+  }
+  box.innerHTML = list.length ? '' : '<div class="svempty">INGA SPARADE PARTIER ÄNNU — STARTA ETT, SÅ SPARAS DET AV SIG SJÄLVT</div>';
+  for (const m of list) {
+    const row = document.createElement('div');
+    row.className = 'svrow' + (m.id === cur ? ' cur' : '');
+    const flag = m.a2 ? `<img src="https://flagcdn.com/w40/${escHtml(m.a2.toLowerCase())}.png" alt="">` : '<span class="svtv">&#128250;</span>';
+    const sub = m.mode === 'tv'
+      ? [`${m.players || 0} SPELARE`, m.code ? `RUM ${escHtml(m.code)}` : '']
+      : [m.country && String(m.country).toUpperCase() !== String(m.name).toUpperCase() ? escHtml(String(m.country).toUpperCase()) : '',
+        `DAG ${m.day || 1} (ÅR ${Math.floor((m.day || 1) / YEAR_DAYS) + 1})`,
+        `${m.countries || 1} ${(m.countries || 1) === 1 ? 'LAND' : 'LÄNDER'}`, escHtml(String(m.ideo || '').toUpperCase())];
+    const tags = [m.copy ? 'KOPIA' : '', m.imported ? 'UPPLADDAT' : '', m.id === cur ? 'SPELAS NU' : ''].filter(Boolean);
+    row.innerHTML = `<div class="svflag" style="border-color:${escHtml(m.color || 'var(--holo-dim)')}">${flag}</div>`
+      + `<div class="svinfo"><div class="svname">${escHtml(String(m.name || 'PARTI').toUpperCase())}${tags.map((t) => ` <span class="svtag">${t}</span>`).join('')}</div>`
+      + `<div class="svsub">${sub.filter(Boolean).join(' &nbsp;\u{00B7}&nbsp; ')}</div>`
+      + `<div class="svsub dim">SENAST SPELAT ${saveWhen(m.at)} &nbsp;\u{00B7}&nbsp; V${escHtml(m.version || '?')} &nbsp;\u{00B7}&nbsp; ${kb(m.size || 0)}${m.leader ? ` &nbsp;\u{00B7}&nbsp; \u{1F3A9} ${escHtml(String(m.leader).toUpperCase())}` : ''}</div>`
+      + `<div class="svren" style="display:none"><input class="field" maxlength="32" value="${escHtml(m.name || '')}" autocomplete="off" spellcheck="false"><button class="lawopt" data-a="rengo">SPARA NAMNET</button></div></div>`
+      + `<div class="svbtns">${m.id === cur ? '' : '<button class="lawopt go" data-a="play">&#9654; SPELA</button>'}`
+      + '<button class="lawopt" data-a="ren">BYT NAMN</button>'
+      + '<button class="lawopt" data-a="copy" title="EN KOPIA SOM STÅR KVAR SOM DEN ÄR">KOPIERA</button>'
+      + '<button class="lawopt" data-a="down" title="SPARA PARTIET SOM EN FIL PÅ DATORN">LADDA NER</button>'
+      + (m.id === cur ? '' : `<button class="lawopt del" data-a="del">${saveConfirm === m.id ? 'SÄKERT? KLICKA IGEN' : 'TA BORT'}</button>`)
+      + '</div>';
+    row.addEventListener('click', (e) => {
+      const a = e.target.closest('[data-a]')?.dataset.a;
+      if (a) saveRowAction(a, m, row);
+    });
+    box.appendChild(row);
+  }
+  const info = await storageInfo();
+  $('#savefoot').innerHTML = (note ? `<div class="svnote">${note}</div>` : '')
+    + `<div class="svsub dim">${list.length} ${list.length === 1 ? 'PARTI' : 'PARTIER'}${info.used != null ? ` &nbsp;\u{00B7}&nbsp; ${kb(info.used)} ANVÄNT` : ''}`
+    + ` &nbsp;\u{00B7}&nbsp; ${info.kept ? '\u{1F512} WEBBLÄSAREN RENSAR ALDRIG PARTIERNA' : 'PARTIERNA SPARAS TILLS DU TAR BORT DEM (RENSAR DU WEBBLÄSAREN FÖRSVINNER DE — LADDA NER EN FIL SOM RESERV)'}</div>`;
+}
+
+async function saveRowAction(a, m, row) {
+  if (a === 'play') { openSave(m.id); return; }
+  if (a === 'ren') { const r = row.querySelector('.svren'); r.style.display = r.style.display === 'none' ? 'flex' : 'none'; r.querySelector('input').focus(); return; }
+  if (a === 'rengo') {
+    const name = row.querySelector('.svren input').value.trim().slice(0, 32);
+    if (!name) return;
+    if (m.id === currentSaveId() && gameRunning()) {
+      if (state.mode === 'solo') state.solo.saveName = name; else state.tvSaveName = name;
+      await saveGame();
+    } else await renameSave(m.id, name);
+    renderSavesPanel(`\u{270F}\u{FE0F} NYTT NAMN: ${escHtml(name.toUpperCase())}`);
+    return;
+  }
+  if (a === 'copy') {
+    if (m.id === currentSaveId() && gameRunning()) await saveGame();
+    const c = await copySave(m.id, `${m.name || 'PARTI'} — DAG ${m.day || 1}`);
+    renderSavesPanel(c ? '\u{29C9} KOPIAN ÄR SPARAD — ORIGINALET STÅR KVAR SOM DET VAR' : 'KOPIAN GICK INTE ATT SPARA');
+    return;
+  }
+  if (a === 'down') {
+    if (m.id === currentSaveId() && gameRunning()) await saveGame();
+    const blob = await exportSave(m.id);
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const safe = String(m.name || 'parti').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    link.href = url;
+    link.download = `imperium-${safe || 'parti'}-dag${m.day || 1}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    return;
+  }
+  if (a === 'del') {
+    if (saveConfirm !== m.id) { saveConfirm = m.id; renderSavesPanel(); return; }
+    saveConfirm = null;
+    await deleteSave(m.id);
+    renderSavesPanel(`\u{1F5D1} ${escHtml(String(m.name || 'PARTIET').toUpperCase())} ÄR BORTTAGET`);
+  }
+}
+
+$('#savecur').addEventListener('click', async (e) => {
+  const a = e.target.closest('[data-a]')?.dataset.a;
+  if (!a) return;
+  if (a === 'savenow') {
+    const ok = await saveGame();
+    renderSavesPanel(ok ? `\u{1F4BE} SPARAT ${saveWhen(Date.now())}` : 'GICK INTE ATT SPARA');
+  } else if (a === 'saveas') {
+    const box = $('#svasbox');
+    box.style.display = box.style.display === 'none' ? 'flex' : 'none';
+    const nm = state.mode === 'solo' ? (state.solo.saveName || realmName()) : (state.tvSaveName || 'TV-SPELET');
+    $('#svasname').value = `${nm} — DAG ${state.solo?.clock?.day || state.hostDay || 1}`;
+    $('#svasname').focus();
+  } else if (a === 'saveasgo') {
+    await saveGame();
+    const c = await copySave(currentSaveId(), $('#svasname').value.trim().slice(0, 32) || null);
+    renderSavesPanel(c ? `\u{1F4D1} ${escHtml(String(c.name).toUpperCase())} ÄR SPARAT — DU SPELAR VIDARE HÄR, KOPIAN STÅR KVAR` : 'KOPIAN GICK INTE ATT SPARA');
+  } else if (a === 'newgame') {
+    await saveGame();
+    reloadInto('new');
+  }
+});
+$('#saveclose').addEventListener('click', () => closeSavesPanel());
+$('#saveup').addEventListener('click', () => $('#savefile').click());
+$('#savefile').addEventListener('change', async (e) => {
+  const f = e.target.files?.[0];
+  e.target.value = '';
+  if (!f) return;
+  const r = await importSave(await f.text());
+  renderSavesPanel(r.err ? `<span style="color:var(--red)">${r.err}</span>` : `\u{2B06} ${escHtml(String(r.meta.name).toUpperCase())} ÄR UPPLADDAT — TRYCK SPELA`);
+});
+$('#savebtn').addEventListener('click', () => openSavesPanel());
+
+// ett parti som valdes medan ett annat pågick öppnas direkt efter omladdningen
+const pendingLoad = (() => {
+  try { const v = sessionStorage.getItem(LOAD_KEY); sessionStorage.removeItem(LOAD_KEY); return v; } catch (e) { return null; }
+})();
+if (!SERVER && pendingLoad === 'new') startSolo();
+else if (!SERVER && pendingLoad) {
+  overlay('#menu', false);
+  readSave(pendingLoad).then((r) => {
+    if (r?.data && resumeGame(r.data, pendingLoad, r.meta)) return;
+    overlay('#menu', true);
+    refreshMenuSaves();
+  });
+}
+if (!SERVER) refreshMenuSaves();
+// sparas också när fliken göms eller stängs
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveGame(); });
+addEventListener('pagehide', () => { saveGame(); });
 // V5.9: ett rum man själv skapat kan öppnas igen — kompisarna går med på samma kod
 const savedRoom = SERVER ? null : loadGame(ROOM_KEY);
 if (savedRoom?.hostPlays && savedRoom.hostName) {
@@ -8695,4 +9299,5 @@ window.__imperium = {
   openEventDialog, eventInstance, battleBoost, researchIncome, activeResearch,   // V5.15
   myIndicators, noteLawChange, applyShock, creditLine, spendable, policyGoalStats, eventCtx, applyChoice,   // V5.16
   extremeLaws, utopiaMods, buildingMods, buildingYield, openCityPanel, renderCityPanel, undoExtreme, BUILDINGS, moneyPerDay,   // V5.17
+  renderCrimeTab, tickCrime, crimeRise, openSavesPanel, listSaves,   // V5.18
 };

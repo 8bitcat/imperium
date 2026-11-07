@@ -481,7 +481,7 @@
     white-space: nowrap;
   }
   #resbar span b { color: var(--amber); font-weight: normal; }
-  #pausebtn {
+  #pausebtn, #savebtn {
     font-family: inherit; font-size: 8px; color: var(--holo);
     background: none; border: 1px solid var(--holo-dim); padding: 3px 8px; cursor: pointer;
   }
@@ -861,6 +861,78 @@
     #infopanel { max-height: 40vh; }
     #buildcorner { max-height: 22vh; }
   }
+  /* V5.18 SPARADE SPEL */
+  .savecard { width: min(680px, 94vw); max-height: 90vh; overflow-y: auto; text-align: left; }
+  .savecard .logo, .savecard .tagline { text-align: center; }
+  #savelist { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+  .svrow { display: flex; gap: 10px; align-items: center; padding: 8px; border: 1px solid rgba(55,224,255,0.25); background: rgba(10, 30, 45, 0.5); }
+  .svrow.cur { border-color: var(--amber); background: rgba(40, 28, 6, 0.5); }
+  .svflag { width: 44px; height: 30px; border: 2px solid var(--holo-dim); display: flex; align-items: center; justify-content: center; flex: none; overflow: hidden; }
+  .svflag img { width: 100%; height: 100%; object-fit: cover; }
+  .svtv { font-size: 16px; }
+  .svinfo { flex: 1; min-width: 0; }
+  .svname { font-size: 9px; color: var(--amber); line-height: 1.6; }
+  .svtag { font-size: 6px; color: var(--holo); border: 1px solid var(--holo-dim); padding: 1px 4px; margin-left: 4px; vertical-align: middle; }
+  .svsub { font-size: 6px; color: var(--text); line-height: 1.9; }
+  .svsub.dim { color: var(--holo-dim); }
+  .svbtns { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; flex: none; max-width: 250px; }
+  .svbtns .lawopt.go { color: #4ae37a; border-color: rgba(74,227,122,0.6); }
+  .svbtns .lawopt.del { color: var(--red); }
+  .svren, .svask { gap: 6px; margin-top: 4px; align-items: center; }
+  .svren .field, .svask .field { flex: 1; margin: 0; font-size: 8px; padding: 6px; }
+  .svask .btn { width: auto; margin: 0; font-size: 8px; padding: 8px 12px; }
+  .svnow { font-size: 8px; color: var(--text); margin: 8px 0 4px; }
+  .svnow b { color: var(--amber); font-weight: normal; }
+  .svtools { display: flex; gap: 8px; flex-wrap: wrap; }
+  .svtools .btn { flex: 1; min-width: 140px; margin: 4px 0; font-size: 8px; padding: 10px; }
+  .svempty, .svnote { font-size: 7px; color: var(--holo-dim); line-height: 2; text-align: center; margin: 10px 0; }
+  .svnote { color: var(--amber); }
+  @media (max-width: 820px) { .svrow { flex-wrap: wrap; } .svbtns { max-width: none; width: 100%; justify-content: flex-start; } }
+  /* V5.18 LAG OCH ORDNING: fliken BROTT */
+  .crtab .good { color: #4ae37a; } .crtab .bad { color: var(--red); } .crtab .flat { color: var(--amber); }
+  .crtab .est { color: var(--holo-dim); margin-right: 2px; }
+  .crintro, .crnote { font-size: 6px; color: var(--holo-dim); line-height: 2; margin-bottom: 8px; }
+  .crtiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-bottom: 12px; }
+  .crtile { border: 1px solid rgba(57,215,255,0.25); background: rgba(4,12,20,0.6); padding: 7px; min-width: 0; }
+  .crtile .ct { font-size: 6px; color: var(--holo-dim); line-height: 1.6; }
+  .crtile .cv { font-size: 10px; color: var(--amber); margin: 4px 0; overflow-wrap: anywhere; }
+  .crtile .cv span { font-size: 7px; }
+  .crtile .cs { font-size: 5px; color: var(--holo-dim); line-height: 1.8; }
+  .crspark { width: 100%; height: 70px; display: block; background: rgba(4,12,20,0.55); border: 1px solid rgba(57,215,255,0.18); }
+  .crspark polyline { fill: none; stroke: var(--amber); stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .crspark .ref { stroke: var(--holo-dim); stroke-dasharray: 4 4; stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .crlbl { display: flex; justify-content: space-between; gap: 6px; font-size: 5px; color: var(--holo-dim); margin-top: 3px; }
+  .crrow { display: grid; grid-template-columns: minmax(110px, 1.3fr) minmax(90px, 1fr) minmax(70px, 1fr) 34px; gap: 8px; align-items: center; font-size: 7px; margin: 5px 0; }
+  .crrow .crn small { display: block; font-size: 5px; color: var(--holo-dim); line-height: 1.6; }
+  .crrow .crv { text-align: right; }
+  .crrow .crv small { display: block; font-size: 5px; color: var(--holo-dim); }
+  .crb { position: relative; height: 10px; background: rgba(0,12,20,0.8); border: 1px solid rgba(55,224,255,0.2); }
+  .crb::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(55,224,255,0.45); }
+  .crb i { position: absolute; top: 1px; bottom: 1px; }
+  .crb em { position: absolute; right: 2px; top: 1px; font-size: 5px; font-style: normal; color: var(--text); text-shadow: 0 0 2px #000; }
+  .crp { font-size: 6px; color: var(--holo-dim); text-align: right; }
+  .crfun .fr { display: grid; grid-template-columns: 170px 1fr; gap: 8px; align-items: center; margin: 5px 0; font-size: 7px; }
+  .crfun .fr small { display: block; font-size: 5px; color: var(--holo-dim); line-height: 1.7; }
+  .crfun .fb { display: inline-block; vertical-align: middle; height: 12px; margin-right: 6px; background: linear-gradient(90deg, rgba(255,176,46,0.85), rgba(255,79,79,0.7)); }
+  .crfun .fn { font-size: 7px; color: var(--amber); vertical-align: middle; }
+  .crcols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .crlist div { font-size: 7px; line-height: 2; display: flex; justify-content: space-between; gap: 6px; }
+  .crlist .sub { font-size: 6px; color: var(--holo-dim); }
+  .crdrv { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(110px, 1fr) minmax(130px, 1.3fr); gap: 6px; font-size: 7px; margin: 4px 0; align-items: baseline; }
+  .crdrv b { font-weight: normal; }
+  .crdrv small { font-size: 5px; color: var(--holo-dim); }
+  .crnews div { font-size: 7px; line-height: 2.1; }
+  .crnews .d { color: var(--holo-dim); font-size: 6px; margin-right: 6px; }
+  @media (max-width: 820px) {
+    .crtiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .crcols { grid-template-columns: 1fr; }
+    .crrow { grid-template-columns: minmax(0, 1fr) auto 48px 26px; gap: 6px; }
+    .crrow .crn small, .crb em { display: none; }
+    .crfun .fr { grid-template-columns: 110px 1fr; }
+    .crdrv { grid-template-columns: 1fr 1fr; } .crdrv small { grid-column: 1 / -1; }
+  }
+  /* smal mobil: resursraden bryts hellre än att PAUS och SPARA hamnar utanför skärmen */
+  @media (max-width: 600px) { #resbar { flex-wrap: wrap; justify-content: center; max-width: 96vw; white-space: normal; gap: 6px 10px; padding: 5px 10px; } }
 </style>
 </head>
 <body>
@@ -940,6 +1012,7 @@
   <span>&#128300; <b id="rrp">0</b></span>
   <span>&#9878;&#65039; <b id="rpp">100</b></span>
   <button id="pausebtn">&#9208; PAUS</button>
+  <button id="savebtn" title="SPARADE SPEL">&#128190;</button>
 </div>
 
 <div id="roster" class="panel">
@@ -1072,12 +1145,29 @@
     <div class="tagline">V4 // NATIONER &#8226; LAGAR &#8226; IDEOLOGI</div>
     <div id="menuversion"></div>
     <button id="btnContinue" class="btn amber" style="display:none">&#8635; FORTSÄTT SPELET</button>
+    <button id="btnSaves" class="btn">&#128190; SPARADE SPEL</button>
     <button id="btnSolo" class="btn amber">&#9876; ERÖVRA VÄRLDEN (PROTOTYP)</button>
     <button id="btnJoin" class="btn amber">&#128101; SPELA MED KOMPISAR</button>
     <button id="btnTV" class="btn">&#128250; STARTA TV-LÄGE (STOR SKÄRM)</button>
     <div class="err" id="menuerr"></div>
     <a class="v1link" href="../v3/">&#8592; V3 — ARMÉER &amp; STRID</a>
     <div style="font-size:6px; color:var(--holo-dim); margin-top:10px; line-height:1.8">SPRITES: BERKLEYTORENO &amp; UMREX (NEWGROUNDS) — CC BY-NC-SA 3.0<br>TILES: KENNEY.NL — CC0 &nbsp;&#8226;&nbsp; INOFFICIELLT FANVERK</div>
+  </div>
+</div>
+
+<!-- V5.18 SPARADE SPEL: alla partier — inget försvinner av sig självt -->
+<div id="saves" class="overlay">
+  <div class="card savecard">
+    <div class="logo" style="font-size:14px">&#128190; SPARADE SPEL</div>
+    <div class="tagline">VARJE PARTI SPARAS AV SIG SJÄLVT OCH LIGGER KVAR TILLS DU TAR BORT DET</div>
+    <div id="savecur"></div>
+    <div id="savelist"></div>
+    <div id="savefoot"></div>
+    <div class="svtools">
+      <button id="saveup" class="btn">&#128194; LADDA UPP SPARFIL</button>
+      <button id="saveclose" class="btn amber">STÄNG</button>
+    </div>
+    <input id="savefile" type="file" accept=".json,application/json" style="display:none">
   </div>
 </div>
 
@@ -1112,6 +1202,7 @@
       <button class="nattab" data-tab="landet">LANDET</button>
       <button class="nattab" data-tab="banken">BANKEN</button>
       <button class="nattab" data-tab="statistik">STATISTIK</button>
+      <button class="nattab" data-tab="brott">&#128680; BROTT</button>
       <button class="nattab" data-tab="lagar">LAGAR</button>
       <button class="nattab" data-tab="ideologi">IDEOLOGI</button>
       <button class="nattab" data-tab="forskning">FORSKNING</button>

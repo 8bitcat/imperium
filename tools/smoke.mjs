@@ -204,7 +204,7 @@ async function main() {
     check('3D-läget går att slå på och av', pageErrors.length === layerErrs, is3d ? '' : 'WebGL saknas i testwebbläsaren — se skärmbilden');
 
     // 7. spara, ladda om, fortsätt
-    const saved = await page.evaluate(() => { window.IMPERIUM.debug.saveGame(); return window.IMPERIUM.solo.clock.day; });
+    const saved = await page.evaluate(async () => { await window.IMPERIUM.debug.saveGame(); return window.IMPERIUM.solo.clock.day; });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#btnContinue', { state: 'visible', timeout: 15000 });
     await page.click('#btnContinue');

@@ -35,6 +35,7 @@ export const GRIEV_KINDS = {
   forsvar: { name: 'FÖRSVARET', icon: '\u{1F396}\u{FE0F}', desc: 'värnplikt, krig och kärnvapen' },
   underskott: { name: 'TOM STATSKASSA', icon: '\u{1F3E6}', desc: 'löner och bidrag som betalas sent när kassan är under noll' },
   kris: { name: 'KRISEN', icon: '\u{1F4C9}', desc: 'arbetslöshet, inflation och fattigdom' },
+  trygghet: { name: 'TRYGGHETEN', icon: '\u{1F6A8}', desc: 'brott, skjutningar och gäng som växer, eller polis och straff som rivs ner' },   // V5.18
 };
 export const GRIEV_IDS = Object.keys(GRIEV_KINDS);
 
@@ -142,6 +143,12 @@ export const SHOCKS = {
   life: { unit: 'yrs', max: 1 }, turnout: { unit: 'pp', max: 10 }, strikes: { unit: '%', max: 80 },
   protests: { unit: '%', max: 80 }, homeless: { unit: '%', max: 30 }, houseprice: { unit: '%', max: 25 },
   xenophobia: { unit: 'pp', max: 8 }, segreg: { unit: 'pts', max: 8 }, homicide: { unit: '%', max: 30 },
+  // V5.18 LAG OCH ORDNING: brotten
+  shootings: { unit: '%', max: 40 }, bombings: { unit: '%', max: 50 }, gangs: { unit: '%', max: 25 },
+  knifecrime: { unit: '%', max: 30 }, burglary: { unit: '%', max: 25 }, robbery: { unit: '%', max: 25 }, fraud: { unit: '%', max: 25 },
+  elderfraud: { unit: '%', max: 30 }, hacking: { unit: '%', max: 35 }, drugcrime: { unit: '%', max: 30 },
+  drugdeaths: { unit: '%', max: 30 }, druguse: { unit: 'pp', max: 2 }, clearance: { unit: 'pp', max: 6 },
+  murdersolved: { unit: 'pp', max: 10 }, darkfigure: { unit: 'pp', max: 6 }, prisonocc: { unit: '%', max: 20 },
 };
 export const DEMO_SUBS = ['demo_el', 'demo_gov', 'demo_part', 'demo_cult', 'demo_civ'];
 
@@ -183,7 +190,7 @@ const RELIGION_SPEED = [12, 0.6];
 export const NO_LAG = new Set(['pop', 'area', 'density', 'gdp', 'gdpppp', 'taxrev', 'milbudget', 'tradebal', 'soldiers',
   'reserve', 'births', 'deaths', 'popchange', 'demo', 'regime', 'urbanpop', 'ruralpop', 'households', 'kidsn', 'oldn',
   'workage', 'pop25', 'doubling', 'griev', 'treasury', 'deficitusd', 'debtusd', 'debtpc', 'rating', 'bondrate',
-  'interestusd', 'budgetbal']);
+  'interestusd', 'budgetbal', 'crimetotal', 'crimecount', 'convicted']);
 
 export function speedOf(id, group) {
   if (SPEED[id]) return SPEED[id];
