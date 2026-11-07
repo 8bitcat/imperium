@@ -297,7 +297,7 @@ export const EVENTS = [
   {
     id: 'dmk_rapport_ur_full', icon: '\u{1F4C9}', weight: 3, cooldown: 600, kind: 'frihet',
     title: 'INTE LÄNGRE EN FULL DEMOKRATI',
-    text: 'I årets demokratiindex faller {rike} under 8,0 och räknas nu som en bristfällig demokrati. Rapporten nämner krympande pressfrihet, lägre förtroende för regeringen och beslut som fattats utan att parlamentet fått säga sitt. Löpsedlarna är mycket stora i dag.',
+    text: 'I årets demokratiindex faller {rike} under 8,0 och räknas nu bara som en begränsad demokrati. Rapporten nämner krympande pressfrihet, lägre förtroende för regeringen och beslut som fattats utan att parlamentet fått säga sitt. Löpsedlarna är mycket stora i dag.',
     when: (c) => c.demo <= 8 && c.demo > 6 && c.demo - c.trend('demo') > 8,
     choices: [
       { text: 'TILLSÄTT EN DEMOKRATIUTREDNING MED ALLA PARTIER', cost: { pp: 15 }, perm: { stability: 1 }, ind: { demo: 0.3, trustgov: 2 }, tip: 'Utredningar är tråkiga. Det är också det som är bra med dem.' },
@@ -308,7 +308,7 @@ export const EVENTS = [
   {
     id: 'dmk_rapport_upp_bristfallig', icon: '\u{1F4C8}', weight: 3, cooldown: 600,
     title: 'FRÅN HYBRIDREGIM TILL DEMOKRATI',
-    text: 'Årets demokratiindex lyfter {rike} ur gränslandet mot hybridregimerna och in bland de bristfälliga demokratierna. Rapporten nämner friare val och en mer självständig press, men varnar för svaga domstolar och låg tillit. I {huvudstad} dansar studenter på trappan till universitetet.',
+    text: 'Årets demokratiindex lyfter {rike} ur gränslandet mot hybridregimerna och in bland de svaga demokratierna. Rapporten nämner friare val och en mer självständig press, men varnar för svaga domstolar och låg tillit. I {huvudstad} dansar studenter på trappan till universitetet.',
     when: (c) => c.demo > 6 && c.trend('demo') > 0.1 && c.demo - c.trend('demo') <= 6.15,
     choices: [
       { text: 'FORTSÄTT. DOMSTOLARNA ÄR NÄSTA REFORM', cost: { pp: 20 }, temp: { statepower: -3 }, perm: { stability: 2 }, rel: 4, ind: { demo: 0.3 }, tip: 'Det som byggs nu håller i generationer.' },

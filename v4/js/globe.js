@@ -368,6 +368,16 @@ export class Globe {
     }
   }
 
+  // V5.20: en spelares egna flagga (data-URL) ersätter landets flagga på banéren
+  setCustomFlag(a2, url) {
+    if (!a2) return;
+    this._flags ||= {};
+    this._custom ||= {};
+    if ((this._custom[a2] || null) === (url || null)) return;
+    this._custom[a2] = url || null;
+    delete this._flags[a2];
+    if (url) { const img = new Image(); img.src = url; this._flags[a2] = img; }
+  }
   _flagImg(a2) {
     if (!a2) return null;
     this._flags ||= {};

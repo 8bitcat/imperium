@@ -75,6 +75,13 @@ import { money, people } from './real.js';
 //   c.shame                    omvärldens samlade fördömande (summan av lagarnas shame)
 // Platshållare: {utopi}/{utopilag} = utopins namn / lagen på svenska (mest sprucken först),
 // {brutal}/{brutallag} = den senaste brutala lagen. undo: 'utopi' | 'brutal' river den lagen.
+//
+// V5.20 MEDIERNA — public service och nyhetskanalerna (media.js, fliken MEDIA):
+//   c.media.ps.budget/control/reach/trust   0–4 · 0 fristående … 3 propaganda · % · %
+//   c.media.channels, critical, friendly, stateShare, censored, banned, trust, climate, pressLevel
+//   Platshållare {kanal} (största kritiska kanalen, annars den största — kräver att when frågar
+//   c.media.channels) och {ps}. Valen kan ha kanal: 'stang'|'censur'|'stod'|'fri'|'kop',
+//   nykanal: true och fortroende: ±N (folkets förtroende för medierna, klingar av).
 
 import { EVENTS as EKONOMI } from './events/ekonomi.js';
 import { EVENTS as HALSA } from './events/halsa.js';
@@ -108,6 +115,7 @@ import { EVENTS as STATSFINANS } from './events/statsfinans.js';
 import { EVENTS as DEMOKRATI } from './events/demokrati.js';
 import { EVENTS as YTTERLIGHETER } from './events/ytterligheter.js';
 import { EVENTS as BROTT } from './events/brott.js';   // V5.18 LAG OCH ORDNING
+import { EVENTS as MEDIER } from './events/medier.js';   // V5.20 MEDIERNA
 import { EVENTS as SAMHALLSLIV } from './events/samhallsliv.js';
 import { EVENTS as KONSEKVENSER } from './events/konsekvenser.js';
 
@@ -1120,7 +1128,7 @@ export const EVENTS = [
   ...NYA_IDEOLOGIER, ...MILITAR, ...VETENSKAP, ...SAMHALLE, ...OMVARLD, ...KALLA_KRIGET, ...NYA_LAGAR_58,
   ...VARDAG, ...KATASTROF, ...AFFARER, ...DIPLOMATI, ...INTRIGER, ...FRAMTID, ...KURIOSA, ...KEDJOR, ...RIKET,
   ...REAKTIONER, ...PROTESTER, ...MIGRATION, ...STATSFINANS, ...DEMOKRATI, ...SAMHALLSLIV, ...KONSEKVENSER,
-  ...YTTERLIGHETER, ...BROTT,
+  ...YTTERLIGHETER, ...BROTT, ...MEDIER,
 ];
 
 export const EVENT_BY_ID = Object.fromEntries(EVENTS.map((e) => [e.id, e]));

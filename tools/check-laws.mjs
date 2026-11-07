@@ -58,7 +58,7 @@ function checkDesc(where, desc) {
 // V5.19: reglerna för ✨/💀 gäller värdena som de skrevs (mods0) — buff-lagret i tuning.js
 // skalar dem efteråt och kontrolleras för sig längst ner
 function checkFlags(where, o0) {
-  const o = o0.mods0 ? { ...o0, mods: o0.mods0 } : o0;
+  const o = o0.mods0 ? { ...o0, mods: o0.mods0, sting: o0.sting0 || o0.sting } : o0;   // V5.20: + sting0
   if (o.utopia) {
     if (o.utopia !== true) E(`${where}: utopia ska vara true`);
     if (o.brutal) E(`${where}: kan inte vara både utopia och brutal`);
@@ -106,7 +106,7 @@ for (const p of PARTS) {
       if (e.after !== '^' && !L.options.some((x) => x.id === e.after)) E(`${where}: after "${e.after}" finns inte`);
       if (!o.name || /[åäöÅÄÖ]/.test(o.name)) E(`${where}: name ska vara engelska`);
       if (o.default) E(`${where}: ett nytt val får inte vara default`);
-      checkMods(where, o.mods);
+      checkMods(where, o.mods0 || o.mods);   // V5.20: värdena som de skrevs
       checkDesc(where, o.desc);
       checkFlags(where, o);
       for (const id of e.locks || []) if (!IDEOS.has(id)) E(`${where}: okänd ideologi i locks "${id}"`);
@@ -143,7 +143,7 @@ for (const p of PARTS) {
       if (!o.name || /[åäöÅÄÖ]/.test(o.name)) E(`${w}: name ska vara engelska`);
       checkDesc(w, o.desc);
       if (o.default) continue;
-      checkMods(w, o.mods);
+      checkMods(w, o.mods0 || o.mods);
       checkFlags(w, o);
       checkFx(w, fxOf(cat, o.id));
       if (o.utopia) u++; if (o.brutal) b++;
@@ -180,7 +180,7 @@ for (const [k, I] of Object.entries(IDEOLOGIES)) {
 }
 
 // ---------- V5.19: buffarna och debuffarna ----------
-const { TIERS, LAW_TUNE, IDEO_TUNE } = await import(R('tuning.js'));
+const { TIERS, LAW_TUNE, IDEO_TUNE, POWER } = await import(R('tuning.js'));
 for (const [key, tid] of Object.entries(LAW_TUNE)) {
   const [cat, id] = key.split('.');
   const o = LAWS[cat]?.options.find((x) => x.id === id);
@@ -199,7 +199,12 @@ for (const [cat, L] of Object.entries(LAWS)) {
   for (const o of L.options) {
     if (!o.tune) { if (o.utopia || o.brutal) E(`tuning: ${cat}.${o.id} är ✨/💀 men saknar nivå`); continue; }
     nTuned++;
-    for (const [k, v] of Object.entries(o.mods)) if (!Number.isFinite(v) || Math.abs(v) > 60) E(`tuning: ${cat}.${o.id} ${k} = ${v}`);
+    // V5.20: ✨/💀 är 5–20 gånger starkare än vanliga val och får gå upp till POWER.cap
+    const lim = o.utopia || o.brutal ? POWER.cap : 60;
+    for (const [k, v] of Object.entries(o.mods)) if (!Number.isFinite(v) || Math.abs(v) > lim) E(`tuning: ${cat}.${o.id} ${k} = ${v}`);
+    for (const [k, v] of Object.entries(o.sting || {})) if (!Number.isFinite(v) || Math.abs(v) > lim) E(`tuning: ${cat}.${o.id} sting ${k} = ${v}`);
+    // V5.20: skalan F inom POWER, och minst fem gånger ett typiskt vanligt val i lagen (Henry: 5–20)
+    if ((o.utopia || o.brutal) && !(o.tune.F >= POWER.min && o.tune.F <= POWER.max && o.tune.power >= 5)) E(`tuning: ${cat}.${o.id} skala ${o.tune.F}, ${o.tune.power} gånger ett vanligt val`);
     for (const [id, arr] of Object.entries(LAW_EFFECTS[cat]?.[o.id] || {})) {
       if (arr[0] === '*' && !(arr[1] > 0 && arr[1] <= 20)) E(`tuning: ${cat}.${o.id} FX ${id} × ${arr[1]}`);
       if (!Number.isFinite(arr[1])) E(`tuning: ${cat}.${o.id} FX ${id} = ${arr[1]}`);

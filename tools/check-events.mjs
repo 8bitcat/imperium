@@ -46,12 +46,12 @@ const FAKE_516 = { demo: [0.5, 9.8], regime: [0, 3], demo_el: [0, 10], demo_gov:
   poverty365: [0, 80], poverty685: [0, 95], natpov: [3, 70] };
 const IND_IDS = new Set([...S.INDICATORS.map((d) => d.id), ...Object.keys(FAKE_516)]);
 const RES_KEYS = new Set(['money', 'pp', 'rp', 'man']);
-const CHOICE_KEYS = new Set(['text', 'tip', 'cost', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'risk', 'next', 'undo', 'griev', 'ind']);
+const CHOICE_KEYS = new Set(['text', 'tip', 'cost', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'risk', 'next', 'undo', 'griev', 'ind', 'kanal', 'nykanal', 'fortroende']);   // V5.20: + medierna
 const EVENT_KEYS = new Set(['id', 'icon', 'weight', 'cooldown', 'title', 'text', 'when', 'choices', 'rare', 'chain', 'kind', 'react']);
 // V5.15: utfallen i ett chansval (risk.win / risk.lose)
-const OUTCOME_KEYS = new Set(['text', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'undo', 'griev', 'ind']);   // V5.16: + undo/griev/ind
-const EFFECT_KEYS = ['res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'undo', 'griev', 'ind'];
-const PLACEHOLDERS = new Set(['rike', 'granne', 'land', 'stad', 'huvudstad', 'lag', 'utopi', 'utopilag', 'brutal', 'brutallag']);   // V5.17: + utopi/brutal
+const OUTCOME_KEYS = new Set(['text', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'undo', 'griev', 'ind', 'kanal', 'nykanal', 'fortroende']);   // V5.16: + undo/griev/ind
+const EFFECT_KEYS = ['res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'undo', 'griev', 'ind', 'kanal', 'nykanal', 'fortroende'];
+const PLACEHOLDERS = new Set(['rike', 'granne', 'land', 'stad', 'huvudstad', 'lag', 'utopi', 'utopilag', 'brutal', 'brutallag', 'kanal', 'ps']);   // V5.20: + kanal/ps   // V5.17: + utopi/brutal
 const nextRefs = [];   // [var, id] — kontrolleras när alla filer är lästa
 const CAPS = { money: 2500, pp: 60, rp: 150, man: 25 };
 
@@ -125,6 +125,17 @@ function sampleCtx(emptyInd = false) {
     })(),
     // V5.18 LAG OCH ORDNING: hur mycket brottsligheten ändrats sedan start (1 = som förut)
     crimeRise: Math.random() < 0.5 ? rnd(0.85, 1.1) : rnd(0.6, 1.8),
+    // V5.20 MEDIERNA
+    media: (() => {
+      const ctl = Math.floor(rnd(0, 4)), bud = Math.floor(rnd(0, 5)), n = Math.floor(rnd(0, 9));
+      const crit = n ? Math.round(rnd(0, 70) * Math.random()) : 0, fr = n ? Math.round(rnd(0, 80) * Math.random()) : 0;
+      return strictProxy({
+        ps: strictProxy({ budget: bud, control: ctl, reach: bud ? Math.round(rnd(15, 95)) : 0, trust: Math.round(rnd(10, 90)) }, 'c.media.ps', new Set(['budget', 'control', 'reach', 'trust'])),
+        channels: n, critical: crit, friendly: fr, stateShare: Math.round(rnd(0, 100)),
+        censored: Math.random() < 0.2 ? Math.floor(rnd(1, 4)) : 0, banned: Math.random() < 0.15 ? Math.floor(rnd(1, 5)) : 0,
+        trust: Math.round(rnd(10, 85)), climate: Math.round(rnd(-80, 80)), pressLevel: Math.floor(rnd(0, 5)),
+      }, 'c.media', new Set(['ps', 'channels', 'critical', 'friendly', 'stateShare', 'censored', 'banned', 'trust', 'climate', 'pressLevel']));
+    })(),
   };
 }
 const SAMPLES = Array.from({ length: 400 }, () => sampleCtx());
@@ -148,6 +159,10 @@ function effects(c, P, E) {
   // V5.16
   if (c.undo != null && c.undo !== true && c.undo !== 'utopi' && c.undo !== 'brutal' && !LAWS[c.undo]) E(P + ": undo = true, 'utopi', 'brutal' eller en lagkategori");
   if (c.griev != null && (!Number.isInteger(c.griev) || !c.griev || Math.abs(c.griev) > 40)) E(P + ': griev heltal ±40 (inte 0)');
+  // V5.20 MEDIERNA
+  if (c.kanal != null && !['stang', 'censur', 'stod', 'fri', 'kop'].includes(c.kanal)) E(P + ": kanal = 'stang' | 'censur' | 'stod' | 'fri' | 'kop'");
+  if (c.nykanal != null && c.nykanal !== true) E(P + ': nykanal = true eller utelämnas');
+  if (c.fortroende != null && (!Number.isInteger(c.fortroende) || !c.fortroende || Math.abs(c.fortroende) > 20)) E(P + ': fortroende heltal ±20 (inte 0)');
   if (c.ind != null) {
     if (typeof c.ind !== 'object' || !Object.keys(c.ind).length) E(P + ': ind = { mått: tal }');
     for (const [k, v] of Object.entries(c.ind || {})) {
@@ -188,6 +203,9 @@ function checkEvent(ev, where) {
       || (ev.choices || []).some((c) => und(c) || und(c.risk?.win) || und(c.risk?.lose));
     if (uses && !ev.chain && !new RegExp('c\\.' + field + '\\b').test(String(ev.when))) E(`{${kind}} / undo: '${kind}' kräver att when frågar c.${field}`);
   }
+  // V5.20: {kanal} och kanal: '…' gäller en kanal som finns — villkoret måste fråga c.media.channels
+  const usesKanal = /{kanal}/i.test(JSON.stringify(ev)) || (ev.choices || []).some((c) => c.kanal || c.risk?.win?.kanal || c.risk?.lose?.kanal);
+  if (usesKanal && !ev.chain && !/c.media.channels/.test(String(ev.when))) E('{kanal} / kanal: kräver att when frågar c.media.channels (t.ex. c.media.channels >= 1)');
   if (ev.chain != null && ev.chain !== true) E('chain ska vara true eller utelämnas');
   // villkoret (en kedjehändelse lottas aldrig — den behöver inget villkor)
   if (ev.chain) {

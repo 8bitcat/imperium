@@ -24,7 +24,7 @@ import { NEW_LAWS } from './laws-more.js';
 import { FX_511 } from './laws-511.js';
 import { FAITHS, FAITH_KEYS, sharesOf, compositionOf } from './faith.js';
 import { DEMOCRACY } from './democracy-data.js';     // V5.16: EIU:s demokratiindex
-import { regimeOf, DEMO_SUBS } from './realism.js';
+import { regimeOf, REGIMES, DEMO_SUBS } from './realism.js';
 import { RATINGS } from './bank.js';
 import { applyFxTuning } from './tuning.js';   // V5.19: buffarna och debuffarna
 
@@ -41,6 +41,7 @@ export const IND_GROUPS = [
   { id: 'rel', name: 'TRO & RELIGION', icon: '\u{1F64F}' },   // V5.12
   { id: 'kun', name: 'KUNSKAP & TEKNIK', icon: '\u{1F4DA}' },
   { id: 'dmk', name: 'DEMOKRATI & STYRE', icon: '\u{1F5F3}\u{FE0F}' },   // V5.16
+  { id: 'med', name: 'MEDIER', icon: '\u{1F4FA}' },                    // V5.20
   { id: 'sam', name: 'SAMHÄLLE & RÄTT', icon: '\u{2696}\u{FE0F}' },
   { id: 'brt', name: 'BROTT & SÄKERHET', icon: '\u{1F6A8}' },
   { id: 'ekb', name: 'EKOBROTT & MILJÖBROTT', icon: '\u{1F575}\u{FE0F}' },
@@ -737,7 +738,7 @@ export const INDICATORS = [
   // ========== V5.16 VERKLIGHETEN: 75 nya mått ==========
   // ---------- DEMOKRATI & STYRE (The Economists demokratiindex, EIU 2024) ----------
   { id: 'demo', name: 'Demokratiindex', group: 'dmk', fmt: 'score10', better: 'high', agg: 'derived',
-    desc: 'The Economists demokratiindex, medel av de fem delarna. Över 8 = full demokrati, 6–8 bristfällig, 4–6 hybridregim, under 4 auktoritär' },
+    desc: 'Demokratiindexet (The Economists skala 0–10), medel av de fem delarna. 10 = utopisk demokrati, 9–10 full, 8–9 stark, 7–8 begränsad, 6–7 svag demokrati, 4–6 hybridregim, 3–4 auktoritär, 2–3 mycket auktoritär, 1–2 totalitär, 0–1 mycket totalitär regim' },
   { id: 'regime', name: 'Styrelseskick', group: 'dmk', fmt: 'regime', better: 'high', agg: 'derived', desc: 'Vad demokratiindexet säger om landet' },
   { id: 'demo_el', name: 'Val och mångfald', group: 'dmk', fmt: 'score10', better: 'high', mode: 'add', min: 0, max: 10,
     fx: { freedom: 2.5, statepower: -1.2, ideopower: -0.6 }, desc: 'Fria och rättvisa val, flera partier och en opposition som får verka (0–10)' },
@@ -757,6 +758,14 @@ export const INDICATORS = [
     fx: { approval: 18, corruption: -8, freedom: 4 }, desc: 'Andel som litar på parlamentet (~)' },
   { id: 'trustcourt', name: 'Förtroende för domstolarna', group: 'dmk', fmt: 'pct', better: 'high', mode: 'add', min: 3, max: 95,
     fx: { corruption: -10, freedom: 5, statepower: -4, safety: 3 }, desc: 'Andel som litar på domstolarna (~)' },
+  // ---------- V5.20 MEDIER: ditt rike räknas ur fliken MEDIA, övriga länder skattas ur pressfriheten (~) ----------
+  { id: 'mediareach', name: 'Nyhetsmediernas räckvidd', group: 'med', fmt: 'pct', better: 'high', agg: 'derived', desc: 'Andel av folket som tar del av nyheter varje dag (~)' },
+  { id: 'mediatrust', name: 'Förtroende för medierna', group: 'med', fmt: 'pct', better: 'high', agg: 'derived', desc: 'Andel som litar på nyhetsmedierna (~)' },
+  { id: 'psreach', name: 'Public service räckvidd', group: 'med', fmt: 'pct', better: null, agg: 'derived', desc: 'Andel som ser eller lyssnar på public service varje dag (~)' },
+  { id: 'statemedia', name: 'Statens andel av medierna', group: 'med', fmt: 'pct', better: 'low', agg: 'derived', desc: 'Hur stor del av medierna staten äger eller styr, efter räckvidd (~)' },
+  { id: 'critmedia', name: 'Granskande medier', group: 'med', fmt: 'pct', better: 'high', agg: 'derived', desc: 'Andel av medierna som granskar och kritiserar regeringen, efter räckvidd (~)' },
+  { id: 'channels', name: 'Nyhetskanaler', group: 'med', fmt: 'count', better: 'high', agg: 'derived', desc: 'Nyhetskanaler som sänder i landet (~)' },
+  { id: 'censored', name: 'Censurerade kanaler', group: 'med', fmt: 'count', better: 'low', agg: 'derived', desc: 'Kanaler där staten granskar allt innan det sänds (~)' },
   { id: 'griev', name: 'Missnöje', group: 'dmk', fmt: 'score100', better: 'low', mode: 'add', min: 0, max: 100,
     fx: { unrest: 50, approval: -20, stability: -10 }, desc: 'Hur mycket folket har att klaga på: nedskärningar, skatter, kriser och inskränkt frihet (0–100)' },
   { id: 'protests', name: 'Demonstrationer per år', group: 'dmk', fmt: 'count', better: null, mode: 'mul', agg: 'sum',
@@ -1939,7 +1948,7 @@ export function fmtInd(id, v) {
     case 'ratio100': return `${dec(v * 100, 1)} / 100`;
     case 'persons': return `${dec(v, 1)} PERSONER`;
     // V5.16
-    case 'regime': return regimeOf(v >= 3 ? 9 : v >= 2 ? 7 : v >= 1 ? 5 : 2)?.name || '–';
+    case 'regime': return Number.isFinite(v) ? REGIMES[Math.max(0, Math.min(10, Math.round(v)))].name : '–';   // V5.20: Henrys skala
     case 'rating': return RATINGS[Math.max(0, Math.min(RATINGS.length - 1, Math.round(v)))].id;
     case 'susd': return (v > 0 ? '+' : '') + dollars(v);
     case 'usdmo': return `${dollars(v)} / MÅNAD`;
@@ -2492,6 +2501,9 @@ function lawFxOf(cat, opt) {
   return list;
 }
 
+// V5.20: vilka mått ett lagval rör (main.js: statistiken rör sig fortare för buffade, ✨ och 💀 val)
+export function lawFxIds(cat, opt) { return lawFxOf(cat, opt).map(([id]) => id); }
+
 // V5.8: mått som hänger ihop med andra mått följer med dem (efter lagarna, så
 // att t.ex. hårdare straff → fler fångar → fullare fängelser). I startläget är
 // alla kvoter 1, så de verkliga värdena visas oförändrade.
@@ -2893,6 +2905,17 @@ export function realmIndicators(parts, T, extra = {}, t0Of = null, laws = null, 
 // medlet av sina fem delar, statsskulden i dollar följer BNP osv.)
 export function refreshDerived(out) {
   if (!out) return out;
+  // V5.20: medierna — skattade ur pressfriheten (main.js skriver över dem för ditt rike)
+  if (Number.isFinite(out.pressfree) && !out._media) {
+    const pf = out.pressfree;
+    out.mediareach = clampV(58 + pf * 0.32, 20, 95);
+    out.mediatrust = clampV(22 + pf * 0.45, 5, 80);
+    out.psreach = pf >= 60 ? 50 : pf >= 35 ? 40 : 30;
+    out.statemedia = clampV(100 - pf * 1.1, 5, 98);
+    out.critmedia = clampV(pf * 0.6 - 10, 0, 60);
+    out.channels = Math.round(clampV(2 + pf / 12, 1, 12));
+    out.censored = pf < 30 ? Math.round((30 - pf) / 6) : 0;
+  }
   const pop = out.pop || 0;
   if (Number.isFinite(out.gdppc) && pop) out.gdp = out.gdppc * pop;
   const gdp = out.gdp || 0;
@@ -2937,7 +2960,7 @@ function noticeable(fmt, a, b) {
     case 'score5': return d / 0.125;
     case 'index': return d / 2.5;
     case 'dbl': return d * 0.5;         // V5.10: tillväxt i % — halv vikt, Befolkningstillväxt visar samma sak
-    case 'regime': return d * 6;        // V5.16: ett steg i styrelseskick är stort
+    case 'regime': return d * 2.5;      // V5.20: elva steg — ett steg är fortfarande stort
     case 'rating': return d * 3;
     case 'hours': return d / 2;
     case 'weeks': return d / 4;

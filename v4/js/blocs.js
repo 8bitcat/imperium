@@ -22,6 +22,8 @@ export function canJoinBloc(bloc, ideo) {
   return ideo === bloc.ideology;
 }
 
+import { flagSvg } from './flagmaker.js';   // V5.20: egna flaggor
+
 // ---------- FLAGGOR ----------
 // Utropar man ett historiskt rike eller byter ideologi kan flaggan bytas.
 // Flaggorna ritas i spelets pixelstil: fält, band och en symbol.
@@ -191,6 +193,9 @@ export function drawFlag(ctx, flag, x, y, w, h) {
 // HTML-variant för paneler (ingen canvas behövs)
 export function flagHtml(flag, w = 34, h = 22) {
   if (!flag) return '';
+  if (flag.custom) {   // V5.20: flaggskaparens flagga (SVG)
+    return `<span style="display:inline-block;width:${w}px;height:${h}px;border:1px solid rgba(255,255,255,0.7);vertical-align:middle;line-height:0">${flagSvg(flag.custom, w, h)}</span>`;
+  }
   let band = flag.band
     ? `<span style="position:absolute;left:0;right:0;top:42%;height:16%;background:${flag.band}"></span>` : '';
   if (flag.stripes) {

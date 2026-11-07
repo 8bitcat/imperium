@@ -190,7 +190,8 @@ const RELIGION_SPEED = [12, 0.6];
 export const NO_LAG = new Set(['pop', 'area', 'density', 'gdp', 'gdpppp', 'taxrev', 'milbudget', 'tradebal', 'soldiers',
   'reserve', 'births', 'deaths', 'popchange', 'demo', 'regime', 'urbanpop', 'ruralpop', 'households', 'kidsn', 'oldn',
   'workage', 'pop25', 'doubling', 'griev', 'treasury', 'deficitusd', 'debtusd', 'debtpc', 'rating', 'bondrate',
-  'interestusd', 'budgetbal', 'crimetotal', 'crimecount', 'convicted']);
+  'interestusd', 'budgetbal', 'crimetotal', 'crimecount', 'convicted',
+  'mediareach', 'mediatrust', 'psreach', 'statemedia', 'critmedia', 'channels', 'censored']);   // V5.20: medierna
 
 export function speedOf(id, group) {
   if (SPEED[id]) return SPEED[id];
@@ -200,14 +201,19 @@ export function speedOf(id, group) {
 
 // Ett dagssteg för ett mått. cur/want = avstånd från "utan politik" (plain), base = plain.
 // migCap = största ändring per år för Födda utomlands (följer flödet).
-export function lagStep(id, group, cur, want, base, migCap) {
+// V5.20: boost = hur många gånger fortare lagarna driver måttet (tuning.js: indSpeed —
+// buffade och ✨ val några gånger, 💀 femton). Tar en lag med boost ned invandrarandelen
+// (utvisningar) gäller inte flödestaket — då lämnar folket landet i lagens takt.
+export function lagStep(id, group, cur, want, base, migCap, boost = 1) {
   const d = want - cur;
   if (!d) return want;
-  const [hl, max, rel] = speedOf(id, group);
-  if (!hl) return want;
+  const [hl0, max, rel] = speedOf(id, group);
+  if (!hl0) return want;
+  const hl = hl0 / boost;
   let step = d * (1 - 0.5 ** (1 / (hl * YEAR_DAYS)));
-  let cap = id === 'migrants' ? migCap : max;
+  let cap = id === 'migrants' ? (boost > 1.5 && d < 0 ? null : migCap) : max;
   if (cap != null) {
+    cap *= boost;
     if (rel) cap *= Math.abs(base + cur);
     const perDay = cap / YEAR_DAYS;
     step = Math.max(-perDay, Math.min(perDay, step));
@@ -224,13 +230,25 @@ export function migrantCap(netmig, pop) {
   return Math.max(0.15, rate * 1.1);
 }
 
-// ---------- demokratiindexet (EIU-skalan) ----------
+// ---------- demokratiindexet ----------
+// V5.20: Henrys skala i elva steg (0–10). id = stegets nummer, 10 = utopisk demokrati (10/10).
+export const REGIMES = [
+  { id: 0, min: 0, name: 'MYCKET TOTALITÄR REGIM', color: '#b04aff' },
+  { id: 1, min: 1, name: 'TOTALITÄR REGIM', color: '#d4508f' },
+  { id: 2, min: 2, name: 'MYCKET AUKTORITÄR REGIM', color: '#ff4a4a' },
+  { id: 3, min: 3, name: 'AUKTORITÄR REGIM', color: '#ff6b5e' },
+  { id: 4, min: 4, name: 'HYBRIDREGIM', color: '#ff9a3d' },
+  { id: 5, min: 5, name: 'HYBRIDREGIM', color: '#ffb02e' },
+  { id: 6, min: 6, name: 'SVAG DEMOKRATI', color: '#e8d24a' },
+  { id: 7, min: 7, name: 'BEGRÄNSAD DEMOKRATI', color: '#c4e34a' },
+  { id: 8, min: 8, name: 'STARK DEMOKRATI', color: '#8fe34a' },
+  { id: 9, min: 9, name: 'FULL DEMOKRATI', color: '#4ae37a' },
+  { id: 10, min: 9.95, name: 'UTOPISK DEMOKRATI', color: '#4ae3d4' },
+];
 export function regimeOf(score) {
   if (!Number.isFinite(score)) return null;
-  if (score > 8) return { id: 3, name: 'FULL DEMOKRATI', color: '#4ae37a' };
-  if (score > 6) return { id: 2, name: 'BRISTFÄLLIG DEMOKRATI', color: '#9fe34a' };
-  if (score > 4) return { id: 1, name: 'HYBRIDREGIM', color: '#ffb02e' };
-  return { id: 0, name: 'AUKTORITÄR REGIM', color: '#ff6b5e' };
+  for (let i = REGIMES.length - 1; i > 0; i--) if (score >= REGIMES[i].min) return REGIMES[i];
+  return REGIMES[0];
 }
 
 // ---------- V5.17 YTTERLIGHETER: utopier och brutala lagar ----------
@@ -256,6 +274,18 @@ export function utopiaFx(option, f, inverted) {
   }
   for (const [k, v] of Object.entries(option.sting || {})) out[k] = (out[k] || 0) + v * f;
   return out;
+}
+// V5.20: en utopi spricker inte på en bestämd dag — den kan spricka. Risken per månad (30 dagar)
+// börjar på 5 % när utopin är STING_START dagar gammal och växer en procentenhet i månaden, högst 25 %.
+// Stabilitet sänker risken; oro, korruption och fler utopier samtidigt höjer den.
+// st = nationsvärdenas total ({unrest, corruption, stability}), n = antal utopier.
+export function crackChance(age, option, st = {}, n = 1) {
+  const start = option?.stingStart ?? STING_START;
+  if (!((age || 0) >= start)) return 0;
+  const month = Math.min(0.25, 0.05 + 0.01 * Math.floor((age - start) / 30));
+  const mult = Math.max(0.4, Math.min(2.5, 1 + Math.max(0, st.unrest || 0) / 100 + Math.max(0, st.corruption || 0) / 150
+    - Math.max(0, st.stability || 0) / 200)) * (1 + 0.2 * Math.max(0, n - 1));
+  return Math.min(0.6, month * mult);
 }
 // hur mycket ett land bryr sig om dina brutala lagar: fria länder mest, diktaturer knappt
 export function shameWeight(auth) {

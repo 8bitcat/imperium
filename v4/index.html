@@ -315,22 +315,22 @@
   /* V5.12: LANDET-fliken — passet, namnbytet och tron */
   .passport { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin: 8px 0 10px; }
   .pp-cover { --pp: #6b1d2a; width: 150px; height: 214px; flex: none; position: relative; box-sizing: border-box;
-    border-radius: 3px 10px 10px 3px; padding: 14px 10px 12px; text-align: center; color: #e2c26a;
+    border-radius: 3px 10px 10px 3px; padding: 14px 10px 12px; text-align: center; color: var(--ink, #e2c26a);
     background: linear-gradient(90deg, rgba(0,0,0,0.35) 0 7px, transparent 7px),
       repeating-linear-gradient(45deg, rgba(255,255,255,0.035) 0 2px, transparent 2px 4px), var(--pp);
     box-shadow: 0 6px 18px rgba(0,0,0,0.55), inset 0 0 0 2px rgba(226,194,106,0.22);
     display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
   .pp-off { font-size: 7px; line-height: 1.7; letter-spacing: 1px; text-shadow: 0 1px 0 rgba(0,0,0,0.5); }
-  .pp-ring { width: 64px; height: 64px; border: 2px solid #e2c26a; border-radius: 50%;
+  .pp-ring { width: 64px; height: 64px; border: 2px solid var(--ink, #e2c26a); border-radius: 50%;
     display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 3px rgba(226,194,106,0.2); }
   .pp-emb { font-size: 32px; line-height: 1; filter: grayscale(1) sepia(1) saturate(5) hue-rotate(-12deg) brightness(1.15); }
   .pp-embflag > * { width: 42px !important; height: auto !important; display: block; border-radius: 2px; }
   .pp-word { font-size: 9px; letter-spacing: 2px; line-height: 1.7; }
   .pp-word small { font-size: 6px; letter-spacing: 1px; opacity: 0.8; }
-  .pp-chip { width: 18px; height: 12px; border: 2px solid #e2c26a; border-radius: 3px; position: relative; box-sizing: border-box; }
-  .pp-chip::after { content: ''; position: absolute; left: 4px; top: 1px; width: 6px; height: 6px; border: 1px solid #e2c26a; border-radius: 50%; }
-  .pp-page { width: 290px; max-width: 100%; height: 214px; box-sizing: border-box; padding: 10px; border-radius: 3px; color: #2b2f3a;
-    background: repeating-radial-gradient(circle at 72% 38%, rgba(110,140,190,0.11) 0 2px, transparent 2px 6px), linear-gradient(160deg, #eef1e6, #dbe3ee);
+  .pp-chip { width: 18px; height: 12px; border: 2px solid var(--ink, #e2c26a); border-radius: 3px; position: relative; box-sizing: border-box; }
+  .pp-chip::after { content: ''; position: absolute; left: 4px; top: 1px; width: 6px; height: 6px; border: 1px solid var(--ink, #e2c26a); border-radius: 50%; }
+  .pp-page { --ph: 210; width: 290px; max-width: 100%; min-height: 214px; box-sizing: border-box; padding: 10px; border-radius: 3px; color: #2b2f3a;
+    background: repeating-radial-gradient(circle at 72% 38%, hsla(var(--ph), 40%, 55%, 0.13) 0 2px, transparent 2px 6px), linear-gradient(160deg, hsl(calc(var(--ph) - 40), 30%, 93%), hsl(var(--ph), 38%, 89%));
     box-shadow: 0 6px 18px rgba(0,0,0,0.55); display: flex; flex-direction: column; gap: 6px; }
   .pp-head { font-size: 6px; display: flex; justify-content: space-between; gap: 6px; color: #4a5872; letter-spacing: 1px; line-height: 1.5; }
   .pp-grid { display: flex; gap: 8px; flex: 1; min-height: 0; }
@@ -341,6 +341,52 @@
   .pp-fields .w { grid-column: span 2; }
   .pp-fields i { display: block; font-style: normal; font-size: 5px; color: #6a7891; }
   .pp-mrz { font-family: 'Courier New', monospace; font-size: 8px; letter-spacing: 0.4px; color: #1d2230; line-height: 1.3; white-space: nowrap; overflow: hidden; }
+  .pp-sign { font-family: 'Brush Script MT', 'Segoe Script', cursive; font-size: 10px; color: #1d2a5a; text-align: center; margin-top: 2px; max-width: 62px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .pp-motto { font-size: 6px; color: #4a5872; letter-spacing: 1px; text-align: center; }
+  .pp-arms { display: block; line-height: 0; }
+  .pp-visa .pp-power { font-size: 6px; color: #4a5872; letter-spacing: 0.5px; line-height: 1.6; }
+  .pp-visa .pp-power b { color: #1d2a5a; font-size: 9px; font-weight: normal; }
+  .pp-stamps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; flex: 1; align-content: start; }
+  .pp-stamp { --c: #8a1d1d; border: 2px solid var(--c); color: var(--c); border-radius: 6px; padding: 3px 4px; font-size: 5px; text-align: center; line-height: 1.5; opacity: 0.85; background: rgba(255,255,255,0.25); }
+  .pp-stamp img { width: 14px; display: block; margin: 0 auto 2px; filter: saturate(0.6); }
+  .pp-stamp b { display: block; font-weight: normal; font-size: 6px; letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pp-empty { grid-column: span 3; font-size: 6px; color: #6a7891; line-height: 1.8; text-align: center; padding: 16px 6px; }
+  .pp-issuer { font-size: 5px; color: #6a7891; text-align: right; letter-spacing: 1px; }
+  .landbtns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  .symgrid { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+  .symflag, .symarms { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .symflag small, .symarms small { font-size: 6px; color: var(--holo-dim); letter-spacing: 1px; }
+  .symlist { flex: 1; min-width: 220px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 12px; font-size: 6px; color: var(--holo-dim); line-height: 1.9; }
+  .symlist b { display: block; font-size: 8px; color: var(--text); font-weight: normal; }
+  #designer { z-index: 81; }
+  #designer .card { width: min(980px, 96vw); max-height: 94vh; overflow-y: auto; text-align: left; padding: 16px; }
+  #designer .logo { text-align: center; }
+  .dzgrid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; align-items: start; margin-top: 8px; }
+  #dzPrev { position: sticky; top: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .dzflag { padding: 8px; background: rgba(0,0,0,0.25); line-height: 0; }
+  .dzflag svg { width: 100%; max-width: 300px; height: auto; }
+  .dzname { font-size: 10px; color: var(--amber); letter-spacing: 1px; }
+  .dzmini { font-size: 6px; color: var(--holo-dim); display: flex; align-items: center; gap: 6px; }
+  .dzmini span { display: inline-block; line-height: 0; }
+  .dzsec { font-size: 7px; color: var(--amber); letter-spacing: 1px; margin: 10px 0 4px; }
+  .dzrow { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .dzb { font-family: inherit; font-size: 6px; color: var(--holo-dim); background: rgba(0,12,20,0.6); border: 1px solid rgba(55,224,255,0.25);
+    padding: 4px 6px; cursor: pointer; display: inline-flex; flex-direction: column; align-items: center; gap: 3px; line-height: 1.2; }
+  .dzb:hover { border-color: var(--holo); color: var(--holo); }
+  .dzb.on { border-color: var(--amber); color: var(--amber); box-shadow: 0 0 0 1px var(--amber); }
+  .dzb small { font-size: 5px; letter-spacing: 0.5px; }
+  .dzlay .dzb { width: 58px; }
+  .dzsyms .dzb { min-width: 30px; min-height: 28px; font-size: 16px; justify-content: center; }
+  .dzc { width: 20px; height: 20px; padding: 0; }
+  .dzcols input[type=color] { width: 26px; height: 22px; padding: 0; border: 1px solid rgba(55,224,255,0.4); background: none; cursor: pointer; }
+  .dzslot { flex-direction: row; }
+  .dzslot i { width: 12px; height: 12px; display: inline-block; border: 1px solid rgba(255,255,255,0.5); }
+  .dzlab { font-size: 6px; color: var(--holo-dim); width: 70px; }
+  .dzarms { padding: 6px; }
+  .dzsym { display: grid; gap: 4px; font-size: 6px; color: var(--holo-dim); line-height: 1.8; text-align: center; }
+  .dzsym b { display: block; font-size: 8px; color: var(--text); font-weight: normal; }
+  .dzbtns { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
+  @media (max-width: 820px) { .dzgrid { grid-template-columns: minmax(0, 1fr); } #dzPrev { position: static; } }
   .landid { font-size: 8px; line-height: 2; color: var(--holo); text-align: center; }
   .landid b { color: var(--amber); font-weight: normal; font-size: 10px; }
   #renamebox { z-index: 80; }
@@ -481,7 +527,7 @@
     white-space: nowrap;
   }
   #resbar span b { color: var(--amber); font-weight: normal; }
-  #pausebtn, #savebtn {
+  #pausebtn, #savebtn, #tickerbtn {
     font-family: inherit; font-size: 8px; color: var(--holo);
     background: none; border: 1px solid var(--holo-dim); padding: 3px 8px; cursor: pointer;
   }
@@ -747,6 +793,44 @@
   .citychooser .armybtn .bfx { display: block; font-size: 5px; color: #4ae37a; line-height: 1.7; }
   .citychooser .armybtn .bn { display: block; font-size: 5px; color: var(--amber); line-height: 1.7; }
   .natgroup { margin-bottom: 14px; }
+  /* ---- V5.20 MEDIA-fliken och nyhetsbandet ---- */
+  .mgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 14px; font-size: 6px; color: var(--holo-dim); line-height: 1.9; margin: 4px 0 6px; }
+  .mgrid b { display: block; font-size: 8px; color: var(--text); font-weight: normal; letter-spacing: 0.5px; }
+  .mbar { display: block; height: 4px; background: rgba(55,224,255,0.12); margin-top: 2px; }
+  .mbar i { display: block; height: 100%; }
+  .mlogo { --h: 205; display: inline-flex; align-items: center; justify-content: center; flex: none; width: 26px; height: 18px;
+    font-size: 7px; color: #fff; background: hsl(var(--h), 55%, 34%); border: 1px solid hsl(var(--h), 70%, 62%); letter-spacing: 0; }
+  .psname { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 8px; }
+  .psname b { font-size: 10px; color: var(--amber); letter-spacing: 1px; font-weight: normal; }
+  .psname small { font-size: 6px; color: var(--holo-dim); }
+  .mrow { display: flex; gap: 8px; align-items: flex-start; margin: 5px 0; }
+  .mlab { flex: 0 0 132px; font-size: 6px; color: var(--holo-dim); line-height: 2.4; letter-spacing: 0.5px; }
+  .mopts { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+  .mchans { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 6px; margin: 6px 0; }
+  .mchan { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; padding: 6px; border: 1px solid rgba(55,224,255,0.18); background: rgba(0,12,20,0.45); }
+  .mchan.cens { border-color: rgba(255,79,79,0.45); }
+  .mci { flex: 1; min-width: 150px; font-size: 6px; color: var(--holo-dim); line-height: 1.9; }
+  .mci b { display: block; font-size: 8px; color: var(--text); font-weight: normal; letter-spacing: 0.5px; }
+  .mci small { display: block; font-size: 6px; }
+  .macts { display: flex; flex-wrap: wrap; gap: 3px; width: 100%; }
+  .macts .lawopt { padding: 4px 6px; font-size: 6px; }
+  .mapp { font-size: 7px; color: var(--holo); line-height: 2; margin: 4px 0; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .mnews { display: flex; gap: 8px; align-items: baseline; font-size: 7px; line-height: 1.8; padding: 2px 0; border-bottom: 1px solid rgba(55,224,255,0.07); }
+  .mnews .d { flex: 0 0 52px; color: var(--holo-dim); font-size: 6px; }
+  .nk { --h: 205; color: hsl(var(--h), 85%, 70%); white-space: nowrap; letter-spacing: 0.5px; }
+  .nk::after { content: ':'; }
+  .nt { color: var(--text); }
+  .nt.friendly { color: #b8f5c8; } .nt.critical { color: #ffb4ad; } .nt.propaganda { color: #ffd27a; }
+  #newsticker { position: fixed; left: 0; right: 0; bottom: 0; height: 17px; z-index: 46; display: none; align-items: center;
+    background: rgba(2,10,16,0.92); border-top: 1px solid rgba(55,224,255,0.35); font-size: 7px; pointer-events: none; }
+  #newsticker.show { display: flex; }
+  #newsticker .nlab { flex: none; padding: 0 8px; height: 100%; display: flex; align-items: center; color: #10161c; background: var(--amber); letter-spacing: 1px; }
+  #newsticker .nwin { flex: 1; overflow: hidden; height: 100%; display: flex; align-items: center; }
+  #newsticker .nrun { display: inline-flex; gap: 6px; white-space: nowrap; padding-left: 30px; animation: tickerRun 60s linear infinite; }
+  #newsticker .nsep { color: var(--amber); margin: 0 6px; }
+  @keyframes tickerRun { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+  body:has(#newsticker.show) #hint { display: none !important; }
+  body:has(#newsticker.show) #toggles { bottom: 30px; }
   .natgroup .gtitle {
     font-size: 8px; letter-spacing: 2px; color: var(--amber);
     border-bottom: 1px solid rgba(255,176,46,0.25);
@@ -1002,6 +1086,22 @@
   </div>
 </div>
 
+<!-- V5.20: FLAGGSKAPAREN, PASSKONTORET och RIKETS SYMBOLER -->
+<div id="designer" class="overlay">
+  <div class="card">
+    <div class="logo" id="dzTitle" style="font-size:12px">&#128681; FLAGGSKAPAREN</div>
+    <div class="dzgrid">
+      <div id="dzCtl"></div>
+      <div id="dzPrev"></div>
+    </div>
+    <div class="dzbtns">
+      <button id="dzGo" class="btn amber">&#128681; HISSA FLAGGAN</button>
+      <button id="dzReal" class="btn">LANDETS RIKTIGA FLAGGA</button>
+      <button id="dzNo" class="btn">AVBRYT</button>
+    </div>
+  </div>
+</div>
+
 <!-- KRIGSVARNING: går inte att missa -->
 <div id="waralert">
   <div class="wabox">
@@ -1021,6 +1121,7 @@
   <span>&#9878;&#65039; <b id="rpp">100</b></span>
   <button id="pausebtn">&#9208; PAUS</button>
   <button id="savebtn" title="SPARADE SPEL">&#128190;</button>
+  <button id="tickerbtn" title="NYHETSBANDET">&#128250;</button>
 </div>
 
 <div id="roster" class="panel">
@@ -1134,6 +1235,8 @@
   <div id="cpbody"></div>
 </div>
 
+<!-- V5.20: nyhetsbandet — kanalernas rubriker rullar förbi -->
+<div id="newsticker"><span class="nlab">&#128250; NYHETER</span><div class="nwin"><div class="nrun"></div></div></div>
 <div id="hint">DRA = ROTERA &nbsp;&#8226;&nbsp; SKROLLA/NYP = ZOOM &nbsp;&#8226;&nbsp; KLICKA PÅ ETT LAND</div>
 <div id="toasts"></div>
 
@@ -1208,6 +1311,7 @@
     <div id="nattabs">
       <button class="nattab on" data-tab="oversikt">ÖVERSIKT</button>
       <button class="nattab" data-tab="landet">LANDET</button>
+      <button class="nattab" data-tab="media">&#128250; MEDIA</button>
       <button class="nattab" data-tab="banken">BANKEN</button>
       <button class="nattab" data-tab="statistik">STATISTIK</button>
       <button class="nattab" data-tab="brott">&#128680; BROTT</button>

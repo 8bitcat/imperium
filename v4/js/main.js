@@ -12,6 +12,9 @@ import { IDEOLOGIES, countryIdeology, ideologyMods, lawLockedBy, enforceRequirem
   ideologyHarmony, lawCostFactor, preferredIndex, ideologyDistance, tradeCostFactor, tradeBlockedBy, allyBlockedBy, blocBlockedBy, axesOf,
   ideoTune, ideologyCost, doctrineCost } from './ideologies.js';
 import { tuneNote } from './tuning.js';   // V5.19 BUFFAR OCH DEBUFFAR
+import { initMedia, mediaSummary, mediaMods, mediaCostPct, mediaIndTargets, pressLevelOf, PRESS_NAMES, PS_BUDGETS, PS_CONTROL,
+  PS_FUNDING, PS_FOCUS, PS_FOCUS_MAX, LEANS, OWNERS, TONES, COSTS, stanceOf as mediaStance, channelTone, psTone, psReach, channelTrust,
+  activeChannels, headline, filler, applicant, stateChannel, channelInitials } from './media.js';   // V5.20 MEDIERNA
 import { RESEARCH, researchMods, combatBonus, hasUnlock, logisticsRange, satCoverage, espionageTier,
   tierOf, tierCost, tierDays, missingNeeds, unitUpgrades, UNIT_STATS, ENDLESS_NAME, roman } from './research.js';
 import { MODIFIERS, modifierMods, tickModifiers, tickTrend, grant as grantMod, revoke as revokeMod, activeList as modList } from './modifiers.js';
@@ -32,14 +35,17 @@ import { scoreCountry, medalFor } from './ranking.js';
 import { money, people, soldiersOf, soldiersText, PEOPLE_PER_MAN } from './real.js';
 import { INDICATORS, IND, IND_GROUPS, RANKINGS, fmtInd, setIndicatorData, hasIndicatorData, isEstimated,
   baseOf as baseOfInd, countryIndicators, realmIndicators, biggestChanges, rankBy, realmPyramid, setFaith, refreshDerived,
-  worldMedian } from './statistics.js';
+  worldMedian, lawFxIds } from './statistics.js';
 import { newSaveId, writeSave, listSaves, readSave, deleteSave, renameSave, copySave, exportSave, importSave,
   persist as persistSaves, storageInfo } from './saves.js';   // V5.18 SPARADE SPEL
 import { svName, alpha2 } from './names.js';
 import { YEAR_DAYS, DEFICIT_FLOOR, RECENT_DAYS, GRIEV_KINDS, GRIEV_IDS, LAW_KIND, LAW_SV, grievFromChange, protestMods,
   grievTotal, SHOCKS, DEMO_SUBS, NO_LAG, lagStep, migrantCap, regimeOf,
-  STING_START, STING_DAYS, stingFactor, utopiaFx, shameWeight, LAW_PHASE_DAYS } from './realism.js';   // V5.16 VERKLIGHETEN + V5.17 YTTERLIGHETER
-import { PASS_COVERS, PASS_EMBLEMS, passportHtml, defaultIdent } from './passport.js';
+  STING_START, STING_DAYS, stingFactor, utopiaFx, shameWeight, LAW_PHASE_DAYS, crackChance } from './realism.js';   // V5.16 VERKLIGHETEN + V5.17 YTTERLIGHETER
+import { PASS_COVERS, PASS_EMBLEMS, passportHtml, defaultIdent, PASS_INKS, PASS_PATTERNS, AVATAR, TITLES, MONTHS, ANIMALS, SHIELDS,
+  DIVISIONS, DEFAULT_ARMS, armsSvg, cleanPass, cleanArms } from './passport.js';
+import { PALETTE, LAYOUTS, SHAPES, EMOJI, flagSvg, flagDataUrl, randomSpec, presetSpecs, specFromFlag, cleanSpec, shapeSvg } from './flagmaker.js';   // V5.20
+import { DEMOCRACY } from './democracy-data.js';   // V5.20: världens pass
 import { BANK_MONTH, MONTHS_PER_YEAR, RATINGS, PLAN_YEARS, DEFAULT_PLAN, MISS_LIMIT, DEFAULT_DAYS, CRISIS_DAYS, LOAN_SHARE,
   ratingOf, annuity, creditRoom, crisisMods } from './bank.js';
 import { FAITHS, FAITH_KEYS, faithKind, convertRate, sharesOf, compositionOf, majorityFaith, mismatch, chaosOf, chaosLabel, chaosMods } from './faith.js';
@@ -71,9 +77,9 @@ function puppetColor() { const c = soloColor(); return lumOf(c) > 200 ? mixHex(c
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.19.0';
+export const VERSION = '5.20.0';
 export const VERSION_DATE = '2026-11-07';
-export const VERSION_NAME = 'BUFFAR OCH DEBUFFAR';
+export const VERSION_NAME = 'MEDIER OCH REVOLUTION';
 
 const globe = new Globe($('#globe'));
 
@@ -453,7 +459,9 @@ function refreshInfoPanel() {
   // V5: har du hissat en egen fana visas den över dina länder
   // egen fana över dina länder — eller lydstatens nya fana i dess egna färger
   const sf = state.solo?.stateFlags?.[c.id];
-  const ownFlag = sf ? ideoFlag(c.id, sf.id) : (state.solo?.claims[c.id] && !isSplit(c.id) && myFlag());
+  const other = !state.solo?.claims?.[c.id] && (state.players || []).find((p) => p.flagSpec && (p.home === c.id || p.claims?.includes?.(c.id)));
+  const ownFlag = sf ? ideoFlag(c.id, sf.id) : (state.solo?.claims[c.id] && !isSplit(c.id) && myFlag())
+    || (other ? { custom: cleanSpec(other.flagSpec), name: '' } : null);   // V5.20
   const fw = $('#fownflag');
   fw.innerHTML = ownFlag ? flagHtml(ownFlag, 34, 22) : '';
   fw.style.display = ownFlag ? 'block' : 'none';
@@ -1509,7 +1517,8 @@ function initNation(countryId) {
   s.lawFx = null; s.ideoFx = null; s.griev = {}; s.lawLog = []; s.indLag = null; s.indHist = [];
   s.lawFxBy = null;   // V5.19: varje lags genomslag för sig
   s.crimeHist = []; s.crimeNews = []; s.crimeStart = 0;   // V5.18
-  s.lawSince = {}; s.utopiaWarned = {};   // V5.17: när ytterlighetslagarna antogs
+  s.media = null; s.news = [];   // V5.20: medierna skapas när de först behövs (mediaState)
+  s.lawSince = {}; s.utopiaWarned = {}; s.crackAt = {};   // V5.17: när ytterlighetslagarna antogs (V5.20: + när utopin sprack)
   recomputeNation();
   $('#resbar').style.display = 'flex';
   renderResbar();
@@ -1541,6 +1550,7 @@ function recomputeNation() {
     protest: protestMods(grievTotal(s.griev)),   // V5.16: missnöjet — protester och strejker
     utopia: utopiaMods(),                        // V5.17: utopier som spricker
     buildings: buildingMods(),                   // V5.17: stadsbyggnaderna (täckning i riket)
+    media: mediaSourceMods(),                    // V5.20: public service och nyhetskanalerna
   };
   s.stats = computeStats(s.nation, s.nationSources);
   syncFaith();
@@ -1600,6 +1610,7 @@ function endWarTruce(cid) {
   (s.truces ||= {})[cid] = s.clock.day + TRUCE_DAYS;
   relChange(cid, REL_EVENTS.truce);
   toast(`\u{1F54A}\u{FE0F} VAPENVILA MED ${cname(cid)} I 3 ÅR — INGA KRIG UNDER TIDEN`, '', 7000);
+  newsFor('peace', { land: cname(cid) });   // V5.20
   logEvent(`\u{1F54A}\u{FE0F} VAPENVILA MED ${cname(cid)} (3 ÅR)`, { mine: true });
 }
 
@@ -1863,6 +1874,7 @@ function myFlag() {
   const s = state.solo;
   if (!s?.flag) return null;
   if (s.flag.type === 'empire') return EMPIRE_FLAGS[s.flag.id];
+  if (s.flag.type === 'custom') return s.flag.spec ? { custom: s.flag.spec, name: (s.flag.spec.name || 'EGEN FLAGGA').toUpperCase() } : null;   // V5.20
   return ideoFlag(s.home, s.flag.id);
 }
 
@@ -1901,6 +1913,7 @@ function hoistEmpireFlag(e) {
   if (!s || !flag) return;
   s.flag = { type: 'empire', id: e.id };
   toast(`\u{1F6A9} ${flag.name} HISSAS ÖVER ${e.name.toUpperCase()}`, 'amber', 8000);
+  newsFor('empire', { val: e.name }, 3);   // V5.20
   logEvent(`\u{1F6A9} ${e.name.toUpperCase()} HISSADE ${flag.name}`, { mine: true });
   applyState();
   refreshInfoPanel();
@@ -1992,6 +2005,21 @@ function myIndicators(target = false) {
   return applyGameToIndicators(now);   // V5.13: skulden glider inte — den är bankens
 }
 
+// V5.20: hur många gånger fortare varje mått rör sig, ur valen som gäller (tuning.js: indSpeed).
+// Rör flera lagar samma mått gäller den snabbaste — en debuff saktar bara ner om ingen annan lag driver på.
+function indBoost() {
+  const s = state.solo, out = {};
+  for (const [cat, id] of Object.entries(s?.nation?.laws || {})) {
+    const k = lawOption(cat, id)?.tune?.indSpeed;
+    if (!k || k === 1) continue;
+    for (const m of lawFxIds(cat, id)) {
+      const cur = out[m];
+      out[m] = cur == null ? k : (k > 1 || cur > 1 ? Math.max(cur, k) : Math.min(cur, k));
+    }
+  }
+  return out;
+}
+
 function tickIndLag() {
   const s = state.solo;
   if (!s?.stats || !hasIndicatorData()) return;
@@ -2004,9 +2032,18 @@ function tickIndLag() {
   s.indLag ||= {};
   // V5.16: invandrarandelen kan inte växa fortare än folk faktiskt flyttar hit
   const migCap = migrantCap(plain.netmig + (s.indLag.netmig ?? 0), plain.pop);
+  const boost = indBoost();
+  const mig0 = s.indLag.migrants ?? 0;
   for (const id of Object.keys(goal)) {
     if (NO_LAG.has(id) || !Number.isFinite(goal[id]) || !Number.isFinite(plain[id])) continue;
-    s.indLag[id] = lagStep(id, IND[id]?.group, s.indLag[id] ?? 0, goal[id] - plain[id], plain[id], migCap);
+    s.indLag[id] = lagStep(id, IND[id]?.group, s.indLag[id] ?? 0, goal[id] - plain[id], plain[id], migCap, boost[id] || 1);
+  }
+  // V5.20: utvisas folk i en lags takt lämnar de också landet — befolkningen krymper lika mycket
+  const out = mig0 - (s.indLag.migrants ?? 0);
+  if ((boost.migrants || 1) > 1.5 && out > 1e-4 && Number.isFinite(plain.migrants)) {
+    const f = Math.min(0.5, out / 100);
+    for (const { cid } of parts) if (state.facts[cid]?.p) state.facts[cid].p = Math.max(1000, state.facts[cid].p * (1 - f));
+    s.expelled = (s.expelled || 0) + f * (plain.pop || 0);
   }
   // V5.15: rikets FoU i % av BNP just nu — forskningspoängen räknas på den
   s.rdNow = Number.isFinite(plain.rnd) ? Math.max(0, plain.rnd + (s.indLag.rnd || 0)) : null;
@@ -2026,6 +2063,14 @@ function applyGameToIndicators(out) {
   if (!out) return out;
   applyBankToIndicators(out);
   out.griev = grievTotal(s?.griev);
+  // V5.20: medierna drar pressfriheten, förtroendet och demokratins delar (glider i tickMedia)
+  if (s?.media?.fx) {
+    for (const [k, v] of Object.entries(s.media.fx)) {
+      if (!Number.isFinite(out[k]) || !v) continue;
+      const d = IND[k];
+      out[k] = Math.max(d?.min ?? (k === 'pressfree' ? 0 : -1e9), Math.min(d?.max ?? (k === 'pressfree' ? 100 : 1e9), out[k] + v));
+    }
+  }
   if (s?.bank && hasIndicatorData()) {
     out.rating = bankRating().idx;
     // underskottet i statskassan är en del av budgetunderskottet
@@ -2034,6 +2079,12 @@ function applyGameToIndicators(out) {
     }
   }
   refreshDerived(out);
+  const ms = s?.media ? mediaSum() : null;
+  if (ms) {
+    out._media = true;
+    Object.assign(out, { mediareach: ms.reach, mediatrust: ms.trust, psreach: ms.psReach, statemedia: ms.stateShare,
+      critmedia: ms.critical, channels: ms.channels, censored: ms.censored });
+  }
   if (s?.bank && Number.isFinite(out.debtusd)) {
     const R = RATINGS[bankRating().idx];
     out.bondrate = R.rate + (s.res?.money < 0 ? 2 : 0) + Math.max(0, (out.infl || 0) - 2) * 0.5;
@@ -2121,6 +2172,7 @@ function noteLawChange(cat, from, to) {
   // V5.17: när lagen antogs — utopins klocka börjar om, omvärlden reagerar på brutala val
   (s.lawSince ||= {})[cat] = s.clock.day;
   if (s.utopiaWarned) delete s.utopiaWarned[cat];
+  if (s.crackAt) delete s.crackAt[cat];   // V5.20: en ny utopi har inte spruckit
   const neu = lawOption(cat, to);
   if (neu?.brutal) {
     const sh = neu.shame || 6;
@@ -2136,6 +2188,8 @@ function noteLawChange(cat, from, to) {
     logEvent(`\u{2728} UTOPIN ${neu.name.toUpperCase()} INFÖRS (${LAW_SV[cat].toUpperCase()})`, { mine: true });
   }
   s.lawLog.length = Math.min(s.lawLog.length, 30);
+  // V5.20: kanalerna rapporterar
+  newsFor(neu?.brutal ? 'law_brutal' : neu?.utopia ? 'law_utopia' : r.delta < -1 ? 'law_bad' : 'law_good', { lag: LAW_SV[cat], val: neu?.name || to });
   if (r.amt) addGriev(r.kind, r.amt);
   const k = GRIEV_KINDS[r.kind];
   if (r.amt >= 8) {
@@ -2187,7 +2241,9 @@ function extremeLaws() {
     if (!o?.utopia && !o?.brutal) continue;
     const since = ((s.lawSince ||= {})[cat] ??= day);   // en revolution kan ha skrivit lagen
     const age = Math.max(0, day - since);
-    if (o.utopia) out.utopia.push({ cat, o, age, f: stingFactor(age, o) });
+    // V5.20: sprickan börjar när oturen slår till (s.crackAt) och växer sedan i lagens takt
+    const at = s.crackAt?.[cat];
+    if (o.utopia) out.utopia.push({ cat, o, age, cracked: at != null, f: at != null ? stingFactor(day - at + (o.stingStart ?? STING_START), o) : 0 });
     else out.brutal.push({ cat, o, age });
   }
   out.utopia.sort((a, b) => b.f - a.f || b.age - a.age);
@@ -2221,6 +2277,20 @@ function tickExtremes() {
   if (ex.utopia.length && s.clock.day % 6 === 0) recomputeNation();   // stinget växer dag för dag
   if (s.clock.day % 5 !== 0) return;
   s.utopiaWarned ||= {};
+  // V5.20: var tionde dag — spricker någon utopi nu? (risken är per månad, så en tredjedel)
+  if (s.clock.day % 10 === 0) {
+    const st = statTotals(s.stats);
+    for (const u of ex.utopia) {
+      if (u.cracked) continue;
+      const pm = crackChance(u.age, u.o, st, ex.utopia.length);
+      if (pm > 0 && Math.random() < 1 - (1 - pm) ** (1 / 3)) {
+        (s.crackAt ||= {})[u.cat] = s.clock.day;
+        toast(`\u{2728}\u{1F4A5} UTOPIN ${u.o.name.toUpperCase()} HAR BÖRJAT SPRICKA — VERKLIGHETEN KOMMER IKAPP. RIV DEN I LAGAR ELLER HÅLL UT`, 'red', 10000);
+        logEvent(`\u{2728}\u{1F4A5} ${u.o.name.toUpperCase()} BÖRJAR SPRICKA (${LAW_SV[u.cat].toUpperCase()})`, { mine: true });
+        newsFor('utopia_crack', { lag: LAW_SV[u.cat], val: u.o.name });
+      }
+    }
+  }
   for (const u of ex.utopia) {
     if (u.f > 0.3) addGriev(LAW_KIND[u.cat] || 'ekonomi', u.f * 1.1);
     const step = u.f >= 0.95 ? 3 : u.f >= 0.6 ? 2 : u.f >= 0.2 ? 1 : 0;
@@ -2970,6 +3040,7 @@ function warAlert(attId, targetId, why) {
   const a2 = (cid) => state.facts[cid]?.a2;
   const flag = (cid) => (a2(cid) ? `<img src="https://flagcdn.com/w40/${a2(cid).toLowerCase()}.png" alt="">` : '');
   $('#watitle').textContent = 'KRIGSFÖRKLARING MOT DIG';
+  newsFor('war_start', { land: cname(attId) });   // V5.20
   $('#wavs').innerHTML = `${flag(attId)} ${cname(attId)} <span style="color:var(--red)">VS</span> ${cname(targetId)} ${flag(targetId)}`;
   $('#watext').innerHTML = `${why || 'RÄTTFÄRDIGAR KRIG MOT DITT RIKE'}<br>FÖRBERED FÖRSVARET — BYGG TRUPP OCH BEVAKA DERAS ARMÉER`;
   $('#waralert').classList.add('show');
@@ -3400,6 +3471,7 @@ function renderResbar() {
   const s = state.solo;
   if (!s?.res) return;
   $('#rday').textContent = 'DAG ' + s.clock.day;
+  renderTicker();   // V5.20: nyhetsbandet (ritas bara om när rubrikerna ändrats)
   $('#rmoney').textContent = money(s.res.money);
   $('#rmoney').classList.toggle('neg', s.res.money < 0);   // V5.16: underskott
   $('#rman').textContent = people(s.res.man);
@@ -3482,12 +3554,14 @@ function tickDay() {
     s.res.money -= Math.max(1, Math.round(-s.res.money * r));
   }
   // V5.16: första dagen under noll — det dröjer inte länge innan någon reagerar
-  if (s.res.money < 0 && !s.inDeficit) { s.inDeficit = true; s.nextEvent = Math.min(s.nextEvent ?? 99, 4 + Math.floor(Math.random() * 12)); }
+  if (s.res.money < 0 && !s.inDeficit) { s.inDeficit = true; s.nextEvent = Math.min(s.nextEvent ?? 99, 4 + Math.floor(Math.random() * 12)); newsFor('deficit'); }
   else if (s.res.money >= 0) s.inDeficit = false;
   tickExtremes(); // V5.17: utopier spricker, brutala lagar glöms inte
   tickGriev();    // V5.16: missnöjet klingar av eller växer
   tickIndHist();  // V5.16: bilder av statistiken för trenderna
   tickCrime();    // V5.18: brottskurvan och brottskrönikan
+  tickMedia();    // V5.20: medierna, deras kostnad och nyhetsbandet
+  tickNatDay();   // V5.20: nationaldagen
   tickDiplomacy();
   tickBlocApplications();
   tickMinisters();
@@ -3573,6 +3647,7 @@ function tickDay() {
     if (st.approval.total >= -5) {
       s.res.pp += 30;
       toast(`VALSEGER! +30 \u{2696}\u{FE0F}`, 'amber', 5000);
+      newsFor('election_won');   // V5.20
       globe.addFireworks(capitalLL(s.home), 6000);
       // ibland tar en historisk gestalt ledningen och ger sin buff
       if (Math.random() < 0.6) {
@@ -3586,6 +3661,7 @@ function tickDay() {
       s.res.pp = Math.max(0, s.res.pp - 40);
       if (s.leader) { toast(`${s.leader.n.toUpperCase()} AVGÅR EFTER VALFÖRLUSTEN`, 'red', 5000); s.leader = null; s.leaderMods = {}; recomputeNation(); }
       toast(`VALFÖRLUST... -40 \u{2696}\u{FE0F}`, 'red', 5000);
+      newsFor('election_lost');   // V5.20
     }
   }
   // krigsrättfärdiganden tickar ner
@@ -3677,6 +3753,7 @@ function tickDay() {
       s.nation.research[rq.branch] = Math.max(s.nation.research[rq.branch] || 0, rq.tier);
       recomputeNation();
       toast(`\u{1F52C} FORSKNING KLAR: ${rq.name.toUpperCase()}`, 'amber', 5000);
+      if (Math.random() < 0.5) newsFor('research', { val: rq.name });   // V5.20
       if (rq.unlock === 'nuke') toast('\u{2622}\u{FE0F} KÄRNVAPEN UPPLÅST — NY KNAPP VID RÄTTFÄRDIGAT KRIG', 'red', 7000);
     }
     renderBuildCorner();
@@ -3795,6 +3872,8 @@ function eventCtx() {
     shame: ex.brutal.reduce((a, b) => a + (b.o.shame || 6), 0),
     // V5.18 LAG OCH ORDNING: brottsligheten nu delat med den vid start (1 = som förut)
     crimeRise: crimeRise(ind),
+    // V5.20 MEDIERNA
+    media: mediaCtx(),
   };
 }
 
@@ -3948,6 +4027,8 @@ function eventInstance(ev, vars = null) {
     v.utopi ||= 'utopin'; v.utopilag ||= 'den nya lagen';
     v.brutal ||= 'den hårda lagen'; v.brutallag ||= 'den nya lagen';
   }
+  // V5.20: {kanal} = den största kritiska kanalen (annars den största), {ps} = public service
+  if (!v.kanalId && !v.ps) Object.assign(v, mediaEventVars());
   const f = Math.max(1, Math.sqrt(moneyPerDay() / 80)) * (0.8 + Math.random() * 0.45);
   const jit = () => 0.8 + Math.random() * 0.45;
   const scale = (o) => {
@@ -4003,6 +4084,7 @@ function effectHtml(ch) {
     const unit = { pp: ' %-ENH.', '%': ' %', pts: '', yrs: ' ÅR' }[SHOCKS[k]?.unit] ?? '';
     bits.push(`<span class="${good == null ? 'ec' : good ? 'ep' : 'en'}">\u{1F4CA} ${d.name.toUpperCase()} ${v > 0 ? '+' : ''}${fmtNum(v)}${unit}</span>`);
   }
+  bits.push(...mediaEffectBits(ch));   // V5.20
   // V5.15: chansval (egen rad) och följder
   if (ch.next) bits.push('<span class="enext">\u{23F3} DET HÄR KAN FÅ FÖLJDER…</span>');
   let risk = '';
@@ -4041,6 +4123,7 @@ function openEventDialog(ev) {
         overlay('#eventovl', false);
       };
       logEvent(`${ev.icon} ${ev.title} \u{2192} ${ch.text}`, { mine: true });
+      if (Math.random() < 0.55) newsFor(/katastrof|kat_/.test(ev.id) ? 'disaster' : 'event', { titel: ev.title });   // V5.20
       if (!out) {
         close();
         toast(`${ev.icon} ${ev.title}: ${ch.text}`, 'amber', 7000);
@@ -4110,6 +4193,7 @@ function applyChoice(ch) {
   }
   for (const [k, v] of Object.entries(ch.ind || {})) applyShock(k, v);
   if (ch.rel) for (const cid of Object.keys(s.rel || {})) relChange(cid, ch.rel);
+  applyMediaChoice(ch);   // V5.20: kanal / nykanal / fortroende
   // V5.15: följdhändelse om 10–45 dagar (kanske — next kan innehålla null)
   const nx = rollNext(ch.next);
   if (nx) (s.eventQueue ||= []).push({ id: nx, day: s.clock.day + 10 + Math.floor(Math.random() * 36), vars: ch.vars || null });
@@ -5106,7 +5190,9 @@ function openNation() {
   const fact = state.facts[s.home] || {};
   setNatTitle();
   const flag = $('#natflag');
-  if (fact.a2) { flag.src = `https://flagcdn.com/w80/${fact.a2.toLowerCase()}.png`; flag.style.display = 'block'; }
+  const spec = myFlagSpec();   // V5.20: din egen flagga
+  if (spec) { flag.src = flagDataUrl(spec, 80); flag.style.display = 'block'; }
+  else if (fact.a2) { flag.src = `https://flagcdn.com/w80/${fact.a2.toLowerCase()}.png`; flag.style.display = 'block'; }
   else flag.style.display = 'none';
   renderNationTab();
   $('#nation').classList.add('show');
@@ -5485,6 +5571,7 @@ function renderNationTab() {
   if (natTab === 'statistik') return renderStatsTab(body);
   if (natTab === 'brott') return renderCrimeTab(body);   // V5.18
   if (natTab === 'landet') return renderLandTab(body);   // V5.12
+  if (natTab === 'media') return renderMediaTab(body);   // V5.20
   if (natTab === 'banken') return renderBankTab(body);   // V5.13
   if (natTab === 'lagar') return renderLawsTab(body);
   if (natTab === 'ideologi') return renderIdeologyTab(body);
@@ -5691,6 +5778,8 @@ function setCountryName(cid, name) {
 function applyIdent() {
   const s = state.solo;
   if (s?.home && s.ident?.renamed) setCountryName(s.home, s.ident.short);
+  if (s?.symbols?.capital != null) applyCapitalName();   // V5.20
+  if (s?.home) syncFlagVisuals();
   // spelare i samma rum som bytt namn
   for (const p of state.players || []) {
     if (p.home && p.realm && p.home !== s?.home) setCountryName(p.home, p.realm);
@@ -5711,15 +5800,6 @@ function myFlagHtml(w = 42, h = 28) {
   return a2 ? `<img src="https://flagcdn.com/w80/${a2.toLowerCase()}.png" alt="">` : '';
 }
 
-function passData(id) {
-  const s = state.solo;
-  return {
-    ...id,
-    flag: myFlagHtml(),
-    holder: id.holder || s?.leader?.n || state.me?.name || 'MEDBORGARE',   // passet utfärdas till den som styr
-    issued: `DAG ${id.day || s?.clock?.day || 1}`,
-  };
-}
 
 function openRename() {
   const s = state.solo;
@@ -5794,11 +5874,391 @@ function applyRename(draft) {
   toast(`\u{1F389} ${old.toUpperCase()} HETER NU ${s.ident.off.toUpperCase()} — NYA PASS DELAS UT!`, 'amber', 9000);
   logEvent(`\u{270F}\u{FE0F} ${old.toUpperCase()} BYTTE NAMN TILL ${s.ident.off.toUpperCase()} (${s.ident.code})`, { mine: true });
   globe.addFireworks(capitalLL(s.home), 7000);
+  newsFor('rename', { val: s.ident.short, rike: s.ident.short }, 2);   // V5.20
   if (state.mode === 'player') net.send('rename', { realm: s.ident.short });
   saveGame();
   applyState();
   renderNationTab();
 }
+
+// ---------- V5.20: FLAGGSKAPAREN, PASSKONTORET och RIKETS SYMBOLER ----------
+// state.solo.flag = { type: 'custom', spec } (flagmaker.js) · state.solo.symbols = { pass, arms,
+// motto, anthem, natday {m}, animal, currency {name, code, sym}, capital, title }.
+// Allt designas i samma fönster (#designer) i tre lägen: 'flag', 'pass' och 'symbols'.
+function symbolsOf() {
+  const s = state.solo;
+  s.symbols ||= { pass: cleanPass({}), arms: null, motto: '', anthem: '', natday: null, animal: null, currency: null, capital: '', title: '' };
+  s.symbols.pass ||= cleanPass({});
+  return s.symbols;
+}
+// passet så som det ser ut nu: namnet (ident) + designen (symbols.pass) + symbolerna
+function passData(id) {
+  const s = state.solo;
+  const sy = s ? symbolsOf() : {};
+  const P = sy.pass || {};
+  return {
+    ...id,
+    cover: P.cover || id.cover, word: P.word || id.word, emblem: P.emblem ?? id.emblem,
+    pattern: P.pattern, ink: P.ink, emblemKind: P.emblemKind, shape: P.shape, pageHue: P.pageHue, avatar: P.avatar,
+    arms: sy.arms, motto: sy.motto, title: sy.title,
+    capital: sy.capital || (state.cities[s?.home] || []).find((x) => x.c)?.n || '',
+    flag: myFlagHtml(),
+    holder: P.holder || id.holder || s?.leader?.n || state.me?.name || 'MEDBORGARE',   // passet utfärdas till den som styr
+    issued: `DAG ${id.day || s?.clock?.day || 1}`,
+    stamps: passStamps(), strength: passportPower(),
+  };
+}
+
+// ----- passets styrka: hur många länder man kan resa till utan visum -----
+const VISA_POLICY_BONUS = { goldenpass: 12, visafree: 15, onarrival: 10, evisa: 5, standard: 0, strict: -8, invitation: -15, alliesonly: -12, guided: -20, closed: -30, kafala: -10 };
+function visaScore(cid, s, demo) {
+  const rel = relOf(cid);
+  const bloc = s.bloc?.members?.includes(cid) ? 25 : 0;
+  return rel + (isAlly(cid) ? 40 : 0) + bloc + (demo - 5) * 6 + ((WEALTH_TIER[s.home] || 1) - 1) * 10
+    + (VISA_POLICY_BONUS[s.nation?.laws?.visa_policy] || 0) - (s.sanction ? 25 : 0) - brutalShame() * 0.6;
+}
+function passportPower() {
+  const s = state.solo;
+  if (!s?.nation || !globe.countries.length) return null;
+  const at = s.clock?.day || 0;
+  if (s._pp && s._pp.at === at) return s._pp.v;
+  const demo = myIndicators()?.demo ?? 5;
+  const others = globe.countries.filter((c) => c.id !== s.home && !s.claims?.[c.id]);
+  const free = others.filter((c) => visaScore(c.id, s, demo) >= 18);
+  // världens pass: demokrati och välstånd (ungefär som de riktiga passindexen)
+  const theirs = globe.countries.filter((c) => c.id !== s.home).map((c) => {
+    const d = DEMO_SCORE(c.id);
+    return Math.round(Math.max(5, Math.min(others.length, 18 + d * 15 + ((WEALTH_TIER[c.id] || 1) - 1) * 32)));
+  });
+  const rank = 1 + theirs.filter((x) => x > free.length).length;
+  const v = { count: free.length, of: globe.countries.length, rank, list: free.map((c) => c.id) };
+  s._pp = { at, v };
+  return v;
+}
+function DEMO_SCORE(cid) {
+  const d = DEMOCRACY[cid]?.[0];
+  return Number.isFinite(d) ? d : demoGuess(cid);
+}
+function demoGuess(cid) {
+  const ideo = ideoOf(cid);
+  const auth = axesOf(ideo).auth ?? 40;
+  return Math.max(0.5, Math.min(9.6, 9.5 - auth / 11));
+}
+// stämplarna: de närmaste vännerna först
+function passStamps() {
+  const s = state.solo;
+  const pw = passportPower();
+  if (!pw) return [];
+  const list = pw.list.map((cid) => ({ cid, r: relOf(cid) + (isAlly(cid) ? 50 : 0) })).sort((a, b) => b.r - a.r).slice(0, 9);
+  const hue = (cid) => (parseInt(cid, 10) * 47) % 360;
+  return list.map(({ cid }, i) => ({
+    name: globe.getCountry(cid)?.name || '?', a2: state.facts[cid]?.a2 || '', day: Math.max(1, (s.clock?.day || 1) - ((parseInt(cid, 10) * 7) % 90)),
+    color: `hsl(${hue(cid)},55%,38%)`, rot: ((parseInt(cid, 10) % 13) - 6) + (i % 2 ? 3 : -2), label: isAlly(cid) ? 'ALLIERAD' : 'VISUMFRITT',
+  }));
+}
+
+// ----- flaggan överallt -----
+function myFlagSpec() {
+  const f = myFlag();
+  if (!f) return null;
+  return f.custom || specFromFlag(f);
+}
+function syncFlagVisuals() {
+  const s = state.solo;
+  if (!s?.home) return;
+  const a2 = state.facts[s.home]?.a2;
+  const spec = myFlagSpec();
+  if (a2) globe.setCustomFlag?.(a2, spec ? flagDataUrl(spec, 40) : null);
+  for (const p of state.players || []) {
+    const pa2 = p.home && p.home !== s.home ? state.facts[p.home]?.a2 : null;
+    if (pa2) globe.setCustomFlag?.(pa2, p.flagSpec ? flagDataUrl(cleanSpec(p.flagSpec), 40) : null);
+  }
+  const nf = $('#natflag');
+  if (nf && $('#nation').classList.contains('show')) {
+    if (spec) { nf.src = flagDataUrl(spec, 80); nf.style.display = 'block'; }
+  }
+}
+
+// ----- designfönstret -----
+const dz = { mode: null, draft: null, slot: 0, symTab: 'shape' };
+function openDesigner(mode) {
+  const s = state.solo;
+  if (!s?.home) return;
+  const nc = colorsOf(s.home);
+  dz.mode = mode; dz.slot = 0;
+  if (mode === 'flag') {
+    const cur = s.flag?.type === 'custom' ? s.flag.spec : null;
+    dz.draft = cleanSpec(cur || myFlagSpec() || { ...presetSpecs(nc)[0], name: '' });
+  } else if (mode === 'pass') {
+    const id = myIdent(), P = symbolsOf().pass;
+    dz.draft = { ...cleanPass(P), cover: P.cover || id.cover, word: P.word || id.word, emblem: P.emblem ?? id.emblem,
+      emblemKind: P.emblemKind || (id.emblem ? 'emoji' : 'flag'), holder: P.holder || s.leader?.n || state.me?.name || '' };
+  } else {
+    const sy = symbolsOf();
+    dz.draft = {
+      arms: cleanArms(sy.arms || { ...DEFAULT_ARMS, field: nc[0], field2: nc[1] || '#ffcd00', chargeColor: nc[1] || '#ffcd00' }),
+      motto: sy.motto || '', anthem: sy.anthem || '', natday: sy.natday || null, animal: sy.animal || null,
+      currency: sy.currency || { name: '', code: '', sym: '' }, capital: sy.capital || '', title: sy.title || '',
+    };
+  }
+  renderDesigner();
+  overlay('#designer', true);
+}
+function dzPreview() {
+  const d = dz.draft;
+  const box = $('#dzPrev');
+  if (dz.mode === 'flag') {
+    box.innerHTML = `<div class="dzflag">${flagSvg(d, 240)}</div>
+      <div class="dzname">${escHtml((d.name || 'EGEN FLAGGA').toUpperCase())}</div>
+      <div class="dzmini"><span>${flagSvg(d, 34)}</span> PÅ KARTAN &nbsp; <span>${flagSvg(d, 60)}</span> I LANDSFAKTA</div>`;
+  } else if (dz.mode === 'pass') {
+    box.innerHTML = passportHtml({ ...passData(myIdent()), ...d, emblem: d.emblem, holder: d.holder || 'MEDBORGARE' }, ['cover', 'data']);
+  } else {
+    const t = d.title ? d.title : 'STATSCHEF';
+    box.innerHTML = `<div class="dzarms">${armsSvg(d.arms, 120)}</div>
+      <div class="dzsym">${d.motto ? `<div>VALSPRÅK<b>\u{201C}${escHtml(d.motto.toUpperCase())}\u{201D}</b></div>` : ''}
+      ${d.anthem ? `<div>NATIONALSÅNG<b>\u{266B} ${escHtml(d.anthem.toUpperCase())}</b></div>` : ''}
+      ${d.natday ? `<div>NATIONALDAG<b>${MONTHS[d.natday.m]}</b></div>` : ''}
+      ${d.animal ? `<div>NATIONALDJUR<b style="font-size:20px">${d.animal}</b></div>` : ''}
+      ${d.currency?.name ? `<div>VALUTA<b>${escHtml(d.currency.name.toUpperCase())}${d.currency.code ? ' (' + escHtml(d.currency.code) + ')' : ''} ${escHtml(d.currency.sym || '')}</b></div>` : ''}
+      ${d.capital ? `<div>HUVUDSTAD<b>${escHtml(d.capital.toUpperCase())}</b></div>` : ''}
+      <div>STATSCHEF<b>${escHtml(t)}</b></div></div>`;
+  }
+}
+function renderDesigner() {
+  const d = dz.draft;
+  const ctl = $('#dzCtl');
+  ctl.innerHTML = '';
+  $('#dzTitle').textContent = dz.mode === 'flag' ? '\u{1F6A9} FLAGGSKAPAREN' : dz.mode === 'pass' ? '\u{1F6C2} PASSKONTORET' : '\u{1F6E1}\u{FE0F} RIKETS SYMBOLER';
+  $('#dzGo').textContent = dz.mode === 'flag' ? '\u{1F6A9} HISSA FLAGGAN' : dz.mode === 'pass' ? '\u{1F6C2} TRYCK DE NYA PASSEN' : '\u{2705} SPARA SYMBOLERNA';
+  $('#dzReal').style.display = dz.mode === 'flag' ? '' : 'none';
+  const sec = (t) => { const x = document.createElement('div'); x.className = 'dzsec'; x.textContent = t; ctl.appendChild(x); return x; };
+  const row = (cls = 'dzrow') => { const x = document.createElement('div'); x.className = cls; ctl.appendChild(x); return x; };
+  const btn = (parent, html, on, fn, title = '') => {
+    const b = document.createElement('button');
+    b.className = 'dzb' + (on ? ' on' : '');
+    b.innerHTML = html;
+    if (title) b.title = title;
+    b.addEventListener('click', () => { fn(); renderDesigner(); });
+    parent.appendChild(b);
+    return b;
+  };
+  const colorRow = (cur, fn, list = PALETTE) => {
+    const r = row('dzrow dzcols');
+    for (const c of list) {
+      const b = btn(r, '', String(cur).toLowerCase() === c.toLowerCase(), () => fn(c));
+      b.style.background = c; b.classList.add('dzc');
+    }
+    const inp = document.createElement('input');
+    inp.type = 'color';
+    inp.value = /^#[0-9a-f]{6}$/i.test(cur) ? cur : '#888888';
+    inp.title = 'EGEN FÄRG';
+    inp.addEventListener('input', () => { fn(inp.value); dzPreview(); });
+    inp.addEventListener('change', () => renderDesigner());
+    r.appendChild(inp);
+  };
+  const text = (label, val, max, fn) => {
+    const l = document.createElement('label');
+    l.className = 'rnrow';
+    l.textContent = label;
+    const i = document.createElement('input');
+    i.className = 'field'; i.maxLength = max; i.value = val || ''; i.spellcheck = false;
+    i.addEventListener('input', () => { fn(i.value.replace(/[<>"&]/g, '')); dzPreview(); });
+    l.appendChild(i);
+    ctl.appendChild(l);
+  };
+  if (dz.mode === 'flag') {
+    sec('MALL');
+    const lr = row('dzrow dzlay');
+    for (const [id, name] of LAYOUTS) btn(lr, flagSvg({ ...d, layout: id, sym: null }, 44) + `<small>${name}</small>`, d.layout === id, () => { d.layout = id; });
+    sec('FÄRGER — VÄLJ RUTA, SEDAN FÄRG');
+    const sr = row();
+    ['FÄLT 1', 'FÄLT 2', 'FÄLT 3', 'FÄLT 4', 'SYMBOLEN'].forEach((t, i) => {
+      const c = i < 4 ? d.colors[i] : d.symColor;
+      const b = btn(sr, `<i style="background:${c}"></i>${t}`, dz.slot === i, () => { dz.slot = i; });
+      b.classList.add('dzslot');
+    });
+    colorRow(dz.slot < 4 ? d.colors[dz.slot] : d.symColor, (c) => { if (dz.slot < 4) d.colors[dz.slot] = c; else d.symColor = c; });
+    sec('SYMBOL');
+    const tr = row();
+    btn(tr, 'FORMER (FÄRGAS)', dz.symTab === 'shape', () => { dz.symTab = 'shape'; });
+    btn(tr, 'BILDER', dz.symTab === 'emoji', () => { dz.symTab = 'emoji'; });
+    btn(tr, '\u{2716} INGEN', !d.sym, () => { d.sym = null; });
+    const yr = row('dzrow dzsyms');
+    if (dz.symTab === 'shape') for (const [id, name] of Object.entries(SHAPES)) btn(yr, `<svg viewBox="0 0 100 100" width="22" height="22">${shapeSvg(id, '#e8f4ff', '#0b1620')}</svg>`, d.sym === id, () => { d.sym = id; dz.slot = 4; }, name);
+    else for (const e of EMOJI) btn(yr, e, d.sym === e, () => { d.sym = e; });
+    if (d.sym) {
+      sec('PLATS · STORLEK · ANTAL');
+      const pr = row();
+      for (const [k, t] of [['center', 'MITTEN'], ['hoist', 'VID STÅNGEN'], ['canton', 'I HÖRNET']]) btn(pr, t, d.symPos === k, () => { d.symPos = k; });
+      const zr = row();
+      for (const [k, t] of [[1, 'LITEN'], [2, 'MELLAN'], [3, 'STOR']]) btn(zr, t, d.symSize === k, () => { d.symSize = k; });
+      for (const [k, t] of [[1, '\u{00D7}1'], [3, '\u{00D7}3 RAD'], [5, '\u{00D7}5 BÅGE'], [12, '\u{00D7}12 RING']]) btn(zr, t, d.symCount === k, () => { d.symCount = k; });
+    }
+    sec('FORMAT');
+    const fr = row();
+    for (const k of ['3:2', '2:1', '1:1']) btn(fr, k, d.ratio === k, () => { d.ratio = k; });
+    text('FLAGGANS NAMN', d.name, 28, (v) => { d.name = v; });
+    sec('BÖRJA FRÅN');
+    const pre = row('dzrow dzlay');
+    const nc = colorsOf(state.solo.home);
+    for (const p of presetSpecs(nc)) btn(pre, flagSvg(p, 44) + `<small>${p.name}</small>`, false, () => { Object.assign(d, cleanSpec(p)); });
+    const ideo = ideoFlag(state.solo.home, state.solo.nation?.ideology);
+    if (ideo) btn(pre, flagSvg(specFromFlag(ideo), 44) + `<small>IDEOLOGINS FANA</small>`, false, () => { Object.assign(d, cleanSpec(specFromFlag(ideo))); });
+    btn(pre, `<span style="font-size:20px">\u{1F3B2}</span><small>SLUMPA</small>`, false, () => { Object.assign(d, cleanSpec(randomSpec(nc))); });
+  } else if (dz.mode === 'pass') {
+    sec('OMSLAGETS FÄRG');
+    colorRow(d.cover, (c) => { d.cover = c; }, PASS_COVERS);
+    sec('MÖNSTER');
+    const pr = row();
+    for (const [k, [t]] of Object.entries(PASS_PATTERNS)) btn(pr, t, d.pattern === k, () => { d.pattern = k; });
+    sec('TRYCKFÄRG');
+    const ir = row();
+    for (const [k, [t, c]] of Object.entries(PASS_INKS)) btn(ir, `<i style="background:${c}"></i>${t}`, d.ink === k, () => { d.ink = k; }).classList.add('dzslot');
+    sec('EMBLEM');
+    const er = row('dzrow dzsyms');
+    btn(er, 'FLAGGAN', d.emblemKind === 'flag', () => { d.emblemKind = 'flag'; }).style.fontSize = '7px';
+    btn(er, 'STATSVAPNET', d.emblemKind === 'arms', () => { d.emblemKind = 'arms'; }).style.fontSize = '7px';
+    for (const [id, name] of Object.entries(SHAPES)) btn(er, `<svg viewBox="0 0 100 100" width="20" height="20">${shapeSvg(id, '#e2c26a', '#0b1620')}</svg>`, d.emblemKind === 'shape' && d.shape === id, () => { d.emblemKind = 'shape'; d.shape = id; }, name);
+    for (const e of PASS_EMBLEMS) btn(er, e, d.emblemKind === 'emoji' && d.emblem === e, () => { d.emblemKind = 'emoji'; d.emblem = e; });
+    text('ORDET PÅ PASSET', d.word, 14, (v) => { d.word = v.toUpperCase() || 'PASSPORT'; });
+    sec('DATASIDANS FÄRG');
+    const hr = row('dzrow dzcols');
+    for (const h of [210, 160, 120, 60, 30, 0, 330, 280, 250]) {
+      const b = btn(hr, '', d.pageHue === h, () => { d.pageHue = h; });
+      b.classList.add('dzc'); b.style.background = `hsl(${h},45%,82%)`;
+    }
+    text('INNEHAVARE', d.holder, 32, (v) => { d.holder = v; });
+    sec('FOTOT');
+    const av = d.avatar;
+    const pick = (label, key, list, show) => {
+      const r = row();
+      const l = document.createElement('span'); l.className = 'dzlab'; l.textContent = label; r.appendChild(l);
+      list.forEach((v, i) => {
+        const b = btn(r, show ? show(v, i) : v, av[key] === i, () => { av[key] = i; });
+        if (!show && typeof v === 'string' && v.startsWith('#')) { b.innerHTML = ''; b.classList.add('dzc'); b.style.background = v; }
+      });
+    };
+    pick('HY', 'skin', AVATAR.skin);
+    pick('HÅRFÄRG', 'hairColor', AVATAR.hairColor);
+    pick('FRISYR', 'hair', AVATAR.hair);
+    pick('ÖGON', 'eyes', AVATAR.eyes);
+    pick('SKÄGG', 'beard', AVATAR.beard);
+    pick('GLASÖGON', 'glasses', AVATAR.glasses);
+    pick('HUVUDBONAD', 'hat', AVATAR.hat);
+    sec('TRÖJA');
+    colorRow(av.shirt || d.cover, (c) => { av.shirt = c; });
+  } else {
+    const a = d.arms;
+    sec('STATSVAPNET — SKÖLDEN');
+    const sr = row();
+    for (const [k, t] of Object.entries(SHIELDS)) btn(sr, t, a.shield === k, () => { a.shield = k; });
+    const dr = row();
+    for (const [k, t] of Object.entries(DIVISIONS)) btn(dr, t, a.div === k, () => { a.div = k; });
+    sec('FÄLTETS FÄRG');
+    colorRow(a.field, (c) => { a.field = c; });
+    if (a.div !== 'none') { sec('ANDRA FÄLTET'); colorRow(a.field2, (c) => { a.field2 = c; }); }
+    sec('VAPNETS BILD');
+    const cr = row('dzrow dzsyms');
+    btn(cr, '\u{2716}', !a.charge, () => { a.charge = null; });
+    for (const [id, name] of Object.entries(SHAPES)) btn(cr, `<svg viewBox="0 0 100 100" width="20" height="20">${shapeSvg(id, '#e8f4ff', '#0b1620')}</svg>`, a.charge === id, () => { a.charge = id; }, name);
+    for (const e of EMOJI.slice(0, 24)) btn(cr, e, a.charge === e, () => { a.charge = e; });
+    if (a.charge && SHAPES[a.charge]) { sec('BILDENS FÄRG'); colorRow(a.chargeColor, (c) => { a.chargeColor = c; }); }
+    const kr = row();
+    btn(kr, '\u{1F451} KRONA', a.crown, () => { a.crown = !a.crown; });
+    sec('RIKETS SYMBOLER');
+    text('VALSPRÅK', d.motto, 48, (v) => { d.motto = v; });
+    text('NATIONALSÅNGEN HETER', d.anthem, 40, (v) => { d.anthem = v; });
+    text('HUVUDSTADENS NAMN (TOMT = SOM NU)', d.capital, 24, (v) => { d.capital = v; });
+    sec('NATIONALDAG — FIRAS DEN FÖRSTA DAGEN I MÅNADEN, VARJE SPELÅR');
+    const mr = row();
+    btn(mr, 'INGEN', !d.natday, () => { d.natday = null; });
+    MONTHS.forEach((m, i) => btn(mr, m.slice(0, 3), d.natday?.m === i, () => { d.natday = { m: i }; }, m));
+    sec('NATIONALDJUR');
+    const ar = row('dzrow dzsyms');
+    for (const e of ANIMALS) btn(ar, e, d.animal === e, () => { d.animal = e; });
+    sec('STATSCHEFENS TITEL');
+    const tr2 = row();
+    for (const t of TITLES) btn(tr2, t, d.title === t, () => { d.title = t; });
+    sec('VALUTA');
+    text('NAMN (T.EX. KRONA)', d.currency.name, 18, (v) => { d.currency.name = v; });
+    text('KOD (3 BOKSTÄVER)', d.currency.code, 3, (v) => { d.currency.code = v.toUpperCase().replace(/[^A-ZÅÄÖ]/g, ''); });
+    text('TECKEN', d.currency.sym, 3, (v) => { d.currency.sym = v; });
+  }
+  dzPreview();
+}
+function applyDesigner() {
+  const s = state.solo;
+  const d = dz.draft;
+  if (dz.mode === 'flag') {
+    const spec = cleanSpec(d);
+    s.flag = { type: 'custom', spec };
+    const name = (spec.name || 'DEN NYA FLAGGAN').toUpperCase();
+    toast(`\u{1F6A9} ${name} HISSAS ÖVER ${realmName().toUpperCase()}`, 'amber', 8000);
+    logEvent(`\u{1F6A9} DU HISSADE ${name}`, { mine: true });
+    globe.addFireworks(capitalLL(s.home), 5000);
+    newsFor('flag', { val: spec.name || 'den nya flaggan' }, 2);
+  } else if (dz.mode === 'pass') {
+    const P = symbolsOf();
+    P.pass = { ...cleanPass(d), cover: /^#[0-9a-f]{3,8}$/i.test(d.cover) ? d.cover : null, word: String(d.word || 'PASSPORT').slice(0, 14),
+      emblem: d.emblemKind === 'emoji' ? d.emblem : null, holder: String(d.holder || '').slice(0, 32) };
+    toast('\u{1F6C2} DE NYA PASSEN TRYCKS — ALLA MEDBORGARE FÅR ETT', 'amber', 7000);
+    logEvent('\u{1F6C2} NYA PASS TRYCKTES', { mine: true });
+  } else {
+    const sy = symbolsOf();
+    const oldCap = sy.capital;
+    Object.assign(sy, { arms: cleanArms(d.arms), motto: d.motto.trim().slice(0, 48), anthem: d.anthem.trim().slice(0, 40), natday: d.natday,
+      animal: d.animal, currency: d.currency?.name ? { name: d.currency.name.trim().slice(0, 18), code: d.currency.code.slice(0, 3), sym: d.currency.sym.slice(0, 3) } : null,
+      capital: d.capital.trim().slice(0, 24), title: d.title });
+    if (sy.capital !== oldCap) applyCapitalName();
+    toast('\u{1F6E1}\u{FE0F} RIKETS SYMBOLER ÄR FASTSTÄLLDA', 'amber', 6000);
+    logEvent(`\u{1F6E1}\u{FE0F} RIKETS SYMBOLER FASTSTÄLLDES${sy.motto ? ` — "${sy.motto.toUpperCase()}"` : ''}`, { mine: true });
+  }
+  overlay('#designer', false);
+  syncFlagVisuals();
+  saveGame();
+  applyState();
+  refreshInfoPanel();
+  if ($('#nation').classList.contains('show')) renderNationTab();
+}
+// huvudstadens nya namn på kartan (städerna laddas om från data — därför varje gång)
+function applyCapitalName() {
+  const s = state.solo;
+  const cap = (state.cities[s?.home] || []).find((x) => x.c);
+  if (!cap) return;
+  cap.n0 ??= cap.n;
+  const want = s.symbols?.capital || cap.n0;
+  if (cap.n === want) return;
+  cap.n = want;
+  globe.setCities?.(state.cities);
+}
+// nationaldagen: första dagen i månaden varje spelår (12 månader à 10 dagar)
+function tickNatDay() {
+  const s = state.solo;
+  const nd = s.symbols?.natday;
+  if (!nd || (s.clock.day % YEAR_DAYS) !== nd.m * 10) return;
+  s.extra.approval = (s.extra.approval || 0) + 4;
+  s.extra.unrest = (s.extra.unrest || 0) - 3;
+  globe.addFireworks(capitalLL(s.home), 8000);
+  toast(`\u{1F389} NATIONALDAGEN! ${realmName().toUpperCase()} FIRAR${s.symbols.anthem ? ` — ALLA SJUNGER \u{266B} ${s.symbols.anthem.toUpperCase()}` : ''}`, 'amber', 9000);
+  logEvent('\u{1F389} NATIONALDAGEN FIRADES', { mine: true });
+  const m = s.media;
+  if (m) pushNews({ d: s.clock.day, ch: m.ps.budget ? m.ps.name : (activeChannels(m)[0]?.name || 'NYHETERNA'), hue: 205, tone: 'friendly', t: `NATIONALDAGEN FIRAS I HELA ${realmName().toUpperCase()}${s.symbols.motto ? ` — "${s.symbols.motto.toUpperCase()}"` : ''}`, topic: 'natday' });
+  recomputeNation();
+}
+$('#dzGo').addEventListener('click', applyDesigner);
+$('#dzNo').addEventListener('click', () => overlay('#designer', false));
+$('#dzReal').addEventListener('click', () => {
+  const s = state.solo;
+  if (!s) return;
+  s.flag = null;
+  toast('\u{1F6A9} LANDETS RIKTIGA FLAGGA HISSAS IGEN', 'amber', 6000);
+  overlay('#designer', false);
+  syncFlagVisuals();
+  applyState();
+  refreshInfoPanel();
+  if ($('#nation').classList.contains('show')) renderNationTab();
+});
 
 // ---------- V5.12: LANDET-fliken — namnet, passet och tron ----------
 function renderLandTab(body) {
@@ -5807,9 +6267,11 @@ function renderLandTab(body) {
   const id = myIdent();
   const g1 = document.createElement('div');
   g1.className = 'natgroup';
+  const sy = symbolsOf();
+  const pd = passData(id);
   g1.innerHTML = `<div class="gtitle">▸ LANDET</div>
     <div class="landid"><b>${escHtml(id.off.toUpperCase())}</b><br>KORT NAMN: ${escHtml(id.short.toUpperCase())} • FÖRKORTNING: ${escHtml(id.code)}</div>
-    ${passportHtml(passData(id))}`;
+    ${passportHtml(pd, ['cover', 'data', 'visa'])}`;
   const rb = document.createElement('button');
   rb.className = 'lawopt';
   rb.style.cssText = 'display:block;margin:0 auto';
@@ -5820,8 +6282,40 @@ function renderLandTab(body) {
     rb.textContent = '\u{270F}\u{FE0F} BYT NAMN OCH DESIGNA NYA PASS (GÅR BARA EN GÅNG)';
     rb.addEventListener('click', openRename);
   }
-  g1.appendChild(rb);
+  // V5.20: flaggan, passet och symbolerna går att designa när som helst
+  const bar = document.createElement('div');
+  bar.className = 'landbtns';
+  bar.appendChild(rb);
+  rb.style.cssText = '';
+  for (const [label, mode] of [['\u{1F6A9} FLAGGSKAPAREN', 'flag'], ['\u{1F6C2} PASSKONTORET', 'pass'], ['\u{1F6E1}\u{FE0F} RIKETS SYMBOLER', 'symbols']]) {
+    const x = document.createElement('button');
+    x.className = 'lawopt';
+    x.textContent = label;
+    x.addEventListener('click', () => openDesigner(mode));
+    bar.appendChild(x);
+  }
+  g1.appendChild(bar);
   body.appendChild(g1);
+  // ▸ RIKETS SYMBOLER
+  const gS = document.createElement('div');
+  gS.className = 'natgroup';
+  const fl = myFlag();
+  const cur = sy.currency;
+  gS.innerHTML = `<div class="gtitle">▸ RIKETS SYMBOLER</div>
+    <div class="symgrid">
+      <div class="symflag">${myFlagHtml(90, 60)}<small>${escHtml(fl?.name || 'LANDETS FLAGGA')}</small></div>
+      <div class="symarms">${sy.arms ? armsSvg(sy.arms, 54) : '<small>INGET STATSVAPEN ÄN</small>'}</div>
+      <div class="symlist">
+        <div>VALSPRÅK<b>${sy.motto ? '\u{201C}' + escHtml(sy.motto.toUpperCase()) + '\u{201D}' : '–'}</b></div>
+        <div>NATIONALSÅNG<b>${sy.anthem ? '\u{266B} ' + escHtml(sy.anthem.toUpperCase()) : '–'}</b></div>
+        <div>NATIONALDAG<b>${sy.natday ? MONTHS[sy.natday.m] + ' (DAG ' + (sy.natday.m * 10) + ' VARJE SPELÅR)' : '–'}</b></div>
+        <div>NATIONALDJUR<b>${sy.animal || '–'}</b></div>
+        <div>VALUTA<b>${cur ? escHtml(cur.name.toUpperCase()) + (cur.code ? ' (' + escHtml(cur.code) + ')' : '') + ' ' + escHtml(cur.sym || '') : '–'}</b></div>
+        <div>STATSCHEF<b>${sy.title ? escHtml(sy.title) + ' ' : ''}${escHtml((s.leader?.n || state.me?.name || '').toUpperCase())}</b></div>
+      </div>
+    </div>
+    ${pd.strength ? `<div class="ftext">\u{1F6C2} PASSETS STYRKA: <b style="color:var(--amber)">${pd.strength.count} LÄNDER UTAN VISUM</b> — PLATS ${pd.strength.rank} AV ${pd.strength.of} I VÄRLDEN. GODA RELATIONER, ALLIANSER, BLOCK, DEMOKRATI, VÄLSTÅND OCH VISUMLAGEN GER FLER; SANKTIONER OCH BRUTALA LAGAR FÄRRE.</div>` : ''}`;
+  body.appendChild(gS);
 
   // ▸ TRO & RELIGION
   const g2 = document.createElement('div');
@@ -5894,6 +6388,572 @@ function renderLandTab(body) {
     g2.appendChild(go);
   }
   body.appendChild(g2);
+}
+
+// ---------- V5.20: MEDIERNA — public service, nyhetskanalerna och nyhetsbandet ----------
+// Tillståndet ligger i state.solo.media (media.js: initMedia) och rubrikerna i state.solo.news.
+// Medieklimatet blir en egen källa i nationsvärdena (mediaMods) och drar några statistikmått
+// (s.media.fx glider mot mediaIndTargets).
+function pressLevelNow() {
+  return pressLevelOf(state.solo?.nation?.laws?.press);
+}
+function mediaGov() {
+  const s = state.solo;
+  const rel = Object.values(s.rel || {}).filter(Number.isFinite);
+  return {
+    axes: axesOf(s.nation), approval: s.stats?.approval?.total || 0, pressLevel: pressLevelNow(),
+    day: s.clock?.day || 0, worldRel: rel.length ? rel.reduce((a, b) => a + b, 0) / rel.length : 0,
+  };
+}
+function mediaVars() {
+  const v = eventVars();
+  return { rike: v.rike, stad: v.stad, huvudstad: v.huvudstad };
+}
+function mediaState() {
+  const s = state.solo;
+  if (!s?.nation) return null;
+  if (!s.media) {
+    s.media = initMedia(s.home + ':' + (s.saveId || ''), pressLevelNow(), mediaVars(), WEALTH_TIER?.[s.home] || 1.5, s.clock?.day || 1);
+    s.media.press = pressLevelNow();
+  }
+  return s.media;
+}
+function mediaSum() {
+  const m = mediaState();
+  return m ? mediaSummary(m, mediaGov()) : null;
+}
+function mediaSourceMods() {
+  const m = mediaState();
+  return m ? mediaMods(m, mediaSummary(m, mediaGov()), mediaGov()) : {};
+}
+function mediaCostPerDay() {
+  const m = state.solo?.media;
+  return m ? Math.round(mediaCostPct(m, state.solo.clock?.day || 0) / 100 * moneyPerDay()) : 0;
+}
+
+// ----- nyheterna -----
+// Ett ämne (media-news.js) → 1–3 kanaler skriver varsin rubrik i sin ton. Störst räckvidd först,
+// men slumpen får vara med så att samma kanal inte alltid hörs.
+function newsFor(topic, vars = {}, n = 0) {
+  const s = state.solo;
+  const m = s?.media;
+  if (!m) return;
+  const gov = mediaGov();
+  const voices = activeChannels(m).map((c) => ({ name: c.name, hue: c.hue, tone: channelTone(c, gov), w: c.reach * (0.6 + Math.random()) }));
+  if (m.ps.budget) voices.push({ name: m.ps.name, hue: 205, tone: psTone(m.ps, gov), w: psReach(m.ps) * (0.6 + Math.random()), ps: true });
+  if (!voices.length) return;
+  voices.sort((a, b) => b.w - a.w);
+  const count = n || (['war_start', 'war_lost', 'war_won', 'bankrupt', 'law_brutal', 'law_utopia', 'empire', 'utopia_crack', 'election_won', 'election_lost'].includes(topic) ? 3 : 1 + (Math.random() < 0.5 ? 1 : 0));
+  const all = { ...mediaVars(), ledare: s.leader?.n || 'ledaren', ps: m.ps.name, ...vars };
+  const used = new Set();
+  for (const v of voices.slice(0, count)) {
+    const other = voices.find((x) => x.name !== v.name);
+    const t = headline(topic, v.tone, { ...all, kanal: all.kanal || other?.name || m.ps.name });
+    if (!t || used.has(t)) continue;
+    used.add(t);
+    pushNews({ d: s.clock.day, ch: v.name, hue: v.hue, tone: v.tone, t, topic });
+  }
+}
+function pushNews(item) {
+  const s = state.solo;
+  (s.news ||= []).unshift(item);
+  if (s.news.length > 60) s.news.length = 60;
+  renderTicker();
+}
+function newsFiller() {
+  const s = state.solo, m = s?.media;
+  if (!m) return;
+  const list = activeChannels(m);
+  const c = list.length ? list[Math.floor(Math.random() * list.length)] : null;
+  const name = c ? c.name : m.ps.budget ? m.ps.name : null;
+  if (!name) return;
+  const t = filler(mediaVars());
+  if (t) pushNews({ d: s.clock.day, ch: name, hue: c ? c.hue : 205, tone: 'neutral', t, topic: 'filler' });
+}
+
+// Nyhetsbandet längst ned — de senaste rubrikerna rullar förbi
+function renderTicker() {
+  const el = $('#newsticker');
+  if (!el) return;
+  const s = state.solo;
+  const off = localStorage.getItem('imperium.ticker') === 'off';
+  const items = (s?.news || []).slice(0, 8);
+  const show = !!(s?.media && items.length && !off && state.mode !== 'tv');
+  el.classList.toggle('show', show);
+  $('#tickerbtn')?.classList.toggle('on', !off);
+  if (!show) return;
+  const sig = items.map((x) => x.t).join('|');
+  if (el.dataset.sig === sig) return;
+  el.dataset.sig = sig;
+  const html = items.map((x) => `<span class="nk" style="--h:${x.hue}">${escHtml(x.ch)}</span><span class="nt ${x.tone}">${escHtml(x.t)}</span>`).join('<span class="nsep">\u{2726}</span>');
+  const run = el.querySelector('.nrun');
+  run.innerHTML = html;
+  run.style.animationDuration = `${Math.max(25, items.reduce((a, x) => a + x.t.length + x.ch.length, 0) * 0.16)}s`;
+  run.style.animation = 'none';
+  void run.offsetWidth;
+  run.style.animation = '';
+}
+
+// ----- dagstakten -----
+function tickMedia() {
+  const s = state.solo;
+  const m = mediaState();
+  if (!m) return;
+  const day = s.clock.day;
+  // pengarna: public service, stöd och egna statskanaler
+  s.res.money -= mediaCostPerDay();
+  m.trustShock = Math.abs(m.trustShock || 0) < 0.2 ? 0 : (m.trustShock || 0) * 0.99;
+  // presslagen ändrad? medierna följer den
+  const pl = pressLevelNow();
+  if (m.press !== pl) {
+    const was = m.press ?? pl;
+    m.press = pl;
+    const C = PS_CONTROL[m.ps.control];
+    if (pl > C.maxPress || pl < C.minPress) {
+      const ok = PS_CONTROL.findIndex((x, i) => pl <= x.maxPress && pl >= x.minPress && (pl < C.minPress ? i <= m.ps.control : i >= m.ps.control));
+      m.ps.control = ok >= 0 ? ok : (pl <= 1 ? 2 : 1);
+      toast(`\u{1F4FA} PRESSLAGEN ÄNDRADES — ${m.ps.name} ÄR NU ${PS_CONTROL[m.ps.control].name}`, 'amber', 7000);
+    }
+    if (pl === 0) {
+      let n = 0;
+      for (const c of m.channels) if (c.status === 'on' && c.owner !== 'state' && c.lean !== 'gov') { c.status = 'censored'; n++; }
+      if (n) toast(`\u{2702}\u{FE0F} ${n} KANALER STÄLLS UNDER STATENS CENSUR — PRESSLAGEN TILLÅTER INGET ANNAT`, 'red', 8000);
+    } else if (pl >= 4 && was < 4) {
+      let n = 0;
+      for (const c of m.channels) if (c.status === 'censored') { c.status = 'on'; n++; }
+      if (n) toast(`\u{1F513} FRI PRESS: CENSUREN HÄVS PÅ ${n} KANALER`, 'amber', 7000);
+    }
+    renderTicker();
+  }
+  // statistiken glider mot mediernas läge (ungefär en månad)
+  const tg = mediaIndTargets(mediaSummary(m, mediaGov()));
+  for (const [k, v] of Object.entries(tg)) m.fx[k] = (m.fx[k] || 0) + (v - (m.fx[k] || 0)) * 0.04;
+  // kanalerna lever: förtroende ger räckvidd, censur och konkurrens från public service tar den
+  if (day % 30 === 0) {
+    const big = psReach(m.ps) / 100;
+    for (const c of activeChannels(m)) {
+      const want = c.status === 'censored' ? -2 : (c.trust - 50) / 18 + (c.support > day ? 2 : 0) - big * 1.5;
+      c.reach = Math.max(2, Math.min(60, Math.round(c.reach + want + (Math.random() - 0.5) * 3)));
+      c.trust = Math.max(5, Math.min(95, Math.round(c.trust + (Math.random() - 0.5) * 4 + (c.status === 'censored' ? -2 : 0))));
+    }
+    // nya kanaler söker sändningstillstånd när pressen är någorlunda fri
+    if (pl >= 2 && activeChannels(m).length + m.apps.length < 11 && Math.random() < (pl >= 3 ? 0.35 : 0.2)) {
+      const a = applicant(m, mediaVars(), day);
+      m.apps.push({ ...a, day });
+      toast(`\u{2709}\u{FE0F} ${a.name} SÖKER SÄNDNINGSTILLSTÅND — SE FLIKEN MEDIA`, 'amber', 7000);
+    }
+    // med helt fri press behövs inget tillstånd — ansökningar som legat en månad går igenom
+    if (pl >= 4) for (const a of [...m.apps]) if (day - a.day >= 30) grantChannel(a.id, true);
+  }
+  // nyhetsbandet: vardagsnyheter, och ibland hur det går för landet
+  if (day % 4 === 0 && Math.random() < 0.7) newsFiller();
+  if (day % 30 === 15) trendNews();
+}
+// hur det går för landet — opinionen, ekonomin och brotten — en gång i månaden
+function trendNews() {
+  const s = state.solo;
+  const ind = myIndicators();
+  const ap = s.stats?.approval?.total || 0;
+  const last = s.media.lastAp ?? ap;
+  s.media.lastAp = ap;
+  const fmtP = (x) => `${fmtNum(Math.abs(x))} %`;
+  if (Math.abs(ap - last) >= 4) newsFor(ap > last ? 'approval_up' : 'approval_down', { tal: fmtP(ap - last) });
+  else if (Number.isFinite(ind?.gdpgrowth) && Math.random() < 0.5) newsFor(ind.gdpgrowth >= 1.5 ? 'economy_up' : ind.gdpgrowth < 0 ? 'economy_down' : 'event', { tal: `${fmtNum(ind.gdpgrowth)} %`, titel: 'EKONOMIN STÅR STILL' });
+  else if (ind) {
+    const cr = crimeRise(ind);
+    if (Math.abs(cr - 1) >= 0.08) newsFor(cr > 1 ? 'crime_up' : 'crime_down', { tal: `${Math.round(Math.abs(cr - 1) * 100)} %` });
+  }
+}
+
+// ----- spelarens beslut -----
+function mediaPay(pp, moneyCost = 0) {
+  const s = state.solo;
+  if ((s.res.pp || 0) < pp) { toast(`DET KOSTAR ${pp} \u{2696}\u{FE0F} — DU HAR ${s.res.pp}`, 'red', 4000); return false; }
+  if (moneyCost && !canAfford(moneyCost)) { toast(`DET KOSTAR ${money(moneyCost)} — DET HAR DU INTE`, 'red', 4000); return false; }
+  s.res.pp -= pp;
+  s.res.money -= moneyCost;
+  return true;
+}
+function mediaChanged() {
+  recomputeNation();
+  renderResbar();
+  renderTicker();
+  if ($('#nation').classList.contains('show') && natTab === 'media') renderNationTab();
+}
+function channelById(id) { return state.solo?.media?.channels.find((c) => c.id === id); }
+
+function closeChannel(id, free = false) {
+  const s = state.solo, m = s.media, c = channelById(id);
+  if (!c) return;
+  const pl = pressLevelNow();
+  const pp = free ? 0 : COSTS.close * (pl >= 3 ? 2 : 1);
+  if (!free && !mediaPay(pp)) return;
+  c.status = 'banned';
+  m.channels = m.channels.filter((x) => x !== c);
+  m.banned.unshift({ name: c.name, owner: c.owner, lean: c.lean, day: s.clock.day, hue: c.hue });
+  addGriev('frihet', pl >= 3 ? 10 : pl === 2 ? 6 : 3);
+  if (pl >= 2) for (const cid of Object.keys(s.rel || {})) if (!s.claims?.[cid]) relChange(cid, -Math.round(2 * shameWeight(axesOf(ideoOf(cid)).auth)));
+  m.trustShock = (m.trustShock || 0) - 4;
+  toast(`\u{26D4} ${c.name} STÄNGS AV REGERINGEN${pl >= 3 ? ' — FRI PRESS: FOLKET OCH OMVÄRLDEN REAGERAR' : ''}`, 'red', 8000);
+  logEvent(`\u{26D4} ${c.name} STÄNGDES`, { mine: true });
+  newsFor('media_ban', { kanal: c.name }, 2);
+  mediaChanged();
+}
+function censorChannel(id, on) {
+  const s = state.solo, c = channelById(id);
+  if (!c) return;
+  const pl = pressLevelNow();
+  if (on) {
+    if (pl >= 4) { toast('FRI PRESS — CENSUR ÄR INTE TILLÅTEN. ÄNDRA PRESSLAGEN FÖRST', 'red', 6000); return; }
+    if (!mediaPay(COSTS.censor * (pl >= 3 ? 2 : 1))) return;
+    c.status = 'censored';
+    addGriev('frihet', pl >= 3 ? 6 : 3);
+    toast(`\u{2702}\u{FE0F} ${c.name} CENSURERAS — STATEN GODKÄNNER ALLT INNAN DET SÄNDS`, 'red', 7000);
+    newsFor('media_censor', { kanal: c.name }, 1);
+  } else {
+    if (pl === 0) { toast('PRESSLAGEN KRÄVER CENSUR — ÄNDRA PRESSLAGEN FÖRST', 'red', 6000); return; }
+    c.status = 'on';
+    addGriev('frihet', -3);
+    toast(`\u{1F513} CENSUREN PÅ ${c.name} HÄVS`, 'amber', 6000);
+  }
+  logEvent(`${on ? '\u{2702}\u{FE0F} CENSUR PÅ' : '\u{1F513} CENSUREN HÄVDES PÅ'} ${c.name}`, { mine: true });
+  mediaChanged();
+}
+function supportChannel(id) {
+  const s = state.solo, c = channelById(id);
+  if (!c) return;
+  c.support = s.clock.day + 120;
+  toast(`\u{1F4B0} ${c.name} FÅR STATLIGT STÖD ETT ÅR — DEN BLIR VÄNLIGARE`, 'amber', 6000);
+  mediaChanged();
+}
+function buyChannel(id) {
+  const s = state.solo, c = channelById(id);
+  if (!c) return;
+  const cost = Math.round(c.reach * COSTS.buyDays * moneyPerDay());
+  if (!mediaPay(0, cost)) return;
+  c.owner = 'state'; c.lean = 'gov'; c.trust = Math.max(10, c.trust - 15);
+  addGriev('frihet', pressLevelNow() >= 3 ? 5 : 2);
+  toast(`\u{1F3DB}\u{FE0F} STATEN KÖPER ${c.name} FÖR ${money(cost)}`, 'amber', 7000);
+  logEvent(`\u{1F3DB}\u{FE0F} STATEN KÖPTE ${c.name}`, { mine: true });
+  mediaChanged();
+}
+function sellChannel(id) {
+  const s = state.solo, c = channelById(id);
+  if (!c || c.owner !== 'state') return;
+  const pay = Math.round(c.reach * COSTS.buyDays * 0.6 * moneyPerDay());
+  c.owner = 'private'; c.lean = 'center';
+  s.res.money += pay;
+  toast(`\u{1F4B5} ${c.name} SÅLDES TILL PRIVATA ÄGARE FÖR ${money(pay)}`, 'amber', 6000);
+  mediaChanged();
+}
+function startStateChannel(name) {
+  const s = state.solo, m = mediaState();
+  const cost = Math.round(COSTS.startDays * moneyPerDay());
+  if (!mediaPay(COSTS.startPP, cost)) return;
+  const c = stateChannel(m, name, mediaVars(), s.clock.day);
+  m.channels.push(c);
+  toast(`\u{1F4E1} ${c.name} BÖRJAR SÄNDA — REGERINGENS EGEN KANAL`, 'amber', 7000);
+  logEvent(`\u{1F4E1} STATSKANALEN ${c.name} STARTADE`, { mine: true });
+  newsFor('media_new', { kanal: c.name }, 1);
+  mediaChanged();
+}
+function grantChannel(appId, auto = false) {
+  const s = state.solo, m = s.media;
+  const a = m?.apps.find((x) => x.id === appId);
+  if (!a) return;
+  m.apps = m.apps.filter((x) => x !== a);
+  const { day, ...c } = a;
+  c.founded = s.clock.day;
+  if (pressLevelNow() === 0) c.status = 'censored';
+  m.channels.push(c);
+  toast(`\u{1F4E1} ${c.name} FÅR SÄNDA${auto ? ' — FRI PRESS KRÄVER INGET TILLSTÅND' : ''}`, 'amber', 6000);
+  newsFor('media_new', { kanal: c.name }, 1);
+  mediaChanged();
+}
+function denyChannel(appId) {
+  const m = state.solo?.media;
+  if (!m) return;
+  const a = m.apps.find((x) => x.id === appId);
+  m.apps = m.apps.filter((x) => x.id !== appId);
+  if (a && pressLevelNow() >= 3) addGriev('frihet', 2);
+  mediaChanged();
+}
+function reopenChannel(i) {
+  const s = state.solo, m = s.media, b = m?.banned[i];
+  if (!b) return;
+  m.banned.splice(i, 1);
+  const c = applicant(m, mediaVars(), s.clock.day);
+  Object.assign(c, { name: b.name, owner: b.owner, lean: b.lean, hue: b.hue ?? c.hue, trust: 55, reach: 8 });
+  m.channels.push(c);
+  addGriev('frihet', -4);
+  toast(`\u{1F513} ${c.name} FÅR SÄNDA IGEN`, 'amber', 6000);
+  mediaChanged();
+}
+function setPs(key, val) {
+  const s = state.solo, m = mediaState(), ps = m.ps;
+  const pl = pressLevelNow();
+  if (key === 'control') {
+    const C = PS_CONTROL[val];
+    if (pl > C.maxPress || pl < C.minPress) { toast(`PRESSLAGEN (${PRESS_NAMES[pl]}) TILLÅTER INTE ${C.name}`, 'red', 5000); return; }
+    if (!mediaPay(COSTS.control * Math.abs(val - ps.control))) return;
+    if (val > ps.control) addGriev('frihet', (val - ps.control) * (pl >= 3 ? 4 : 2));
+  } else if (key === 'funding') {
+    if (!mediaPay(COSTS.funding)) return;
+    if (val === 'license') addGriev('skatt', 3);
+  } else if (key === 'focus') {
+    const f = new Set(ps.focus);
+    if (f.has(val)) f.delete(val);
+    else { if (f.size >= PS_FOCUS_MAX) { toast(`HÖGST ${PS_FOCUS_MAX} INRIKTNINGAR — TA BORT EN FÖRST`, 'red', 4000); return; } f.add(val); }
+    if (!mediaPay(COSTS.focus)) return;
+    ps.focus = [...f];
+    mediaChanged();
+    return;
+  } else if (key === 'budget') {
+    if (val < ps.budget) addGriev('valfard', (ps.budget - val) * 2);
+    if (val === 0) addGriev('frihet', 4);
+  }
+  const was = ps[key];
+  ps[key] = val;
+  if (was !== val && key !== 'budget') newsFor('ps_change', {}, 2);
+  if (key === 'budget' && was !== val) toast(`\u{1F4FA} ${ps.name}: BUDGET ${PS_BUDGETS[val].name}`, 'amber', 5000);
+  mediaChanged();
+}
+
+// ----- händelserna: {kanal}, {ps} och kanal/nykanal/fortroende i valen -----
+function mediaEventVars() {
+  const m = state.solo?.media;
+  if (!m) return { kanal: 'kanalen', ps: 'public service' };
+  const gov = mediaGov();
+  const list = activeChannels(m);
+  const crit = list.filter((c) => mediaStance(c, gov) <= -20).sort((a, b) => b.reach - a.reach);
+  const c = crit[0] || [...list].sort((a, b) => b.reach - a.reach)[0];
+  return { kanal: c ? c.name : 'kanalen', kanalId: c?.id || null, ps: m.ps.name };
+}
+function mediaCtx() {
+  const sum = mediaSum();
+  const m = state.solo?.media;
+  if (!sum || !m) return { ps: { budget: 0, control: 1, reach: 0, trust: 50 }, channels: 0, critical: 0, friendly: 0, stateShare: 0, censored: 0, banned: 0, trust: 50, climate: 0, pressLevel: pressLevelNow() };
+  return {
+    ps: { budget: m.ps.budget, control: m.ps.control, reach: sum.psReach, trust: sum.psTrust },
+    channels: sum.channels, critical: sum.critical, friendly: sum.friendly, stateShare: sum.stateShare,
+    censored: sum.censored, banned: sum.banned, trust: sum.trust, climate: sum.climate, pressLevel: sum.pressLevel,
+  };
+}
+function applyMediaChoice(ch) {
+  const m = state.solo?.media;
+  if (!m) return;
+  const id = ch.vars?.kanalId;
+  if (ch.kanal && id && channelById(id)) {
+    if (ch.kanal === 'stang') closeChannel(id, true);
+    else if (ch.kanal === 'censur') { const c = channelById(id); if (c) { c.status = 'censored'; addGriev('frihet', 3); } }
+    else if (ch.kanal === 'fri') {
+      // häv censuren — på {kanal} om den är censurerad, annars på den största censurerade kanalen
+      const c = channelById(id)?.status === 'censored' ? channelById(id) : [...m.channels].filter((x) => x.status === 'censored').sort((x, y) => y.reach - x.reach)[0];
+      if (c && pressLevelNow() > 0) c.status = 'on';
+    }
+    else if (ch.kanal === 'stod') { const c = channelById(id); if (c) c.support = state.solo.clock.day + 120; }
+    else if (ch.kanal === 'kop') { const c = channelById(id); if (c) { c.owner = 'state'; c.lean = 'gov'; c.trust = Math.max(10, c.trust - 15); } }
+  }
+  if (ch.nykanal) {
+    const a = applicant(m, mediaVars(), state.solo.clock.day);
+    if (pressLevelNow() === 0) a.status = 'censored';
+    m.channels.push(a);
+    toast(`\u{1F4E1} ${a.name} BÖRJAR SÄNDA`, 'amber', 6000);
+  }
+  if (ch.fortroende) m.trustShock = Math.max(-40, Math.min(40, (m.trustShock || 0) + ch.fortroende));
+}
+function mediaEffectBits(ch) {
+  const bits = [];
+  const K = { stang: '\u{26D4} KANALEN STÄNGS', censur: '\u{2702}\u{FE0F} KANALEN CENSURERAS', fri: '\u{1F513} CENSUREN HÄVS', stod: '\u{1F4B0} KANALEN FÅR STÖD', kop: '\u{1F3DB}\u{FE0F} STATEN KÖPER KANALEN' };
+  if (ch.kanal) bits.push(`<span class="ec">${K[ch.kanal]}${ch.vars?.kanal ? ' (' + escHtml(String(ch.vars.kanal).toUpperCase()) + ')' : ''}</span>`);
+  if (ch.nykanal) bits.push('<span class="ep">\u{1F4E1} EN NY KANAL FÅR SÄNDA</span>');
+  if (ch.fortroende) bits.push(`<span class="${ch.fortroende > 0 ? 'ep' : 'en'}">${ch.fortroende > 0 ? '+' : ''}${ch.fortroende} FÖRTROENDE FÖR MEDIERNA</span>`);
+  return bits;
+}
+
+// ----- fliken MEDIA -----
+function renderMediaTab(body) {
+  const s = state.solo;
+  const m = mediaState();
+  body.innerHTML = '';
+  if (!m) return;
+  const gov = mediaGov();
+  const sum = mediaSummary(m, gov);
+  const pl = gov.pressLevel;
+  const pressOpt = LAWS.press?.options.find((o) => o.id === s.nation.laws.press);
+  const bar = (v, col) => `<span class="mbar"><i style="width:${Math.max(0, Math.min(100, v))}%;background:${col}"></i></span>`;
+  const climCol = sum.climate >= 25 ? '#4ae37a' : sum.climate <= -15 ? 'var(--red)' : 'var(--amber)';
+  // ▸ MEDIEKLIMATET
+  const g0 = document.createElement('div');
+  g0.className = 'natgroup';
+  g0.innerHTML = `<div class="gtitle">▸ MEDIEKLIMATET</div>
+    <div class="mgrid">
+      <div>PRESSLAGEN<b>${escHtml((pressOpt?.name || '').toUpperCase())} — ${PRESS_NAMES[pl]}</b></div>
+      <div>RÄCKVIDD<b>${sum.reach} % AV FOLKET</b>${bar(sum.reach, 'var(--holo)')}</div>
+      <div>FÖRTROENDE FÖR MEDIERNA<b>${sum.trust} %</b>${bar(sum.trust, sum.trust >= 50 ? '#4ae37a' : 'var(--amber)')}</div>
+      <div>MEDIERNA OM REGERINGEN<b style="color:${climCol}">${sum.climate > 0 ? '+' : ''}${sum.climate} ${sum.climate >= 25 ? 'VÄNLIGA' : sum.climate <= -15 ? 'KRITISKA' : 'BLANDADE'}</b>${bar(50 + sum.climate / 2, climCol)}</div>
+      <div>GRANSKANDE / VÄNLIGA<b>${sum.critical} % / ${sum.friendly} %</b></div>
+      <div>STATENS ANDEL<b>${sum.stateShare} %</b>${bar(sum.stateShare, 'var(--amber)')}</div>
+      <div>KANALER<b>${sum.channels}${sum.censored ? ` (${sum.censored} CENSURERADE)` : ''}${sum.banned ? ` • ${sum.banned} STÄNGDA` : ''}</b></div>
+      <div>KOSTNAD<b>${money(mediaCostPerDay())} / DAG</b></div>
+    </div>
+    <div class="ftext">MEDIERNA GER LANDET: ${deltaHtml(mediaSourceMods()) || 'INGENTING ÄN'}</div>`;
+  body.appendChild(g0);
+
+  // ▸ PUBLIC SERVICE
+  const ps = m.ps;
+  const g1 = document.createElement('div');
+  g1.className = 'natgroup';
+  g1.innerHTML = `<div class="gtitle">▸ PUBLIC SERVICE</div>
+    <div class="psname"><span class="mlogo" style="--h:205">${escHtml(channelInitials(ps.name))}</span><b>${escHtml(ps.name)}</b>
+      <small>${ps.budget ? `RÄCKVIDD ${sum.psReach} % • FÖRTROENDE ${sum.psTrust} % • ${TONES[psTone(ps, gov)].name}` : 'NEDLAGT'}</small></div>`;
+  const nameBtn = document.createElement('button');
+  nameBtn.className = 'lawopt';
+  nameBtn.textContent = '\u{270F}\u{FE0F} BYT NAMN';
+  nameBtn.addEventListener('click', () => {
+    const n = window.prompt('PUBLIC SERVICE-BOLAGETS NYA NAMN', ps.name);
+    const clean = String(n || '').replace(/[<>"&]/g, '').trim().toUpperCase().slice(0, 28);
+    if (clean.length >= 2) { ps.name = clean; logEvent(`\u{1F4FA} PUBLIC SERVICE HETER NU ${clean}`, { mine: true }); mediaChanged(); }
+  });
+  g1.querySelector('.psname').appendChild(nameBtn);
+  const row = (title, items) => {
+    const r = document.createElement('div');
+    r.className = 'mrow';
+    r.innerHTML = `<span class="mlab">${title}</span>`;
+    const box = document.createElement('div');
+    box.className = 'mopts';
+    for (const it of items) box.appendChild(it);
+    r.appendChild(box);
+    g1.appendChild(r);
+  };
+  const opt = (label, on, dis, hover, click) => {
+    const b = document.createElement('button');
+    b.className = 'lawopt' + (on ? ' cur' : '');
+    b.innerHTML = label;
+    if (dis) { b.disabled = true; b.title = dis; }
+    b.addEventListener('mouseenter', () => setPreview(dis ? `<span class="dn">\u{1F512} ${dis}</span>` : hover));
+    b.addEventListener('mouseleave', () => setPreview());
+    b.addEventListener('click', click);
+    return b;
+  };
+  const inc = moneyPerDay();
+  row('BUDGET', PS_BUDGETS.map((B, i) => opt(B.name, ps.budget === i, null,
+    `<span class="dc">${B.name} — ${money(Math.round(B.drift * (PS_FUNDING[ps.funding]?.drift ?? 1) / 100 * inc))} / DAG</span> &nbsp; RÄCKVIDD ~${B.reach} %${i === 0 ? ' — LANDSBYGDEN TAPPAR SINA NYHETER' : ''}`,
+    () => setPs('budget', i))));
+  row('FRIHET FRÅN REGERINGEN', PS_CONTROL.map((C, i) => opt(`${C.icon} ${C.name}`, ps.control === i,
+    pl > C.maxPress || pl < C.minPress ? `PRESSLAGEN (${PRESS_NAMES[pl]}) TILLÅTER INTE ${C.name}` : null,
+    `<span class="dc">${C.name} — ${COSTS.control * Math.abs(i - ps.control)} \u{2696}\u{FE0F}</span> &nbsp; ${deltaHtml(C.mods)}<span class="lawdesc">${C.desc}</span>`,
+    () => i !== ps.control && setPs('control', i))));
+  row('FINANSIERING', Object.entries(PS_FUNDING).map(([k, F]) => opt(`${F.icon} ${F.name}`, ps.funding === k, null,
+    `<span class="dc">${F.name} — ${COSTS.funding} \u{2696}\u{FE0F}</span> &nbsp; ${deltaHtml(F.mods)}<span class="lawdesc">${F.desc}</span>`,
+    () => k !== ps.funding && setPs('funding', k))));
+  row(`INNEHÅLL (HÖGST ${PS_FOCUS_MAX})`, Object.entries(PS_FOCUS).map(([k, F]) => opt(`${F.icon} ${F.name}`, ps.focus.includes(k), null,
+    `<span class="dc">${F.name} — ${COSTS.focus} \u{2696}\u{FE0F}</span> &nbsp; ${deltaHtml(ps.control >= 2 && F.govMods ? F.govMods : F.mods)}`,
+    () => setPs('focus', k))));
+  body.appendChild(g1);
+
+  // ▸ NYHETSKANALERNA
+  const g2 = document.createElement('div');
+  g2.className = 'natgroup';
+  g2.innerHTML = `<div class="gtitle">▸ NYHETSKANALERNA</div>`;
+  const list = document.createElement('div');
+  list.className = 'mchans';
+  for (const c of [...activeChannels(m)].sort((a, b) => b.reach - a.reach)) {
+    const st = mediaStance(c, gov), tone = channelTone(c, gov);
+    const card = document.createElement('div');
+    card.className = 'mchan' + (c.status === 'censored' ? ' cens' : '');
+    card.innerHTML = `<span class="mlogo" style="--h:${c.hue}">${escHtml(channelInitials(c.name))}</span>
+      <div class="mci"><b>${escHtml(c.name)}</b>
+        <small>${OWNERS[c.owner]?.icon || ''} ${OWNERS[c.owner]?.name || ''} • <span style="color:${LEANS[c.lean]?.color}">${LEANS[c.lean]?.name || ''}</span>${c.status === 'censored' ? ' • <span style="color:var(--red)">\u{2702}\u{FE0F} CENSURERAD</span>' : ''}${c.support > s.clock.day ? ' • \u{1F4B0} STÖD' : ''}</small>
+        <small>RÄCKVIDD ${c.reach} % • FÖRTROENDE ${Math.round(channelTrust(c))} % • <span style="color:${TONES[tone].color}">${TONES[tone].name} (${st > 0 ? '+' : ''}${st})</span></small></div>`;
+    const acts = document.createElement('div');
+    acts.className = 'macts';
+    const act = (label, title, fn, dis) => {
+      const b = document.createElement('button');
+      b.className = 'lawopt';
+      b.innerHTML = label;
+      b.title = title;
+      if (dis) b.disabled = true;
+      b.addEventListener('mouseenter', () => setPreview(`<span class="dc">${title}</span>`));
+      b.addEventListener('mouseleave', () => setPreview());
+      b.addEventListener('click', fn);
+      acts.appendChild(b);
+    };
+    if (c.owner !== 'state') {
+      if (c.support <= s.clock.day) act('\u{1F4B0} STÖD', `STATLIGT STÖD ETT ÅR — ${money(Math.round(COSTS.support / 100 * inc))} / DAG. KANALEN BLIR VÄNLIGARE`, () => supportChannel(c.id));
+      if (c.status === 'censored') act('\u{1F513} HÄV CENSUR', 'KANALEN FÅR SÄNDA FRITT IGEN', () => censorChannel(c.id, false), pl === 0);
+      else act('\u{2702}\u{FE0F} CENSURERA', `${COSTS.censor * (pl >= 3 ? 2 : 1)} \u{2696}\u{FE0F} — STATEN GRANSKAR ALLT INNAN DET SÄNDS. FRIHET OCH FÖRTROENDE SJUNKER`, () => censorChannel(c.id, true), pl >= 4);
+      act('\u{1F3DB}\u{FE0F} KÖP UPP', `STATEN KÖPER KANALEN FÖR ${money(Math.round(c.reach * COSTS.buyDays * inc))}`, () => buyChannel(c.id));
+    } else {
+      act('\u{1F4B5} SÄLJ', `SÄLJ KANALEN TILL PRIVATA ÄGARE FÖR ${money(Math.round(c.reach * COSTS.buyDays * 0.6 * inc))}`, () => sellChannel(c.id));
+    }
+    act('\u{26D4} STÄNG', `${COSTS.close * (pl >= 3 ? 2 : 1)} \u{2696}\u{FE0F} — KANALEN STÄNGS FÖR GOTT.${pl >= 2 ? ' FOLKET OCH OMVÄRLDEN REAGERAR' : ''}`, () => {
+      if (card.dataset.armed !== '1') { card.dataset.armed = '1'; toast(`TRYCK IGEN FÖR ATT STÄNGA ${c.name}`, 'red', 3000); return; }
+      closeChannel(c.id);
+    });
+    card.appendChild(acts);
+    list.appendChild(card);
+  }
+  if (!list.children.length) list.innerHTML = '<div class="ftext">INGA NYHETSKANALER SÄNDER I LANDET.</div>';
+  g2.appendChild(list);
+  // ansökningar och nya statskanaler
+  for (const a of m.apps) {
+    const r = document.createElement('div');
+    r.className = 'mapp';
+    r.innerHTML = `\u{2709}\u{FE0F} <b>${escHtml(a.name)}</b> (${OWNERS[a.owner]?.name || ''}, ${LEANS[a.lean]?.name || ''}) SÖKER SÄNDNINGSTILLSTÅND `;
+    const yes = document.createElement('button'); yes.className = 'lawopt'; yes.textContent = '\u{2705} BEVILJA';
+    yes.addEventListener('click', () => grantChannel(a.id));
+    const no = document.createElement('button'); no.className = 'lawopt'; no.textContent = '\u{274C} NEKA';
+    no.addEventListener('click', () => denyChannel(a.id));
+    r.append(yes, no);
+    g2.appendChild(r);
+  }
+  const start = document.createElement('button');
+  start.className = 'lawopt';
+  start.innerHTML = `\u{1F4E1} STARTA EN STATSKANAL — ${COSTS.startPP} \u{2696}\u{FE0F} + ${money(Math.round(COSTS.startDays * inc))}`;
+  start.addEventListener('click', () => {
+    const n = window.prompt('VAD SKA STATSKANALEN HETA?', `${realmName().toUpperCase()} NYHETER`);
+    if (n != null) startStateChannel(String(n).replace(/[<>"&]/g, '').trim() || null);
+  });
+  g2.appendChild(start);
+  if (m.banned.length) {
+    const b = document.createElement('div');
+    b.className = 'ftext';
+    b.innerHTML = `\u{26D4} STÄNGDA: `;
+    m.banned.slice(0, 8).forEach((x, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'lawopt';
+      btn.textContent = `${x.name} (DAG ${x.day}) — \u{1F513} ÖPPNA`;
+      btn.disabled = pl === 0;
+      btn.addEventListener('click', () => reopenChannel(i));
+      b.appendChild(btn);
+    });
+    g2.appendChild(b);
+  }
+  body.appendChild(g2);
+
+  // ▸ NYHETSFLÖDET
+  const g3 = document.createElement('div');
+  g3.className = 'natgroup';
+  const items = (s.news || []).slice(0, 30);
+  g3.innerHTML = `<div class="gtitle">▸ NYHETSFLÖDET</div>`
+    + (items.length ? items.map((x) => `<div class="mnews"><span class="d">DAG ${x.d}</span><span class="nk" style="--h:${x.hue}">${escHtml(x.ch)}</span><span class="nt ${x.tone}">${escHtml(x.t)}</span></div>`).join('')
+      : '<div class="ftext">INGA NYHETER ÄN — DE KOMMER NÄR NÅGOT HÄNDER.</div>');
+  const tg = document.createElement('button');
+  tg.className = 'lawopt';
+  tg.textContent = localStorage.getItem('imperium.ticker') === 'off' ? '\u{1F4FA} VISA NYHETSBANDET' : '\u{1F4FA} DÖLJ NYHETSBANDET';
+  tg.addEventListener('click', () => { toggleTicker(); renderNationTab(); });
+  g3.appendChild(tg);
+  body.appendChild(g3);
+}
+function toggleTicker() {
+  try {
+    const off = localStorage.getItem('imperium.ticker') === 'off';
+    localStorage.setItem('imperium.ticker', off ? 'on' : 'off');
+  } catch { /* privat läge */ }
+  const el = $('#newsticker');
+  if (el) el.dataset.sig = '';
+  renderTicker();
 }
 
 // ---------- V5.13: BANKEN — statsskulden betalas av varje månad ----------
@@ -6044,6 +7104,7 @@ function stateBankrupt() {
   b.plan = RATINGS[RATINGS.length - 1].term;
   b.months = b.plan * MONTHS_PER_YEAR;
   toast('\u{1F4A5} STATSBANKRUTT! BANKEN STRYKER HALVA SKULDEN — MEN LANDET HAMNAR I KRIS OCH FÅR INGA NYA LÅN', 'red', 14000);
+  newsFor('bankrupt');   // V5.20
   logEvent('\u{1F4A5} STATSBANKRUTT — HALVA SKULDEN STRUKEN, BETYGET D I ETT ÅR', { mine: true, war: true });
   recomputeNation();
 }
@@ -6190,15 +7251,21 @@ function renderBankTab(body) {
 function extremeNote(cat, o) {
   const s = state.solo;
   if (o.utopia) {
-    const cur = s.nation.laws[cat] === o.id ? extremeLaws().utopia.find((u) => u.cat === cat) : null;
-    const st = o.stingStart ?? STING_START, sd = o.stingDays ?? STING_DAYS;   // V5.19: buffade utopier spricker senare
+    const ex = extremeLaws();
+    const cur = s.nation.laws[cat] === o.id ? ex.utopia.find((u) => u.cat === cat) : null;
+    const st = o.stingStart ?? STING_START;
+    // V5.20: sprickan är en risk — visa den som den ser ut just nu
+    const n = ex.utopia.length + (cur ? 0 : 1);
+    const risk = (age) => Math.round(crackChance(Math.max(age, st), o, statTotals(s.stats), n) * 100);
     const how = cur
-      ? (cur.f > 0 ? `SPRICKER: ${Math.round(cur.f * 100)} %` : `HÅLLER ÄN — ${Math.max(0, st - cur.age)} DAGAR KVAR TILL FÖRSTA SPRICKAN`)
-      : `LÅTER FANTASTISKT — MEN HUR DET GÅR I LÄNGDEN VISAR SIG FÖRST EFTER ETT PAR ÅR (${Math.round((st + sd) / YEAR_DAYS)} SPELÅR)`;
+      ? (cur.cracked ? `SPRICKER: ${Math.round(cur.f * 100)} % — RIV DEN ELLER HÅLL UT`
+        : cur.age < st ? `HÅLLER — SÄKER I ${st - cur.age} DAGAR TILL, SEDAN ~${risk(st)} % RISK I MÅNADEN ATT DEN SPRICKER`
+        : `HÅLLER — RISK ATT DEN SPRICKER: ~${risk(cur.age)} % I MÅNADEN (VÄXER MED TIDEN)`)
+      : `DET BÄSTA AV DET BÄSTA — SÄKER I ${st} DAGAR, SEDAN ~${risk(st)} % RISK I MÅNADEN ATT DEN SPRICKER (VÄXER MED TIDEN; STABILITET SÄNKER, ORO OCH KORRUPTION HÖJER)`;
     return `<span class="lawx utopia">\u{2728} UTOPI: ${how}</span>`;
   }
   if (o.brutal) {
-    return `<span class="lawx brutal">\u{1F480} BRUTALT: FUNGERAR DIREKT, MEN VÄRLDEN FÖRDÖMER DIG (RELATIONERNA SJUNKER MED UPP TILL ${Math.round((o.shame || 6) * 1.5)} HOS FRIA LÄNDER SÅ LÄNGE LAGEN GÄLLER) OCH FOLKET GLÖMMER INTE</span>`;
+    return `<span class="lawx brutal">\u{1F480} BRUTALT: VÄRLDEN FÖRDÖMER DIG (RELATIONERNA SJUNKER MED UPP TILL ${Math.round((o.shame || 6) * 1.5)} HOS FRIA LÄNDER SÅ LÄNGE LAGEN GÄLLER) OCH FOLKET GLÖMMER INTE</span>`;
   }
   return '';
 }
@@ -6326,7 +7393,7 @@ function renderLawsTab(body) {
       btn.textContent = (locked ? '\u{1F512} ' : isFav ? '\u{2605} ' : '')
         + (o.utopia ? '\u{2728} ' : o.brutal ? '\u{1F480} ' : '') + o.name.toUpperCase() + tTag;
       // beskrivningen förklarar vad lagen FAKTISKT innebär om den aktiveras
-      const lawDesc = extremeNote(cat, o) + tuneNote(o.tune) + (o.desc ? `<span class="lawdesc">${o.desc}</span>` : '');
+      const lawDesc = extremeNote(cat, o) + tuneNote(o.tune, o) + (o.desc ? `<span class="lawdesc">${o.desc}</span>` : '');
       btn.addEventListener('mouseenter', () => {
         if (locked) { setPreview(`<span class="dn">\u{1F512} ${locked.toUpperCase()}</span>` + lawDesc); return; }
         if (isCur) { setPreview(`<span class="dc">${o.name.toUpperCase()} — NUVARANDE LAG</span>` + lawDesc); return; }
@@ -6489,6 +7556,7 @@ function renderIdeologyTab(body) {
       natIdeoPick = null;
       recomputeNation(); renderResbar(); renderNationTab();
       toast(`NY IDEOLOGI: ${pick.icon} ${pick.name.toUpperCase()} (+30 ORO ETT TAG)`, 'amber', 5000);
+      newsFor('ideology', { val: pick.name }, 2);   // V5.20
       offerFlag("ideology", s.nation.ideology);
       if (forced.length) toast('LAGAR TVINGADES OM: ' + forced.map((c) => LAWS[c].name.toUpperCase()).join(', '), 'red', 6000);
     });
@@ -6771,6 +7839,7 @@ $('#nationbtn').addEventListener('click', openNation);
 $('#natclose').addEventListener('click', () => $('#nation').classList.remove('show'));
 $('#cpclose').addEventListener('click', () => $('#citypanel').classList.remove('show'));
 document.querySelectorAll('.nattab').forEach((el) => el.addEventListener('click', () => {
+  if (natTab !== el.dataset.tab) $('#natbody').scrollTop = 0;   // V5.20: en ny flik börjar överst
   natTab = el.dataset.tab;
   renderNationTab();
 }));
@@ -7526,6 +8595,7 @@ function finishBattle(result) {
   }
 
   const victory = result.winner === 0;
+  if (!result.retreat) newsFor(victory ? 'war_won' : 'war_lost', { land: target?.name || '' });   // V5.20
   if (victory) {
     // segern ger KRAVSKÄRMEN — vad du får styrs av ditt casus belli
     const war = s.wars[target.id];
@@ -8140,6 +9210,7 @@ function startTV(wantCode) {
           : null;
         player.factionIcon = d?.faction || '';
         player.realm = String(d?.realm || '').replace(/[<>"&]/g, '').slice(0, 22);   // V5.12: nytt landsnamn
+        player.flagSpec = d?.flagSpec ? cleanSpec(d.flagSpec) : null;   // V5.20
         player.boost = d?.boost && typeof d.boost === 'object' ? d.boost : {};
         player.kenneyRow = Number(d?.kenneyRow) || 8;
         player.units = Array.isArray(d?.units) ? d.units.slice(0, 40) : [];
@@ -8690,7 +9761,7 @@ function gamePayload() {
         // V5.16: lagar som slår igenom, missnöjet, lagändringarna och statistikens historik
         lawFx: s.lawFx, ideoFx: s.ideoFx, griev: s.griev || {}, lawLog: s.lawLog || [], indHist: s.indHist || [],
         lawFxBy: s.lawFxBy || null,   // V5.19
-        lawSince: s.lawSince || {}, utopiaWarned: s.utopiaWarned || {},   // V5.17
+        lawSince: s.lawSince || {}, utopiaWarned: s.utopiaWarned || {}, crackAt: s.crackAt || {}, expelled: s.expelled || 0, media: s.media || null, news: (s.news || []).slice(0, 40), symbols: s.symbols || null,   // V5.17
         crimeHist: s.crimeHist || [], crimeNews: s.crimeNews || [], crimeStart: s.crimeStart || 0,   // V5.18
       },
       world: state.world || {},
@@ -8768,7 +9839,7 @@ function saveSession() {
       eventQueue: s.eventQueue || [],   // V5.15
       lawFx: s.lawFx, ideoFx: s.ideoFx, griev: s.griev || {}, lawLog: s.lawLog || [], indHist: s.indHist || [],   // V5.16
       lawFxBy: s.lawFxBy || null,   // V5.19
-      lawSince: s.lawSince || {}, utopiaWarned: s.utopiaWarned || {},   // V5.17
+      lawSince: s.lawSince || {}, utopiaWarned: s.utopiaWarned || {}, crackAt: s.crackAt || {}, expelled: s.expelled || 0, media: s.media || null, news: (s.news || []).slice(0, 40), symbols: s.symbols || null,   // V5.17
       crimeHist: s.crimeHist || [], crimeNews: s.crimeNews || [], crimeStart: s.crimeStart || 0,   // V5.18
     }));
   } catch (e) { /* privat läge / fullt lager — strunt samma */ }
@@ -8784,6 +9855,17 @@ function loadSession() {
 }
 
 // bygg upp nationen igen från ögonblicksbilden i stället för att börja om
+// V5.20: sprickan är en risk (s.crackAt). Ett parti från före 5.20 saknar fältet —
+// utopier som redan var äldre än 50 dagar fortsätter spricka där de var.
+function migrateCrack(s) {
+  if (s.crackAt) return;
+  s.crackAt = {};
+  for (const [cat, id] of Object.entries(s.nation?.laws || {})) {
+    const o = lawOption(cat, id), since = s.lawSince?.[cat];
+    if (o?.utopia && since != null && (s.clock?.day || 0) - since > 50) s.crackAt[cat] = since + 50;
+  }
+}
+
 function restoreSession(snap, home) {
   const s = state.solo;
   if (!s || !snap || snap.home !== home) return false;
@@ -8815,6 +9897,11 @@ function restoreSession(snap, home) {
   s.lawFxBy = snap.lawFxBy || null;   // V5.19
   s.griev = snap.griev || {}; s.lawLog = snap.lawLog || []; s.indHist = snap.indHist || [];
   s.lawSince = snap.lawSince || {}; s.utopiaWarned = snap.utopiaWarned || {};   // V5.17
+  // V5.20: sprickan är en risk — ett äldre parti fortsätter spricka där det var
+  s.crackAt = snap.crackAt || null; s.expelled = snap.expelled || 0;
+  s.media = snap.media || null; s.news = snap.news || [];   // V5.20
+  s.symbols = snap.symbols || null;
+  migrateCrack(s);
   s.crimeHist = snap.crimeHist || []; s.crimeNews = snap.crimeNews || []; s.crimeStart = snap.crimeStart || 0;   // V5.18
   s.ident = snap.ident || null;   // V5.12
   s.bank = snap.bank || null;   // V5.13
@@ -8850,6 +9937,7 @@ function startNationSync() {
       leaderDesc: s.leader ? leaderDesc(s.leader) : '',
       formation: s.nation.formation ? { name: s.nation.formation.name, icon: s.nation.formation.icon } : null,
       realm: s.ident?.renamed ? s.ident.short : '',   // V5.12
+      flagSpec: s.flag?.type === 'custom' ? s.flag.spec : null,   // V5.20: egen flagga syns för de andra
       faction: FACTIONS[s.faction]?.icon || '',
       boost: battleBoost(),                       // stridsbonus, så PvP blir rättvist
       kenneyRow: FACTIONS[s.faction]?.kenneyRow ?? 8,
@@ -8975,6 +10063,7 @@ function resumeGame(g, id = null, meta = null) {
       applyPendingPops();
       // V5.6: lagkategorier som tillkommit sedan partiet sparades börjar i startläget
       if (s.nation) s.nation.laws = { ...defaultLaws(), ...(s.nation.laws || {}) };
+      s.crackAt = g.solo.crackAt || null; migrateCrack(s);   // V5.20
       if (s.faction) applyFaction(FACTIONS[s.faction]);
       recomputeNation();
       $('#resbar').style.display = 'flex';
@@ -9245,6 +10334,7 @@ $('#savefile').addEventListener('change', async (e) => {
   renderSavesPanel(r.err ? `<span style="color:var(--red)">${r.err}</span>` : `\u{2B06} ${escHtml(String(r.meta.name).toUpperCase())} ÄR UPPLADDAT — TRYCK SPELA`);
 });
 $('#savebtn').addEventListener('click', () => openSavesPanel());
+$('#tickerbtn').addEventListener('click', () => toggleTicker());   // V5.20
 
 // ett parti som valdes medan ett annat pågick öppnas direkt efter omladdningen
 const pendingLoad = (() => {
@@ -9353,4 +10443,5 @@ window.__imperium = {
   myIndicators, noteLawChange, applyShock, creditLine, spendable, policyGoalStats, eventCtx, applyChoice,   // V5.16
   extremeLaws, utopiaMods, buildingMods, buildingYield, openCityPanel, renderCityPanel, undoExtreme, BUILDINGS, moneyPerDay,   // V5.17
   renderCrimeTab, tickCrime, crimeRise, openSavesPanel, listSaves,   // V5.18
+  renderTicker, newsFor, mediaState, mediaSum, tickMedia, tickExtremes, closeChannel, censorChannel, setPs, grantChannel,   // V5.20
 };
