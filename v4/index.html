@@ -815,6 +815,27 @@
   .macts { display: flex; flex-wrap: wrap; gap: 3px; width: 100%; }
   .macts .lawopt { padding: 4px 6px; font-size: 6px; }
   .mapp { font-size: 7px; color: var(--holo); line-height: 2; margin: 4px 0; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  /* V5.21 MYNDIGHETERNA */
+  .aglist { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 6px; margin: 6px 0; }
+  .agcard { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; padding: 6px; border: 1px solid rgba(55,224,255,0.18); background: rgba(0,12,20,0.45); }
+  .agcard.closed { border-color: rgba(255,79,79,0.45); opacity: 0.75; }
+  .agcard.closed .aglogo { filter: grayscale(1); }
+  .agcard.own { border-color: rgba(255,176,46,0.45); }
+  .aglogo { flex: none; line-height: 0; }
+  .agi { flex: 1; min-width: 170px; font-size: 6px; color: var(--holo-dim); line-height: 1.9; }
+  .agi b.agn { display: block; font-size: 8px; color: var(--text); font-weight: normal; letter-spacing: 0.5px; line-height: 1.5; margin-bottom: 2px; }
+  .agi small { display: block; font-size: 6px; }
+  .agi small b { font-weight: normal; color: var(--text); }
+  .agn, .agsv { text-transform: uppercase; font-family: 'Press Start 2P', 'Segoe UI', 'Noto Sans', sans-serif; }
+  .agt { color: var(--holo); font-style: normal; }
+  .agsv { color: var(--amber); }
+  .agstar { color: var(--amber); letter-spacing: -1px; }
+  .agbud { display: flex; flex-wrap: wrap; gap: 2px; width: 100%; }
+  .agbud .lawopt { padding: 4px 5px; font-size: 6px; flex: 1 1 auto; }
+  .agbud .lawopt.cur { background: rgba(255,176,46,0.22); border-color: var(--amber); color: var(--amber); }
+  .agkinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 3px; margin: 6px 0; }
+  .agkinds .lawopt { font-size: 6px; padding: 5px 6px; text-align: left; }
+  .dzlogo { padding: 8px; background: rgba(0,0,0,0.25); line-height: 0; display: flex; justify-content: center; }
   .mnews { display: flex; gap: 8px; align-items: baseline; font-size: 7px; line-height: 1.8; padding: 2px 0; border-bottom: 1px solid rgba(55,224,255,0.07); }
   .mnews .d { flex: 0 0 52px; color: var(--holo-dim); font-size: 6px; }
   .nk { --h: 205; color: hsl(var(--h), 85%, 70%); white-space: nowrap; letter-spacing: 0.5px; }
@@ -1312,6 +1333,7 @@
       <button class="nattab on" data-tab="oversikt">ÖVERSIKT</button>
       <button class="nattab" data-tab="landet">LANDET</button>
       <button class="nattab" data-tab="media">&#128250; MEDIA</button>
+      <button class="nattab" data-tab="myndigheter">&#127963;&#65039; MYNDIGHETER</button>
       <button class="nattab" data-tab="banken">BANKEN</button>
       <button class="nattab" data-tab="statistik">STATISTIK</button>
       <button class="nattab" data-tab="brott">&#128680; BROTT</button>

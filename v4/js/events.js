@@ -82,6 +82,13 @@ import { money, people } from './real.js';
 //   Platshållare {kanal} (största kritiska kanalen, annars den största — kräver att when frågar
 //   c.media.channels) och {ps}. Valen kan ha kanal: 'stang'|'censur'|'stod'|'fri'|'kop',
 //   nykanal: true och fortroende: ±N (folkets förtroende för medierna, klingar av).
+//
+// V5.21 MYNDIGHETERNA (agencies.js, fliken MYNDIGHETER):
+//   c.myn.count, open, closed, big, cut   antal myndigheter · öppna · nedlagda · över / under normal budget
+//   c.myn.skill, spend                    generaldirektörernas snitt 1–5 · budgeten i % av den normala
+//   c.myn.kinds.<slag>                    budgetnivån för den första av slaget (0 nedlagd … 3 normal … 6 enorm, −1 = ingen)
+//   Fältet myn: '<slag>' | 'any' väljer myndigheten (kräver c.myn.kinds.<slag> >= 1 / c.myn.open i when).
+//   Platshållare {myndighet} och {slag}. Valen kan ha mynBudget: ±N, mynChef: true, mynSkill: ±N, mynStang: true.
 
 import { EVENTS as EKONOMI } from './events/ekonomi.js';
 import { EVENTS as HALSA } from './events/halsa.js';
@@ -116,6 +123,7 @@ import { EVENTS as DEMOKRATI } from './events/demokrati.js';
 import { EVENTS as YTTERLIGHETER } from './events/ytterligheter.js';
 import { EVENTS as BROTT } from './events/brott.js';   // V5.18 LAG OCH ORDNING
 import { EVENTS as MEDIER } from './events/medier.js';   // V5.20 MEDIERNA
+import { EVENTS as MYNDIGHETER } from './events/myndigheter.js';   // V5.21 MYNDIGHETERNA
 import { EVENTS as SAMHALLSLIV } from './events/samhallsliv.js';
 import { EVENTS as KONSEKVENSER } from './events/konsekvenser.js';
 
@@ -1128,7 +1136,7 @@ export const EVENTS = [
   ...NYA_IDEOLOGIER, ...MILITAR, ...VETENSKAP, ...SAMHALLE, ...OMVARLD, ...KALLA_KRIGET, ...NYA_LAGAR_58,
   ...VARDAG, ...KATASTROF, ...AFFARER, ...DIPLOMATI, ...INTRIGER, ...FRAMTID, ...KURIOSA, ...KEDJOR, ...RIKET,
   ...REAKTIONER, ...PROTESTER, ...MIGRATION, ...STATSFINANS, ...DEMOKRATI, ...SAMHALLSLIV, ...KONSEKVENSER,
-  ...YTTERLIGHETER, ...BROTT, ...MEDIER,
+  ...YTTERLIGHETER, ...BROTT, ...MEDIER, ...MYNDIGHETER,
 ];
 
 export const EVENT_BY_ID = Object.fromEntries(EVENTS.map((e) => [e.id, e]));

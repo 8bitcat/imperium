@@ -191,7 +191,8 @@ export const NO_LAG = new Set(['pop', 'area', 'density', 'gdp', 'gdpppp', 'taxre
   'reserve', 'births', 'deaths', 'popchange', 'demo', 'regime', 'urbanpop', 'ruralpop', 'households', 'kidsn', 'oldn',
   'workage', 'pop25', 'doubling', 'griev', 'treasury', 'deficitusd', 'debtusd', 'debtpc', 'rating', 'bondrate',
   'interestusd', 'budgetbal', 'crimetotal', 'crimecount', 'convicted',
-  'mediareach', 'mediatrust', 'psreach', 'statemedia', 'critmedia', 'channels', 'censored']);   // V5.20: medierna
+  'mediareach', 'mediatrust', 'psreach', 'statemedia', 'critmedia', 'channels', 'censored',   // V5.20: medierna
+  'agencies', 'agencyspend', 'agencyskill', 'agencyclosed']);   // V5.21: myndigheterna
 
 export function speedOf(id, group) {
   if (SPEED[id]) return SPEED[id];

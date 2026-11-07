@@ -15,6 +15,9 @@ import { tuneNote } from './tuning.js';   // V5.19 BUFFAR OCH DEBUFFAR
 import { initMedia, mediaSummary, mediaMods, mediaCostPct, mediaIndTargets, pressLevelOf, PRESS_NAMES, PS_BUDGETS, PS_CONTROL,
   PS_FUNDING, PS_FOCUS, PS_FOCUS_MAX, LEANS, OWNERS, TONES, COSTS, stanceOf as mediaStance, channelTone, psTone, psReach, channelTrust,
   activeChannels, headline, filler, applicant, stateChannel, channelInitials } from './media.js';   // V5.20 MEDIERNA
+import { BUDGETS as AG_BUDGETS, NORMAL as AG_NORMAL, SKILLS as AG_SKILLS, AG_COSTS, KINDS as AG_KINDS, KIND_IDS as AG_KIND_IDS,
+  LOGO_STYLES, EMBLEMS, emblemSvg, logoSvg, cleanLogo, defaultLogo, agencyListFor, initAgencies, newAgency, agencyMods,
+  agencyCostPct, agencyBudgetPct, agencyIndTargets, agencySummary, agencyModsAt, rollSkill, hasRealAgencies } from './agencies.js';   // V5.21 MYNDIGHETERNA
 import { RESEARCH, researchMods, combatBonus, hasUnlock, logisticsRange, satCoverage, espionageTier,
   tierOf, tierCost, tierDays, missingNeeds, unitUpgrades, UNIT_STATS, ENDLESS_NAME, roman } from './research.js';
 import { MODIFIERS, modifierMods, tickModifiers, tickTrend, grant as grantMod, revoke as revokeMod, activeList as modList } from './modifiers.js';
@@ -77,9 +80,9 @@ function puppetColor() { const c = soloColor(); return lumOf(c) > 200 ? mixHex(c
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.20.0';
+export const VERSION = '5.21.0';
 export const VERSION_DATE = '2026-11-07';
-export const VERSION_NAME = 'MEDIER OCH REVOLUTION';
+export const VERSION_NAME = 'MYNDIGHETERNA';
 
 const globe = new Globe($('#globe'));
 
@@ -1518,6 +1521,7 @@ function initNation(countryId) {
   s.lawFxBy = null;   // V5.19: varje lags genomslag för sig
   s.crimeHist = []; s.crimeNews = []; s.crimeStart = 0;   // V5.18
   s.media = null; s.news = [];   // V5.20: medierna skapas när de först behövs (mediaState)
+  s.agencies = null;             // V5.21: myndigheterna likaså (agencyState)
   s.lawSince = {}; s.utopiaWarned = {}; s.crackAt = {};   // V5.17: när ytterlighetslagarna antogs (V5.20: + när utopin sprack)
   recomputeNation();
   $('#resbar').style.display = 'flex';
@@ -1551,6 +1555,7 @@ function recomputeNation() {
     utopia: utopiaMods(),                        // V5.17: utopier som spricker
     buildings: buildingMods(),                   // V5.17: stadsbyggnaderna (täckning i riket)
     media: mediaSourceMods(),                    // V5.20: public service och nyhetskanalerna
+    agencies: agencySourceMods(),                // V5.21: myndigheternas budget
   };
   s.stats = computeStats(s.nation, s.nationSources);
   syncFaith();
@@ -2071,6 +2076,20 @@ function applyGameToIndicators(out) {
       out[k] = Math.max(d?.min ?? (k === 'pressfree' ? 0 : -1e9), Math.min(d?.max ?? (k === 'pressfree' ? 100 : 1e9), out[k] + v));
     }
   }
+  // V5.21: myndigheterna drar sina mått — plus (fx) eller gånger (mul), glider i tickAgencies
+  const ag = s?.agencies;
+  if (ag) {
+    for (const [k, v] of Object.entries(ag.fx || {})) {
+      if (!Number.isFinite(out[k]) || !v) continue;
+      const d = IND[k];
+      out[k] = Math.max(d?.min ?? -1e15, Math.min(d?.max ?? 1e15, out[k] + v));
+    }
+    for (const [k, f] of Object.entries(ag.mul || {})) {
+      if (!Number.isFinite(out[k]) || !f || f === 1) continue;
+      const d = IND[k];
+      out[k] = Math.max(d?.min ?? 0, Math.min(d?.max ?? 1e15, out[k] * f));
+    }
+  }
   if (s?.bank && hasIndicatorData()) {
     out.rating = bankRating().idx;
     // underskottet i statskassan är en del av budgetunderskottet
@@ -2084,6 +2103,11 @@ function applyGameToIndicators(out) {
     out._media = true;
     Object.assign(out, { mediareach: ms.reach, mediatrust: ms.trust, psreach: ms.psReach, statemedia: ms.stateShare,
       critmedia: ms.critical, channels: ms.channels, censored: ms.censored });
+  }
+  if (ag) {
+    const as = agencySummary(ag);
+    out._myn = true;
+    Object.assign(out, { agencies: as.open, agencyspend: as.spend, agencyskill: Math.max(0, (as.skill - 1) * 2.5), agencyclosed: as.closed });
   }
   if (s?.bank && Number.isFinite(out.debtusd)) {
     const R = RATINGS[bankRating().idx];
@@ -3561,6 +3585,7 @@ function tickDay() {
   tickIndHist();  // V5.16: bilder av statistiken för trenderna
   tickCrime();    // V5.18: brottskurvan och brottskrönikan
   tickMedia();    // V5.20: medierna, deras kostnad och nyhetsbandet
+  tickAgencies(); // V5.21: myndigheternas budget och vart de drar statistiken
   tickNatDay();   // V5.20: nationaldagen
   tickDiplomacy();
   tickBlocApplications();
@@ -3874,6 +3899,7 @@ function eventCtx() {
     crimeRise: crimeRise(ind),
     // V5.20 MEDIERNA
     media: mediaCtx(),
+    myn: agencyCtx(),   // V5.21
   };
 }
 
@@ -4029,6 +4055,8 @@ function eventInstance(ev, vars = null) {
   }
   // V5.20: {kanal} = den största kritiska kanalen (annars den största), {ps} = public service
   if (!v.kanalId && !v.ps) Object.assign(v, mediaEventVars());
+  // V5.21: {myndighet} = myndigheten av händelsens slag (ev.myn), {slag} = vad den sysslar med
+  if (ev.myn && !v.mynId) Object.assign(v, agencyEventVars(ev.myn));
   const f = Math.max(1, Math.sqrt(moneyPerDay() / 80)) * (0.8 + Math.random() * 0.45);
   const jit = () => 0.8 + Math.random() * 0.45;
   const scale = (o) => {
@@ -4085,6 +4113,7 @@ function effectHtml(ch) {
     bits.push(`<span class="${good == null ? 'ec' : good ? 'ep' : 'en'}">\u{1F4CA} ${d.name.toUpperCase()} ${v > 0 ? '+' : ''}${fmtNum(v)}${unit}</span>`);
   }
   bits.push(...mediaEffectBits(ch));   // V5.20
+  bits.push(...agencyEffectBits(ch));  // V5.21
   // V5.15: chansval (egen rad) och följder
   if (ch.next) bits.push('<span class="enext">\u{23F3} DET HÄR KAN FÅ FÖLJDER…</span>');
   let risk = '';
@@ -4194,6 +4223,7 @@ function applyChoice(ch) {
   for (const [k, v] of Object.entries(ch.ind || {})) applyShock(k, v);
   if (ch.rel) for (const cid of Object.keys(s.rel || {})) relChange(cid, ch.rel);
   applyMediaChoice(ch);   // V5.20: kanal / nykanal / fortroende
+  applyAgencyChoice(ch);  // V5.21: mynBudget / mynChef / mynSkill / mynStang
   // V5.15: följdhändelse om 10–45 dagar (kanske — next kan innehålla null)
   const nx = rollNext(ch.next);
   if (nx) (s.eventQueue ||= []).push({ id: nx, day: s.clock.day + 10 + Math.floor(Math.random() * 36), vars: ch.vars || null });
@@ -5572,6 +5602,7 @@ function renderNationTab() {
   if (natTab === 'brott') return renderCrimeTab(body);   // V5.18
   if (natTab === 'landet') return renderLandTab(body);   // V5.12
   if (natTab === 'media') return renderMediaTab(body);   // V5.20
+  if (natTab === 'myndigheter') return renderAgencyTab(body);   // V5.21
   if (natTab === 'banken') return renderBankTab(body);   // V5.13
   if (natTab === 'lagar') return renderLawsTab(body);
   if (natTab === 'ideologi') return renderIdeologyTab(body);
@@ -5980,13 +6011,19 @@ function syncFlagVisuals() {
 }
 
 // ----- designfönstret -----
-const dz = { mode: null, draft: null, slot: 0, symTab: 'shape' };
-function openDesigner(mode) {
+const dz = { mode: null, draft: null, slot: 0, symTab: 'shape', agency: null };
+function openDesigner(mode, agencyId = null) {
   const s = state.solo;
   if (!s?.home) return;
   const nc = colorsOf(s.home);
   dz.mode = mode; dz.slot = 0;
-  if (mode === 'flag') {
+  if (mode === 'logo') {
+    // V5.21: en myndighets logga
+    const a = agencyById(agencyId);
+    if (!a) return;
+    dz.agency = a.id;
+    dz.draft = cleanLogo(a.logo);
+  } else if (mode === 'flag') {
     const cur = s.flag?.type === 'custom' ? s.flag.spec : null;
     dz.draft = cleanSpec(cur || myFlagSpec() || { ...presetSpecs(nc)[0], name: '' });
   } else if (mode === 'pass') {
@@ -6007,7 +6044,12 @@ function openDesigner(mode) {
 function dzPreview() {
   const d = dz.draft;
   const box = $('#dzPrev');
-  if (dz.mode === 'flag') {
+  if (dz.mode === 'logo') {
+    const a = agencyById(dz.agency);
+    box.innerHTML = `<div class="dzlogo">${logoSvg(d, 170)}</div>
+      <div class="dzname">${escHtml(a?.n || '')}</div>
+      <div class="dzmini"><span>${logoSvg(d, 24)}</span> <span>${logoSvg(d, 46)}</span> <span>${logoSvg(d, 80)}</span></div>`;
+  } else if (dz.mode === 'flag') {
     box.innerHTML = `<div class="dzflag">${flagSvg(d, 240)}</div>
       <div class="dzname">${escHtml((d.name || 'EGEN FLAGGA').toUpperCase())}</div>
       <div class="dzmini"><span>${flagSvg(d, 34)}</span> PÅ KARTAN &nbsp; <span>${flagSvg(d, 60)}</span> I LANDSFAKTA</div>`;
@@ -6029,9 +6071,10 @@ function renderDesigner() {
   const d = dz.draft;
   const ctl = $('#dzCtl');
   ctl.innerHTML = '';
-  $('#dzTitle').textContent = dz.mode === 'flag' ? '\u{1F6A9} FLAGGSKAPAREN' : dz.mode === 'pass' ? '\u{1F6C2} PASSKONTORET' : '\u{1F6E1}\u{FE0F} RIKETS SYMBOLER';
-  $('#dzGo').textContent = dz.mode === 'flag' ? '\u{1F6A9} HISSA FLAGGAN' : dz.mode === 'pass' ? '\u{1F6C2} TRYCK DE NYA PASSEN' : '\u{2705} SPARA SYMBOLERNA';
-  $('#dzReal').style.display = dz.mode === 'flag' ? '' : 'none';
+  $('#dzTitle').textContent = dz.mode === 'logo' ? '\u{1F3A8} LOGGAN' : dz.mode === 'flag' ? '\u{1F6A9} FLAGGSKAPAREN' : dz.mode === 'pass' ? '\u{1F6C2} PASSKONTORET' : '\u{1F6E1}\u{FE0F} RIKETS SYMBOLER';
+  $('#dzGo').textContent = dz.mode === 'logo' ? '\u{2705} ANVÄND LOGGAN' : dz.mode === 'flag' ? '\u{1F6A9} HISSA FLAGGAN' : dz.mode === 'pass' ? '\u{1F6C2} TRYCK DE NYA PASSEN' : '\u{2705} SPARA SYMBOLERNA';
+  $('#dzReal').style.display = dz.mode === 'flag' || dz.mode === 'logo' ? '' : 'none';
+  $('#dzReal').textContent = dz.mode === 'logo' ? 'ORIGINALLOGGAN' : 'LANDETS RIKTIGA FLAGGA';
   const sec = (t) => { const x = document.createElement('div'); x.className = 'dzsec'; x.textContent = t; ctl.appendChild(x); return x; };
   const row = (cls = 'dzrow') => { const x = document.createElement('div'); x.className = cls; ctl.appendChild(x); return x; };
   const btn = (parent, html, on, fn, title = '') => {
@@ -6067,7 +6110,24 @@ function renderDesigner() {
     l.appendChild(i);
     ctl.appendChild(l);
   };
-  if (dz.mode === 'flag') {
+  if (dz.mode === 'logo') {
+    sec('STIL');
+    const lr = row('dzrow dzlay');
+    for (const [id, name] of Object.entries(LOGO_STYLES)) btn(lr, logoSvg({ ...d, st: id }, 40) + `<small>${name}</small>`, d.st === id, () => { d.st = id; });
+    sec('FÄRGER — VÄLJ RUTA, SEDAN FÄRG');
+    const sr = row();
+    ['BAKGRUNDEN', 'BILDEN OCH TEXTEN'].forEach((t, i) => {
+      const b = btn(sr, `<i style="background:${i ? d.fg : d.bg}"></i>${t}`, dz.slot === i, () => { dz.slot = i; });
+      b.classList.add('dzslot');
+    });
+    colorRow(dz.slot ? d.fg : d.bg, (c) => { if (dz.slot) d.fg = c; else d.bg = c; });
+    const sw = row();
+    btn(sw, '\u{21C4} BYT PLATS PÅ FÄRGERNA', false, () => { [d.bg, d.fg] = [d.fg, d.bg]; });
+    sec('BILD');
+    const er = row('dzrow dzsyms');
+    for (const e of EMBLEMS) btn(er, `<svg viewBox="0 0 100 100" width="22" height="22">${emblemSvg(e, '#e8f4ff', '#0b1620')}</svg>`, d.em === e, () => { d.em = e; });
+    text('TEXT I LOGGAN (HÖGST 6 TECKEN, TOMT = BARA BILDEN)', d.tx, 6, (v) => { d.tx = v.toUpperCase(); });
+  } else if (dz.mode === 'flag') {
     sec('MALL');
     const lr = row('dzrow dzlay');
     for (const [id, name] of LAYOUTS) btn(lr, flagSvg({ ...d, layout: id, sym: null }, 44) + `<small>${name}</small>`, d.layout === id, () => { d.layout = id; });
@@ -6190,7 +6250,14 @@ function renderDesigner() {
 function applyDesigner() {
   const s = state.solo;
   const d = dz.draft;
-  if (dz.mode === 'flag') {
+  if (dz.mode === 'logo') {
+    const a = agencyById(dz.agency);
+    if (a) {
+      a.logo = cleanLogo(d);
+      toast(`\u{1F3A8} ${agencyText(a).toUpperCase()} FÅR EN NY LOGGA`, 'amber', 5000);
+      logEvent(`\u{1F3A8} ${agencyText(a).toUpperCase()} FICK EN NY LOGGA`, { mine: true });
+    }
+  } else if (dz.mode === 'flag') {
     const spec = cleanSpec(d);
     s.flag = { type: 'custom', spec };
     const name = (spec.name || 'DEN NYA FLAGGAN').toUpperCase();
@@ -6251,6 +6318,11 @@ $('#dzNo').addEventListener('click', () => overlay('#designer', false));
 $('#dzReal').addEventListener('click', () => {
   const s = state.solo;
   if (!s) return;
+  if (dz.mode === 'logo') {   // V5.21: tillbaka till myndighetens riktiga logga
+    const a = agencyById(dz.agency);
+    if (a) { dz.draft = originalLogo(a); renderDesigner(); }
+    return;
+  }
   s.flag = null;
   toast('\u{1F6A9} LANDETS RIKTIGA FLAGGA HISSAS IGEN', 'amber', 6000);
   overlay('#designer', false);
@@ -6259,6 +6331,320 @@ $('#dzReal').addEventListener('click', () => {
   refreshInfoPanel();
   if ($('#nation').classList.contains('show')) renderNationTab();
 });
+
+// ---------- V5.21: MYNDIGHETERNA — budget, namn och logga ----------
+// Tillståndet ligger i state.solo.agencies (agencies.js: initAgencies): hemlandets riktiga myndigheter
+// (agencies-data.js) och de spelaren grundat. Budgeten blir en egen källa i nationsvärdena (agencyMods),
+// kostar eller sparar pengar varje dag (agencyCostPct) och drar statistikmått — s.agencies.fx (plus)
+// och s.agencies.mul (gånger) glider mot agencyIndTargets i tickAgencies.
+function agencyState() {
+  const s = state.solo;
+  if (!s?.nation || !s.home) return null;
+  if (!s.agencies) s.agencies = initAgencies(s.home, globe.getCountry(s.home)?.name || 'LANDET', s.home + ':' + (s.saveId || ''), s.clock?.day || 1);
+  return s.agencies;
+}
+function agencySourceMods() {
+  const st = agencyState();
+  return st ? agencyMods(st) : {};
+}
+function agencyCostPerDay() {
+  const st = state.solo?.agencies;
+  if (!st) return 0;
+  const c = agencyCostPct(st) / 100 * moneyPerDay();   // inte avrundat: en myndighet kostar ofta under 1 💰 om dagen
+  return Math.abs(c) < 1e-3 ? 0 : c;
+}
+function agencyById(id) { return state.solo?.agencies?.list.find((a) => a.id === id) || null; }
+// namnet i löptext, nyheter och notiser: det riktiga om det går att läsa med våra bokstäver, annars det svenska
+function agencyText(a) {
+  return a.n !== a.orig || !a.t ? a.n : (a.sv || a.n);
+}
+function agencyNewsVars(a) {
+  return { myndighet: agencyText(a), slag: AG_KINDS[a.k]?.name.toLowerCase() || 'sitt uppdrag', 'nivå': AG_BUDGETS[a.lvl]?.name.toLowerCase() || '' };
+}
+// den riktiga loggan: ur agencies-data.js (id a3 = landets fjärde myndighet), egna får slagets
+function originalLogo(a) {
+  const s = state.solo;
+  const K = AG_KINDS[a.k];
+  if (!a.own && /^a\d+$/.test(a.id)) {
+    const e = agencyListFor(s.home, globe.getCountry(s.home)?.name || 'LANDET')[Number(a.id.slice(1))];
+    if (e && e.k === a.k) return defaultLogo(e);
+  }
+  return cleanLogo({ st: K.st, bg: K.col[0], fg: K.col[1], em: K.em, tx: a.a });
+}
+function agencyChanged() {
+  recomputeNation();
+  renderResbar();
+  if ($('#nation').classList.contains('show') && natTab === 'myndigheter') {
+    const sc = $('#natbody').scrollTop;
+    renderNationTab();
+    $('#natbody').scrollTop = sc;
+  }
+}
+
+// ----- dagstakten -----
+function tickAgencies() {
+  const s = state.solo;
+  const st = agencyState();
+  if (!st) return;
+  s.res.money -= agencyCostPerDay();
+  // statistiken glider mot myndigheternas läge (ungefär en månad)
+  const tg = agencyIndTargets(st);
+  st.fx ||= {}; st.mul ||= {};
+  const r4 = (x) => Math.round(x * 1e4) / 1e4;
+  for (const k of new Set([...Object.keys(tg.add), ...Object.keys(st.fx)])) {
+    const v = st.fx[k] || 0, t = tg.add[k] || 0;
+    const nv = r4(v + (t - v) * 0.04);
+    if (!t && Math.abs(nv) < 1e-3) delete st.fx[k]; else st.fx[k] = nv;
+  }
+  for (const k of new Set([...Object.keys(tg.mul), ...Object.keys(st.mul)])) {
+    const v = st.mul[k] ?? 1, t = tg.mul[k] ?? 1;
+    const nv = r4(v + (t - v) * 0.04);
+    if (t === 1 && Math.abs(nv - 1) < 1e-3) delete st.mul[k]; else st.mul[k] = nv;
+  }
+}
+
+// ----- spelarens beslut -----
+function setAgencyBudget(id, lvl) {
+  const a = agencyById(id);
+  if (!a || lvl === a.lvl || !AG_BUDGETS[lvl]) return;
+  const K = AG_KINDS[a.k];
+  const was = a.lvl;
+  if (lvl === 0 && !mediaPay(AG_COSTS.close)) return;
+  if (was === 0 && !mediaPay(AG_COSTS.reopen)) return;
+  a.lvl = lvl;
+  // nedskärningar i välfärd, trygghet och frihet märks — att lägga ner märks mest
+  if (K.griev && lvl < was) addGriev(K.griev, (was - lvl) * (lvl === 0 ? 3 : 1.5));
+  else if (K.griev && lvl > was && was < AG_NORMAL) addGriev(K.griev, -(Math.min(lvl, AG_NORMAL) - was));
+  const v = agencyNewsVars(a);
+  const B = AG_BUDGETS[lvl];
+  if (lvl === 0) {
+    toast(`\u{26D4} ${agencyText(a).toUpperCase()} LÄGGS NER`, 'red', 7000);
+    logEvent(`\u{26D4} ${agencyText(a).toUpperCase()} LADES NER`, { mine: true });
+    newsFor('agency_close', v, 2);
+  } else if (was === 0) {
+    toast(`\u{1F3DB}\u{FE0F} ${agencyText(a).toUpperCase()} ÖPPNAR IGEN — BUDGET ${B.name}`, 'amber', 6000);
+    logEvent(`\u{1F3DB}\u{FE0F} ${agencyText(a).toUpperCase()} ÖPPNADE IGEN`, { mine: true });
+    newsFor('agency_reopen', v, 1);
+  } else {
+    toast(`\u{1F3DB}\u{FE0F} ${agencyText(a).toUpperCase()}: BUDGET ${B.name}`, lvl > was ? 'amber' : '', 4000);
+    if (lvl >= 5 && was < 5) newsFor('agency_boost', v, 2);
+    else if (lvl <= 1 && was > 1) newsFor('agency_cut', v, 2);
+    else if (Math.random() < 0.5) newsFor(lvl > was ? 'agency_boost' : 'agency_cut', v, 1);
+  }
+  agencyChanged();
+}
+function newBoss(id) {
+  const a = agencyById(id);
+  if (!a || !mediaPay(AG_COSTS.boss)) return;
+  a.skill = rollSkill();
+  toast(`\u{1F454} NY GENERALDIREKTÖR PÅ ${agencyText(a).toUpperCase()}: ${'\u{2605}'.repeat(a.skill)} ${AG_SKILLS[a.skill - 1]}`, a.skill >= 4 ? 'amber' : a.skill <= 2 ? 'red' : '', 6000);
+  logEvent(`\u{1F454} NY GENERALDIREKTÖR PÅ ${agencyText(a).toUpperCase()}`, { mine: true });
+  newsFor('agency_boss', agencyNewsVars(a), 1);
+  agencyChanged();
+}
+function renameAgency(id) {
+  const a = agencyById(id);
+  if (!a) return;
+  const n = window.prompt(`VAD SKA ${a.n} HETA?`, a.n);
+  if (n == null) return;
+  const clean = String(n).replace(/[<>"&]/g, '').replace(/\s+/g, ' ').trim().slice(0, 48);
+  if (clean.length < 2 || clean === a.n) return;
+  if (!mediaPay(AG_COSTS.rename)) return;
+  logEvent(`\u{270F}\u{FE0F} ${agencyText(a).toUpperCase()} HETER NU ${clean.toUpperCase()}`, { mine: true });
+  a.n = clean;
+  toast(`\u{270F}\u{FE0F} MYNDIGHETEN HETER NU ${clean}`, 'amber', 5000);
+  agencyChanged();
+}
+function foundCost(k) {
+  return Math.round((AG_KINDS[k]?.drift || 0.5) * AG_COSTS.foundDays * moneyPerDay() / 10 * 100) / 100;
+}
+function foundAgency(k, name = null) {
+  const s = state.solo, st = agencyState();
+  const K = AG_KINDS[k];
+  if (!st || !K) return;
+  let n = name;
+  if (n == null) {
+    n = window.prompt(`VAD SKA DEN NYA MYNDIGHETEN FÖR ${K.name} HETA?`, st.list.some((a) => a.n === K.gen) ? `NYA ${K.gen}` : K.gen);
+    if (n == null) return;
+  }
+  if (!mediaPay(AG_COSTS.foundPP, foundCost(k))) return;
+  const a = newAgency(st, k, n, s.clock.day);
+  toast(`\u{1F3DB}\u{FE0F} ${agencyText(a).toUpperCase()} ÄR GRUNDAD — RIT DESS LOGGA`, 'amber', 7000);
+  logEvent(`\u{1F3DB}\u{FE0F} ${agencyText(a).toUpperCase()} GRUNDADES`, { mine: true });
+  newsFor('agency_new', agencyNewsVars(a), 2);
+  agencyChanged();
+  return a;
+}
+function removeAgency(id) {
+  const st = state.solo?.agencies, a = agencyById(id);
+  if (!st || !a?.own) return;
+  st.list = st.list.filter((x) => x !== a);
+  toast(`\u{1F5D1}\u{FE0F} ${agencyText(a).toUpperCase()} AVVECKLAS`, 'red', 6000);
+  logEvent(`\u{1F5D1}\u{FE0F} ${agencyText(a).toUpperCase()} AVVECKLADES`, { mine: true });
+  newsFor('agency_close', agencyNewsVars(a), 1);
+  agencyChanged();
+}
+
+// ----- händelserna: c.myn, {myndighet}/{slag} och mynBudget/mynChef/mynSkill/mynStang i valen -----
+function agencyCtx() {
+  const st = agencyState();
+  const sum = st ? agencySummary(st) : null;
+  if (!sum) return { count: 0, open: 0, closed: 0, big: 0, cut: 0, skill: 3, spend: 100, kinds: Object.fromEntries(AG_KIND_IDS.map((k) => [k, -1])) };
+  return { count: sum.count, open: sum.open, closed: sum.closed, big: sum.big, cut: sum.cut, skill: sum.skill, spend: sum.spend, kinds: sum.kinds };
+}
+function agencyEventVars(kind) {
+  const list = (agencyState()?.list || []).filter((a) => a.lvl > 0 && (kind === 'any' || a.k === kind));
+  const a = kind === 'any' ? list[Math.floor(Math.random() * list.length)] : list[0];
+  return a ? { myndighet: agencyText(a), mynId: a.id, slag: AG_KINDS[a.k].name.toLowerCase() } : { myndighet: 'myndigheten', mynId: null, slag: 'sitt uppdrag' };
+}
+function applyAgencyChoice(ch) {
+  const a = ch.vars?.mynId ? agencyById(ch.vars.mynId) : null;
+  if (!a || !(ch.mynBudget || ch.mynChef || ch.mynSkill || ch.mynStang)) return;
+  if (ch.mynBudget) a.lvl = Math.max(1, Math.min(AG_BUDGETS.length - 1, a.lvl + ch.mynBudget));
+  if (ch.mynChef) a.skill = rollSkill();
+  if (ch.mynSkill) a.skill = Math.max(1, Math.min(5, a.skill + ch.mynSkill));
+  if (ch.mynStang) a.lvl = 0;
+  recomputeNation();
+}
+function agencyEffectBits(ch) {
+  const bits = [];
+  const nm = ch.vars?.myndighet ? ` (${escHtml(String(ch.vars.myndighet).toUpperCase())})` : '';
+  if (ch.mynBudget) bits.push(`<span class="ec">\u{1F3DB}\u{FE0F} BUDGETEN ${ch.mynBudget > 0 ? 'HÖJS' : 'SÄNKS'} ${Math.abs(ch.mynBudget)} STEG${nm}</span>`);
+  if (ch.mynChef) bits.push(`<span class="ec">\u{1F454} NY GENERALDIREKTÖR${nm}</span>`);
+  if (ch.mynSkill) bits.push(`<span class="${ch.mynSkill > 0 ? 'ep' : 'en'}">GENERALDIREKTÖREN ${ch.mynSkill > 0 ? '+' : '\-'}${Math.abs(ch.mynSkill)} \u{2605}</span>`);
+  if (ch.mynStang) bits.push(`<span class="en">\u{26D4} MYNDIGHETEN LÄGGS NER${nm}</span>`);
+  return bits;
+}
+
+// ----- fliken MYNDIGHETER -----
+const AG_SHORT = ['\u{26D4}', 'SVÄLT', 'SNÅL', 'NORMAL', 'GENERÖS', 'STOR', 'ENORM'];
+const agStars = (n) => '\u{2605}'.repeat(n) + '\u{2606}'.repeat(5 - n);
+function agencyPreview(a, lvl) {
+  const K = AG_KINDS[a.k], B = AG_BUDGETS[lvl], inc = moneyPerDay();
+  const d0 = (agencyCostPct({ list: [{ ...a, lvl }] }) - agencyCostPct({ list: [a] })) / 100 * inc;
+  const d = Math.abs(d0) < 1e-3 ? 0 : d0;
+  const pp = lvl === 0 && a.lvl > 0 ? AG_COSTS.close : a.lvl === 0 && lvl > 0 ? AG_COSTS.reopen : 0;
+  const mods = deltaHtml(agencyModsAt(a, lvl));
+  const pengar = d > 0 ? `<span class="dn">KOSTAR ${money(d)} MER / DAG</span>` : d < 0 ? `<span class="dp">STATSKASSAN VINNER ${money(-d)} / DAG</span>` : '';
+  return `<span class="dc">${K.icon} ${escHtml(a.n)} — ${B.name}${pp ? ` — ${pp} \u{2696}\u{FE0F}` : ''}</span> &nbsp; ${pengar}`
+    + ` &nbsp; ${mods ? (a.own ? 'GER: ' : 'JÄMFÖRT MED NORMALT: ') + mods : a.own ? 'GER INGENTING NEDLAGD' : 'SOM VANLIGT'}<span class="lawdesc">${K.desc}</span>`;
+}
+function renderAgencyTab(body) {
+  const s = state.solo;
+  const st = agencyState();
+  body.innerHTML = '';
+  if (!st) return;
+  const sum = agencySummary(st);
+  const inc = moneyPerDay();
+  const delta = agencyCostPerDay();
+  const swe = s.home === '752';
+  const real = hasRealAgencies(s.home);
+  const bar = (v, col) => `<span class="mbar"><i style="width:${Math.max(0, Math.min(100, v))}%;background:${col}"></i></span>`;
+  // ▸ MYNDIGHETERNA
+  const g0 = document.createElement('div');
+  g0.className = 'natgroup';
+  g0.innerHTML = `<div class="gtitle">▸ MYNDIGHETERNA</div>
+    <div class="mgrid">
+      <div>MYNDIGHETER<b>${sum.open}${sum.closed ? ` (${sum.closed} NEDLAGDA)` : ''}${sum.own ? ` \u{2022} ${sum.own} EGNA` : ''}</b></div>
+      <div>BUDGET<b>${money(sum.budgetPct / 100 * inc)} / DAG</b></div>
+      <div>MOT DET NORMALA<b>${sum.spend} %</b>${bar(sum.spend / 2, sum.spend > 130 ? 'var(--amber)' : sum.spend < 80 ? 'var(--red)' : 'var(--holo)')}</div>
+      <div>STATSKASSAN<b style="color:${delta > 0 ? 'var(--red)' : delta < 0 ? '#4ae37a' : 'inherit'}">${delta > 0 ? '\-' + money(delta) : delta < 0 ? '+' + money(-delta) : '\u{00B1}0'} / DAG</b></div>
+      <div>GENERALDIREKTÖRERNA<b>${sum.skill.toFixed(1).replace('.', ',')} AV 5</b>${bar(sum.skill * 20, 'var(--holo)')}</div>
+      <div>STÖRRE / MINDRE ÄN NORMALT<b>${sum.big} / ${sum.cut}</b></div>
+    </div>
+    <div class="ftext">MYNDIGHETERNA GER LANDET: ${deltaHtml(agencySourceMods()) || 'SOM VANLIGT — ALLA HAR NORMAL BUDGET'}</div>
+    <div class="ftext">${real ? (swe ? 'SVERIGES RIKTIGA MYNDIGHETER.' : 'LANDETS RIKTIGA MYNDIGHETER — MED SITT EGET NAMN OCH PÅ SVENSKA.') : 'INGA RIKTIGA MYNDIGHETER ÄR KÄNDA HÄR — DE HÄR ÄR PÅHITTADE.'}
+      NORMAL BUDGET FINNS REDAN I STATSBUDGETEN: MER KOSTAR, MINDRE SPARAR. HÅLL MUSEN ÖVER EN BUDGET FÖR ATT SE VAD DEN GÖR.</div>`;
+  body.appendChild(g0);
+
+  // ▸ LANDETS MYNDIGHETER
+  const g1 = document.createElement('div');
+  g1.className = 'natgroup';
+  g1.innerHTML = `<div class="gtitle">▸ LANDETS MYNDIGHETER</div>`;
+  const list = document.createElement('div');
+  list.className = 'aglist';
+  for (const a of st.list) {
+    const K = AG_KINDS[a.k];
+    if (!K) continue;
+    const card = document.createElement('div');
+    card.className = 'agcard' + (a.lvl === 0 ? ' closed' : '') + (a.own ? ' own' : '');
+    const renamed = a.n !== a.orig;
+    const sub = [];
+    if (renamed) sub.push(`TIDIGARE: <span class="agn">${escHtml(a.orig)}</span>${!swe && a.sv && a.sv !== a.orig ? ` \u{2014} ${escHtml(a.sv)}` : ''}`);
+    else {
+      if (a.t) sub.push(`<span class="agt">${escHtml(a.t)}</span>`);
+      if (!swe && !a.own && a.sv && a.sv.toUpperCase() !== a.n.toUpperCase()) sub.push(`PÅ SVENSKA: <span class="agsv">${escHtml(a.sv)}</span>`);
+    }
+    const bud = agencyBudgetPct(a) / 100 * inc;
+    card.innerHTML = `<span class="aglogo">${logoSvg(a.logo, 50)}</span>
+      <div class="agi"><b class="agn">${escHtml(a.n)}</b>
+        ${sub.map((x) => `<small>${x}</small>`).join('')}
+        <small>${K.icon} ${K.name}${a.own ? ' \u{2022} \u{2728} DIN EGEN' : ''}${a.x && !a.own ? ' \u{2022} PÅHITTAD' : ''} \u{2022} GD <span class="agstar">${agStars(a.skill)}</span> ${AG_SKILLS[a.skill - 1]}</small>
+        <small>${a.lvl === 0 ? '<span style="color:var(--red)">\u{26D4} NEDLAGD</span>' : `BUDGET <b>${AG_BUDGETS[a.lvl].name}</b> \u{2014} ${money(bud)} / DAG`}</small></div>`;
+    const brow = document.createElement('div');
+    brow.className = 'agbud';
+    AG_BUDGETS.forEach((B, i) => {
+      const b = document.createElement('button');
+      b.className = 'lawopt' + (a.lvl === i ? ' cur' : '');
+      b.textContent = AG_SHORT[i];
+      b.title = i === 0 ? (a.own ? 'VILA' : 'LÄGG NER') : B.name;
+      b.addEventListener('mouseenter', () => setPreview(agencyPreview(a, i)));
+      b.addEventListener('mouseleave', () => setPreview());
+      b.addEventListener('click', () => {
+        if (i === a.lvl) return;
+        if (i === 0 && card.dataset.armed !== '1') { card.dataset.armed = '1'; toast(`TRYCK IGEN FÖR ATT LÄGGA NER ${agencyText(a).toUpperCase()}`, 'red', 3000); return; }
+        setAgencyBudget(a.id, i);
+      });
+      brow.appendChild(b);
+    });
+    const acts = document.createElement('div');
+    acts.className = 'macts';
+    const act = (label, title, fn) => {
+      const b = document.createElement('button');
+      b.className = 'lawopt';
+      b.innerHTML = label;
+      b.title = title;
+      b.addEventListener('mouseenter', () => setPreview(`<span class="dc">${title}</span>`));
+      b.addEventListener('mouseleave', () => setPreview());
+      b.addEventListener('click', fn);
+      acts.appendChild(b);
+    };
+    act('\u{270F}\u{FE0F} NAMN', `BYT NAMN PÅ MYNDIGHETEN — ${AG_COSTS.rename} \u{2696}\u{FE0F}`, () => renameAgency(a.id));
+    act('\u{1F3A8} LOGGA', 'RITA OM LOGGAN — STIL, FÄRGER, BILD OCH TEXT', () => openDesigner('logo', a.id));
+    act('\u{1F454} NY CHEF', `NY GENERALDIREKTÖR — ${AG_COSTS.boss} \u{2696}\u{FE0F}. EN SKICKLIG CHEF GÖR EN STÖRRE BUDGET UPP TILL 30 % MER VERKSAM, EN UDUGLIG 30 % MINDRE. DU VET INTE VEM DU FÅR`, () => newBoss(a.id));
+    if (a.own) act('\u{1F5D1}\u{FE0F} AVVECKLA', 'MYNDIGHETEN AVVECKLAS FÖR GOTT', () => {
+      if (card.dataset.del !== '1') { card.dataset.del = '1'; toast(`TRYCK IGEN FÖR ATT AVVECKLA ${agencyText(a).toUpperCase()}`, 'red', 3000); return; }
+      removeAgency(a.id);
+    });
+    card.append(brow, acts);
+    list.appendChild(card);
+  }
+  g1.appendChild(list);
+  body.appendChild(g1);
+
+  // ▸ GRUNDA EN NY MYNDIGHET
+  const g2 = document.createElement('div');
+  g2.className = 'natgroup';
+  g2.innerHTML = `<div class="gtitle">▸ GRUNDA EN NY MYNDIGHET</div>
+    <div class="ftext">VÄLJ VAD DEN SKA SYSSLA MED. EN NY MYNDIGHET KOSTAR HELA SIN BUDGET VARJE DAG MEN GER BARA PLUS. HAR DU REDAN EN AV SAMMA SLAG GÖR DEN LITE MINDRE.</div>`;
+  const kr = document.createElement('div');
+  kr.className = 'agkinds';
+  for (const k of AG_KIND_IDS) {
+    const K = AG_KINDS[k];
+    const b = document.createElement('button');
+    b.className = 'lawopt';
+    b.innerHTML = `${K.icon} ${K.name}`;
+    b.addEventListener('mouseenter', () => setPreview(`<span class="dc">${K.icon} NY MYNDIGHET FÖR ${K.name} \u{2014} ${AG_COSTS.foundPP} \u{2696}\u{FE0F} + ${money(foundCost(k))}, SEDAN ${money(K.drift / 100 * inc)} / DAG</span> &nbsp; GER: ${deltaHtml(agencyModsAt({ k, own: true, skill: 3 }, AG_NORMAL))}<span class="lawdesc">${K.desc}</span>`));
+    b.addEventListener('mouseleave', () => setPreview());
+    b.addEventListener('click', () => {
+      const a = foundAgency(k);
+      if (a) openDesigner('logo', a.id);
+    });
+    kr.appendChild(b);
+  }
+  g2.appendChild(kr);
+  body.appendChild(g2);
+}
 
 // ---------- V5.12: LANDET-fliken — namnet, passet och tron ----------
 function renderLandTab(body) {
@@ -9761,7 +10147,7 @@ function gamePayload() {
         // V5.16: lagar som slår igenom, missnöjet, lagändringarna och statistikens historik
         lawFx: s.lawFx, ideoFx: s.ideoFx, griev: s.griev || {}, lawLog: s.lawLog || [], indHist: s.indHist || [],
         lawFxBy: s.lawFxBy || null,   // V5.19
-        lawSince: s.lawSince || {}, utopiaWarned: s.utopiaWarned || {}, crackAt: s.crackAt || {}, expelled: s.expelled || 0, media: s.media || null, news: (s.news || []).slice(0, 40), symbols: s.symbols || null,   // V5.17
+        lawSince: s.lawSince || {}, utopiaWarned: s.utopiaWarned || {}, crackAt: s.crackAt || {}, expelled: s.expelled || 0, media: s.media || null, news: (s.news || []).slice(0, 40), symbols: s.symbols || null, agencies: s.agencies || null,   // V5.17
         crimeHist: s.crimeHist || [], crimeNews: s.crimeNews || [], crimeStart: s.crimeStart || 0,   // V5.18
       },
       world: state.world || {},
@@ -9839,7 +10225,7 @@ function saveSession() {
       eventQueue: s.eventQueue || [],   // V5.15
       lawFx: s.lawFx, ideoFx: s.ideoFx, griev: s.griev || {}, lawLog: s.lawLog || [], indHist: s.indHist || [],   // V5.16
       lawFxBy: s.lawFxBy || null,   // V5.19
-      lawSince: s.lawSince || {}, utopiaWarned: s.utopiaWarned || {}, crackAt: s.crackAt || {}, expelled: s.expelled || 0, media: s.media || null, news: (s.news || []).slice(0, 40), symbols: s.symbols || null,   // V5.17
+      lawSince: s.lawSince || {}, utopiaWarned: s.utopiaWarned || {}, crackAt: s.crackAt || {}, expelled: s.expelled || 0, media: s.media || null, news: (s.news || []).slice(0, 40), symbols: s.symbols || null, agencies: s.agencies || null,   // V5.17
       crimeHist: s.crimeHist || [], crimeNews: s.crimeNews || [], crimeStart: s.crimeStart || 0,   // V5.18
     }));
   } catch (e) { /* privat läge / fullt lager — strunt samma */ }
@@ -9900,6 +10286,7 @@ function restoreSession(snap, home) {
   // V5.20: sprickan är en risk — ett äldre parti fortsätter spricka där det var
   s.crackAt = snap.crackAt || null; s.expelled = snap.expelled || 0;
   s.media = snap.media || null; s.news = snap.news || [];   // V5.20
+  s.agencies = snap.agencies || null;   // V5.21
   s.symbols = snap.symbols || null;
   migrateCrack(s);
   s.crimeHist = snap.crimeHist || []; s.crimeNews = snap.crimeNews || []; s.crimeStart = snap.crimeStart || 0;   // V5.18
@@ -10444,4 +10831,5 @@ window.__imperium = {
   extremeLaws, utopiaMods, buildingMods, buildingYield, openCityPanel, renderCityPanel, undoExtreme, BUILDINGS, moneyPerDay,   // V5.17
   renderCrimeTab, tickCrime, crimeRise, openSavesPanel, listSaves,   // V5.18
   renderTicker, newsFor, mediaState, mediaSum, tickMedia, tickExtremes, closeChannel, censorChannel, setPs, grantChannel,   // V5.20
+  agencyState, setAgencyBudget, newBoss, foundAgency, tickAgencies, agencyCtx, renderAgencyTab, openDesigner,   // V5.21
 };

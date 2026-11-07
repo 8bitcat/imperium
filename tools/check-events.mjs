@@ -25,6 +25,7 @@ const { IDEOLOGIES } = await imp(join(JS, 'ideologies.js'));
 const { RESEARCH } = await imp(join(JS, 'research.js'));
 const S = await imp(join(JS, 'statistics.js'));
 const R = await imp(join(JS, 'realism.js'));   // V5.16
+const AG = await imp(join(JS, 'agencies.js'));   // V5.21
 S.setIndicatorData(JSON.parse(readFileSync(join(ROOT, 'v4/data/indicators.json'), 'utf8')),
   JSON.parse(readFileSync(join(ROOT, 'v4/data/facts.json'), 'utf8')));
 
@@ -46,12 +47,12 @@ const FAKE_516 = { demo: [0.5, 9.8], regime: [0, 3], demo_el: [0, 10], demo_gov:
   poverty365: [0, 80], poverty685: [0, 95], natpov: [3, 70] };
 const IND_IDS = new Set([...S.INDICATORS.map((d) => d.id), ...Object.keys(FAKE_516)]);
 const RES_KEYS = new Set(['money', 'pp', 'rp', 'man']);
-const CHOICE_KEYS = new Set(['text', 'tip', 'cost', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'risk', 'next', 'undo', 'griev', 'ind', 'kanal', 'nykanal', 'fortroende']);   // V5.20: + medierna
-const EVENT_KEYS = new Set(['id', 'icon', 'weight', 'cooldown', 'title', 'text', 'when', 'choices', 'rare', 'chain', 'kind', 'react']);
+const CHOICE_KEYS = new Set(['text', 'tip', 'cost', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'risk', 'next', 'undo', 'griev', 'ind', 'kanal', 'nykanal', 'fortroende', 'mynBudget', 'mynChef', 'mynSkill', 'mynStang']);   // V5.20: + medierna, V5.21: + myndigheterna
+const EVENT_KEYS = new Set(['id', 'icon', 'weight', 'cooldown', 'title', 'text', 'when', 'choices', 'rare', 'chain', 'kind', 'react', 'myn']);   // V5.21: + myn
 // V5.15: utfallen i ett chansval (risk.win / risk.lose)
-const OUTCOME_KEYS = new Set(['text', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'undo', 'griev', 'ind', 'kanal', 'nykanal', 'fortroende']);   // V5.16: + undo/griev/ind
-const EFFECT_KEYS = ['res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'undo', 'griev', 'ind', 'kanal', 'nykanal', 'fortroende'];
-const PLACEHOLDERS = new Set(['rike', 'granne', 'land', 'stad', 'huvudstad', 'lag', 'utopi', 'utopilag', 'brutal', 'brutallag', 'kanal', 'ps']);   // V5.20: + kanal/ps   // V5.17: + utopi/brutal
+const OUTCOME_KEYS = new Set(['text', 'res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'undo', 'griev', 'ind', 'kanal', 'nykanal', 'fortroende', 'mynBudget', 'mynChef', 'mynSkill', 'mynStang']);   // V5.16: + undo/griev/ind
+const EFFECT_KEYS = ['res', 'temp', 'perm', 'mod', 'unmod', 'rel', 'law', 'undo', 'griev', 'ind', 'kanal', 'nykanal', 'fortroende', 'mynBudget', 'mynChef', 'mynSkill', 'mynStang'];
+const PLACEHOLDERS = new Set(['rike', 'granne', 'land', 'stad', 'huvudstad', 'lag', 'utopi', 'utopilag', 'brutal', 'brutallag', 'kanal', 'ps', 'myndighet', 'slag']);   // V5.21: + myndighet/slag   // V5.20: + kanal/ps   // V5.17: + utopi/brutal
 const nextRefs = [];   // [var, id] — kontrolleras när alla filer är lästa
 const CAPS = { money: 2500, pp: 60, rp: 150, man: 25 };
 
@@ -136,6 +137,19 @@ function sampleCtx(emptyInd = false) {
         trust: Math.round(rnd(10, 85)), climate: Math.round(rnd(-80, 80)), pressLevel: Math.floor(rnd(0, 5)),
       }, 'c.media', new Set(['ps', 'channels', 'critical', 'friendly', 'stateShare', 'censored', 'banned', 'trust', 'climate', 'pressLevel']));
     })(),
+    // V5.21 MYNDIGHETERNA: kinds = budgetnivån (0 nedlagd … 6 enorm) för den första av varje slag, −1 = ingen
+    myn: (() => {
+      const kinds = {};
+      for (const k of AG.KIND_IDS) kinds[k] = AG.CORE_KINDS.includes(k) || Math.random() < 0.45
+        ? (Math.random() < 0.55 ? 3 : Math.random() < 0.08 ? 0 : Math.floor(rnd(1, 7))) : -1;
+      const lv = Object.values(kinds).filter((v) => v >= 0);
+      return strictProxy({
+        count: lv.length, open: lv.filter((v) => v > 0).length, closed: lv.filter((v) => v === 0).length,
+        big: lv.filter((v) => v > 3).length, cut: lv.filter((v) => v > 0 && v < 3).length,
+        skill: rnd(1.5, 4.5), spend: Math.round(rnd(50, 220)),
+        kinds: strictProxy(kinds, 'c.myn.kinds', new Set(AG.KIND_IDS)),
+      }, 'c.myn', new Set(['count', 'open', 'closed', 'big', 'cut', 'skill', 'spend', 'kinds']));
+    })(),
   };
 }
 const SAMPLES = Array.from({ length: 400 }, () => sampleCtx());
@@ -163,6 +177,11 @@ function effects(c, P, E) {
   if (c.kanal != null && !['stang', 'censur', 'stod', 'fri', 'kop'].includes(c.kanal)) E(P + ": kanal = 'stang' | 'censur' | 'stod' | 'fri' | 'kop'");
   if (c.nykanal != null && c.nykanal !== true) E(P + ': nykanal = true eller utelämnas');
   if (c.fortroende != null && (!Number.isInteger(c.fortroende) || !c.fortroende || Math.abs(c.fortroende) > 20)) E(P + ': fortroende heltal ±20 (inte 0)');
+  // V5.21 MYNDIGHETERNA
+  if (c.mynBudget != null && (!Number.isInteger(c.mynBudget) || !c.mynBudget || Math.abs(c.mynBudget) > 3)) E(P + ': mynBudget heltal ±3 (inte 0)');
+  if (c.mynSkill != null && (!Number.isInteger(c.mynSkill) || !c.mynSkill || Math.abs(c.mynSkill) > 2)) E(P + ': mynSkill heltal ±2 (inte 0)');
+  if (c.mynChef != null && c.mynChef !== true) E(P + ': mynChef = true eller utelämnas');
+  if (c.mynStang != null && c.mynStang !== true) E(P + ': mynStang = true eller utelämnas');
   if (c.ind != null) {
     if (typeof c.ind !== 'object' || !Object.keys(c.ind).length) E(P + ': ind = { mått: tal }');
     for (const [k, v] of Object.entries(c.ind || {})) {
@@ -206,6 +225,15 @@ function checkEvent(ev, where) {
   // V5.20: {kanal} och kanal: '…' gäller en kanal som finns — villkoret måste fråga c.media.channels
   const usesKanal = /{kanal}/i.test(JSON.stringify(ev)) || (ev.choices || []).some((c) => c.kanal || c.risk?.win?.kanal || c.risk?.lose?.kanal);
   if (usesKanal && !ev.chain && !/c.media.channels/.test(String(ev.when))) E('{kanal} / kanal: kräver att when frågar c.media.channels (t.ex. c.media.channels >= 1)');
+  // V5.21: {myndighet}/{slag} och myn…-valen gäller händelsens myndighet (ev.myn) — den måste finnas och vara öppen
+  const mynKeys = (o) => o && (o.mynBudget || o.mynChef || o.mynSkill || o.mynStang);
+  const usesMyn = /\{(myndighet|slag)\}/i.test(JSON.stringify(ev)) || (ev.choices || []).some((c) => mynKeys(c) || mynKeys(c.risk?.win) || mynKeys(c.risk?.lose));
+  if (ev.myn != null && ev.myn !== 'any' && !AG.KINDS[ev.myn]) E(`myn "${ev.myn}" är inget myndighetsslag (${AG.KIND_IDS.join(', ')})`);
+  if (usesMyn && ev.myn == null) E("{myndighet} / {slag} / myn…-val kräver fältet myn (ett slag eller 'any')");
+  if (ev.myn != null && !ev.chain) {
+    const need = ev.myn === 'any' ? /c\.myn\.open/ : new RegExp('c\\.myn\\.kinds\\.' + ev.myn + '\\b');
+    if (!need.test(String(ev.when))) E(ev.myn === 'any' ? "myn: 'any' kräver att when frågar c.myn.open" : `myn: '${ev.myn}' kräver att when frågar c.myn.kinds.${ev.myn} (>= 1)`);
+  }
   if (ev.chain != null && ev.chain !== true) E('chain ska vara true eller utelämnas');
   // villkoret (en kedjehändelse lottas aldrig — den behöver inget villkor)
   if (ev.chain) {

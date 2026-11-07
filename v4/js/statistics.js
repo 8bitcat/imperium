@@ -42,6 +42,7 @@ export const IND_GROUPS = [
   { id: 'kun', name: 'KUNSKAP & TEKNIK', icon: '\u{1F4DA}' },
   { id: 'dmk', name: 'DEMOKRATI & STYRE', icon: '\u{1F5F3}\u{FE0F}' },   // V5.16
   { id: 'med', name: 'MEDIER', icon: '\u{1F4FA}' },                    // V5.20
+  { id: 'myn', name: 'MYNDIGHETER', icon: '\u{1F3DB}\u{FE0F}' },        // V5.21
   { id: 'sam', name: 'SAMHÄLLE & RÄTT', icon: '\u{2696}\u{FE0F}' },
   { id: 'brt', name: 'BROTT & SÄKERHET', icon: '\u{1F6A8}' },
   { id: 'ekb', name: 'EKOBROTT & MILJÖBROTT', icon: '\u{1F575}\u{FE0F}' },
@@ -766,6 +767,11 @@ export const INDICATORS = [
   { id: 'critmedia', name: 'Granskande medier', group: 'med', fmt: 'pct', better: 'high', agg: 'derived', desc: 'Andel av medierna som granskar och kritiserar regeringen, efter räckvidd (~)' },
   { id: 'channels', name: 'Nyhetskanaler', group: 'med', fmt: 'count', better: 'high', agg: 'derived', desc: 'Nyhetskanaler som sänder i landet (~)' },
   { id: 'censored', name: 'Censurerade kanaler', group: 'med', fmt: 'count', better: 'low', agg: 'derived', desc: 'Kanaler där staten granskar allt innan det sänds (~)' },
+  // ---------- V5.21 MYNDIGHETER: ditt rike räknas ur fliken MYNDIGHETER, övriga länder skattas (~) ----------
+  { id: 'agencies', name: 'Myndigheter', group: 'myn', fmt: 'count', better: null, agg: 'derived', desc: 'Statliga myndigheter som är i gång (~)' },
+  { id: 'agencyspend', name: 'Myndigheternas budget', group: 'myn', fmt: 'pct', better: null, agg: 'derived', desc: 'Myndigheternas budget mot den normala — 100 % är som vanligt (~)' },
+  { id: 'agencyskill', name: 'Generaldirektörernas skicklighet', group: 'myn', fmt: 'score10', better: 'high', agg: 'derived', desc: 'Hur skickliga myndigheternas chefer är, 0–10 (~)' },
+  { id: 'agencyclosed', name: 'Nedlagda myndigheter', group: 'myn', fmt: 'count', better: 'low', agg: 'derived', desc: 'Myndigheter som regeringen har lagt ner (~)' },
   { id: 'griev', name: 'Missnöje', group: 'dmk', fmt: 'score100', better: 'low', mode: 'add', min: 0, max: 100,
     fx: { unrest: 50, approval: -20, stability: -10 }, desc: 'Hur mycket folket har att klaga på: nedskärningar, skatter, kriser och inskränkt frihet (0–100)' },
   { id: 'protests', name: 'Demonstrationer per år', group: 'dmk', fmt: 'count', better: null, mode: 'mul', agg: 'sum',
@@ -2915,6 +2921,13 @@ export function refreshDerived(out) {
     out.critmedia = clampV(pf * 0.6 - 10, 0, 60);
     out.channels = Math.round(clampV(2 + pf / 12, 1, 12));
     out.censored = pf < 30 ? Math.round((30 - pf) / 6) : 0;
+  }
+  // V5.21: myndigheterna — skattade ur statens effektivitet (main.js skriver över dem för ditt rike)
+  if (!out._myn) {
+    out.agencies = 12;
+    out.agencyspend = 100;
+    out.agencyclosed = 0;
+    out.agencyskill = clampV(5 + (out.goveff || 0) * 1.8, 1, 9.5);
   }
   const pop = out.pop || 0;
   if (Number.isFinite(out.gdppc) && pop) out.gdp = out.gdppc * pop;
