@@ -27,6 +27,7 @@ import { DEMOCRACY } from './democracy-data.js';     // V5.16: EIU:s demokratiin
 import { regimeOf, REGIMES, DEMO_SUBS } from './realism.js';
 import { RATINGS } from './bank.js';
 import { applyFxTuning } from './tuning.js';   // V5.19: buffarna och debuffarna
+import { realOf, embassiesGuess, START_YEAR } from './identity.js';   // V5.22: rikets symboler i verkligheten
 
 export const IND_GROUPS = [
   { id: 'eko', name: 'EKONOMI', icon: '\u{1F4B0}' },
@@ -43,6 +44,7 @@ export const IND_GROUPS = [
   { id: 'dmk', name: 'DEMOKRATI & STYRE', icon: '\u{1F5F3}\u{FE0F}' },   // V5.16
   { id: 'med', name: 'MEDIER', icon: '\u{1F4FA}' },                    // V5.20
   { id: 'myn', name: 'MYNDIGHETER', icon: '\u{1F3DB}\u{FE0F}' },        // V5.21
+  { id: 'idn', name: 'IDENTITET & SYMBOLER', icon: '\u{1F6A9}' },     // V5.22
   { id: 'sam', name: 'SAMHÄLLE & RÄTT', icon: '\u{2696}\u{FE0F}' },
   { id: 'brt', name: 'BROTT & SÄKERHET', icon: '\u{1F6A8}' },
   { id: 'ekb', name: 'EKOBROTT & MILJÖBROTT', icon: '\u{1F575}\u{FE0F}' },
@@ -772,6 +774,19 @@ export const INDICATORS = [
   { id: 'agencyspend', name: 'Myndigheternas budget', group: 'myn', fmt: 'pct', better: null, agg: 'derived', desc: 'Myndigheternas budget mot den normala — 100 % är som vanligt (~)' },
   { id: 'agencyskill', name: 'Generaldirektörernas skicklighet', group: 'myn', fmt: 'score10', better: 'high', agg: 'derived', desc: 'Hur skickliga myndigheternas chefer är, 0–10 (~)' },
   { id: 'agencyclosed', name: 'Nedlagda myndigheter', group: 'myn', fmt: 'count', better: 'low', agg: 'derived', desc: 'Myndigheter som regeringen har lagt ner (~)' },
+  // ---------- V5.22 IDENTITET & SYMBOLER (identity-data.js: WVS, Henley, Lowy; ditt rike ur fliken LANDET) ----------
+  { id: 'pride', name: 'Nationell stolthet', group: 'idn', fmt: 'pct', better: null, agg: 'wavg', desc: 'Andel som är mycket stolta över sin nationalitet (World Values Survey; ~ där landet inte är med)' },
+  { id: 'visafree', name: 'Visumfria resmål', group: 'idn', fmt: 'count', better: 'high', agg: 'wavg', desc: 'Länder passet tar dig till utan visum i förväg (Henley Passport Index)' },
+  { id: 'passrank', name: 'Passets plats i världen', group: 'idn', fmt: 'count', better: 'low', agg: 'derived', desc: 'Plats bland världens pass, 1 = starkast (~)' },
+  { id: 'embassies', name: 'Ambassader och konsulat', group: 'idn', fmt: 'count', better: 'high', agg: 'wavg', desc: 'Beskickningar utomlands (Lowy Global Diplomacy Index; ~ där landet inte är med)' },
+  { id: 'holidays', name: 'Allmänna helgdagar', group: 'idn', fmt: 'days', better: null, agg: 'wavg', desc: 'Lediga helgdagar per år i hela landet' },
+  { id: 'flagage', name: 'Flaggans ålder', group: 'idn', fmt: 'years', better: null, agg: 'wavg', desc: 'År sedan flaggan antogs' },
+  { id: 'anthemage', name: 'Nationalsångens ålder', group: 'idn', fmt: 'years', better: null, agg: 'wavg', desc: 'År sedan nationalsången antogs' },
+  { id: 'flagrecog', name: 'Flaggans kännedom', group: 'idn', fmt: 'pct', better: 'high', agg: 'derived', desc: 'Hur stor del av världen som känner igen flaggan (~)' },
+  { id: 'flagscore', name: 'Flaggans kvalitet', group: 'idn', fmt: 'score100', better: 'high', agg: 'derived', desc: 'Flaggan mätt mot NAVA:s fem regler för en bra flagga, 0–100 — landets riktiga räknas som 70 (~)' },
+  { id: 'monuments', name: 'Nationalmonument', group: 'idn', fmt: 'count', better: null, agg: 'derived', desc: 'Monument som staten byggt sedan spelet började (~)' },
+  { id: 'honours', name: 'Ordnar utdelade', group: 'idn', fmt: 'count', better: null, agg: 'derived', desc: 'Statens ordnar och utmärkelser det senaste året (~)' },
+  { id: 'goldenpass', name: 'Gyllene pass sålda', group: 'idn', fmt: 'count', better: null, agg: 'derived', desc: 'Medborgarskap och uppehållstillstånd sålda mot investering (~)' },
   { id: 'griev', name: 'Missnöje', group: 'dmk', fmt: 'score100', better: 'low', mode: 'add', min: 0, max: 100,
     fx: { unrest: 50, approval: -20, stability: -10 }, desc: 'Hur mycket folket har att klaga på: nedskärningar, skatter, kriser och inskränkt frihet (0–100)' },
   { id: 'protests', name: 'Demonstrationer per år', group: 'dmk', fmt: 'count', better: null, mode: 'mul', agg: 'sum',
@@ -2144,6 +2159,8 @@ export function setIndicatorData(raw, facts) {
   BASE = {};
   EST = {};
   const popOf = (cid) => facts?.[cid]?.p || OVERRIDES[cid]?.pop || 0;
+  // V5.22: Världsbanken saknar Taiwan m.fl. — då stod befolkningen på 0 i hela spelet (ingen tillväxt, «OKÄNT»)
+  for (const [cid, f] of Object.entries(facts || {})) if (f && !f.p && OVERRIDES[cid]?.pop) f.p = OVERRIDES[cid].pop;
   for (const cid of Object.keys(facts || {})) {
     if (!popOf(cid)) continue;
     // V5.10: pyramidens 34 andelar hålls för sig (PYR nedan) — inte i BASE, som
@@ -2747,6 +2764,14 @@ export function countryIndicators(cid, T, T0 = null, laws = null) {
   if (v.households > 0 && Number.isFinite(v.houseprice)) {
     v.housingshort = Math.max(0, v.households * (0.01 + 0.004 * (v.houseprice - 5)) * (1 + Math.max(0, v.popchange / pop * 100) * 0.8));
   }
+  // V5.22: rikets symboler i verkligheten (identity-data.js) — ditt rike skrivs över i main.js
+  const R = realOf(cid);
+  v.pride = Number.isFinite(R.pride) ? R.pride : clampV(30 + 0.35 * (100 - (v.r_sekular ?? 20)) - Math.max(0, Math.log10(Math.max(500, v.gdppc || 5000)) - 3.7) * 22, 12, 85);
+  v.visafree = Number.isFinite(R.visaFree) ? R.visaFree : clampV(35 + Math.log10(Math.max(500, v.gdppc || 5000)) * 30 - 100 + (v.demo ?? 5) * 6, 25, 190);
+  v.embassies = Number.isFinite(R.embassies) ? R.embassies : embassiesGuess(pop, v.gdppc > 30000 ? 3 : v.gdppc > 8000 ? 2 : 1);
+  v.holidays = Number.isFinite(R.holidays) ? R.holidays : 11;
+  v.flagage = Number.isFinite(R.flagYear) ? Math.max(0, START_YEAR - R.flagYear) : 50;
+  v.anthemage = Number.isFinite(R.anthemYear) ? Math.max(0, START_YEAR - R.anthemYear) : 60;
   // HDI: verkligt utgångsvärde × hur mycket delarna rört sig
   const h0 = hdiCalc(b.life, b.schoolyears, b.gdppc);
   v.hdi = clampV((b.hdi || h0) * (hdiCalc(v.life, v.schoolyears, v.gdppc) / h0), 0.2, 1);
@@ -2921,6 +2946,15 @@ export function refreshDerived(out) {
     out.critmedia = clampV(pf * 0.6 - 10, 0, 60);
     out.channels = Math.round(clampV(2 + pf / 12, 1, 12));
     out.censored = pf < 30 ? Math.round((30 - pf) / 6) : 0;
+  }
+  // V5.22: identiteten — skattad för alla utom ditt rike (main.js skriver över)
+  if (!out._idn) {
+    out.flagrecog = clampV(8 + Math.log10(Math.max(1e5, out.pop || 1e6)) * 5.5 - 30 + Math.log10(Math.max(500, out.gdppc || 5000)) * 9 - 25 + (out.embassies || 30) / 5, 3, 95);
+    out.flagscore = 70;
+    out.monuments = 0;
+    out.honours = Math.round(clampV((out.pop || 1e6) / 1e6 * 2.5, 5, 3000));
+    out.goldenpass = 0;
+    out.passrank = Math.round(clampV(200 - (out.visafree || 80) * 1.02, 1, 110));
   }
   // V5.21: myndigheterna — skattade ur statens effektivitet (main.js skriver över dem för ditt rike)
   if (!out._myn) {

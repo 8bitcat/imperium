@@ -353,6 +353,38 @@
   .pp-empty { grid-column: span 3; font-size: 6px; color: #6a7891; line-height: 1.8; text-align: center; padding: 16px 6px; }
   .pp-issuer { font-size: 5px; color: #6a7891; text-align: right; letter-spacing: 1px; }
   .landbtns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  /* V5.22 STOLTHETEN: underflikarna i LANDET och panelerna för flaggan, passet, ambassaderna, helgdagarna, monumenten och ordnarna */
+  .landsub { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 8px; position: sticky; top: -8px; z-index: 2; background: var(--panel, #0b1620); padding: 4px 0; }
+  .landsub .lawopt { padding: 4px 7px; font-size: 8px; }
+  .idnrow { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; align-items: center; }
+  .idnrow .lawopt small, .idnpick .lawopt small { opacity: .7; margin-left: 3px; }
+  .idnhol .lawopt { font-size: 8px; padding: 5px 7px; }
+  .lawopt.idnoff { opacity: .45; }
+  .lawopt.idnwarn { border-color: var(--red); }
+  .idnm { display: inline-block; width: 90px; height: 7px; background: rgba(255,255,255,.08); vertical-align: middle; margin: 0 5px; }
+  .idnm i { display: block; height: 100%; }
+  .idnpick { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; align-items: center; }
+  .idnpick select.field, .idnpick input.field { max-width: 260px; font-size: 9px !important; padding: 5px 7px !important; height: auto !important; letter-spacing: 0 !important; width: auto; min-width: 200px; margin: 0 !important; }
+  .idnpick input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid #355; background: none; }
+  .idnlist { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 8px; margin: 4px 0; }
+  .idnlist span { display: inline-flex; align-items: center; gap: 4px; }
+  .idnx { padding: 1px 5px !important; font-size: 8px !important; }
+  .idnrib { display: inline-block; width: 18px; height: 10px; border: 1px solid rgba(0,0,0,.4); }
+  .idnembs { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 2px 12px; font-size: 8px; max-height: 360px; overflow-y: auto; }
+  .idnemb { display: grid; grid-template-columns: 1fr 34px 16px 26px 26px; align-items: center; gap: 3px; }
+  .idnemb .lawopt { padding: 1px 4px; font-size: 8px; }
+  .idnmons { display: flex; flex-direction: column; gap: 3px; font-size: 9px; margin: 4px 0 8px; }
+  .idnmons > div { display: flex; gap: 8px; align-items: center; }
+  .idnmons small { opacity: .7; margin-left: auto; }
+  .idnflag { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 9px; line-height: 1.7; margin: 6px 0; }
+  .idnflag img, .idnflag svg { width: 150px; height: auto; }
+  .idnpart { display: grid; grid-template-columns: 90px 96px 26px 1fr; gap: 4px; align-items: center; font-size: 8px; margin: 2px 0; }
+  .idnpart small { opacity: .7; }
+  .dzscore { font-size: 8px; margin-top: 8px; line-height: 1.6; }
+  .pollspark { display: inline-flex; align-items: flex-end; gap: 1px; height: 16px; width: 110px; margin: 0 8px; vertical-align: middle; }
+  .pollspark i { flex: 1; display: block; min-height: 1px; opacity: .85; }
+  .dzscore .idnpart { grid-template-columns: 80px 96px 26px; }
+  @media (max-width: 820px) { .idnemb { grid-template-columns: 1fr 30px 14px 24px 24px; } .idnpart { grid-template-columns: 70px 80px 24px; } .idnpart small { grid-column: 1 / -1; } }
   .symgrid { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
   .symflag, .symarms { display: flex; flex-direction: column; align-items: center; gap: 4px; }
   .symflag small, .symarms small { font-size: 6px; color: var(--holo-dim); letter-spacing: 1px; }

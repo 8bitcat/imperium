@@ -58,6 +58,16 @@ import { money, people } from './real.js';
 //   c.debt, c.rating, c.ratingIdx   statsskuld % av BNP · kreditbetyg 'AAA'…'D' · 0…8
 //   c.migRate          nettoinvandring i % av befolkningen per år
 //   c.demo             demokratiindex 0–10 (EIU-skalan)
+//
+// V5.22 STOLTHETEN (identity.js) och VALEN:
+//   c.poll             regeringens stöd i opinionen (%), val vart fjärde spelår, under 48 % = maktskifte
+//   c.idn.pride/prideD nationell stolthet (% mycket stolta, WVS) / skillnad mot start
+//   c.idn.flagCustom/flagScore/flagYears/attach/recog/flagLaw/anthemRule/occFlag/referendum
+//   c.idn.holidays/holidaysD/holidayCut · monuments/hasMonument(id)/building/cult
+//   c.idn.embassies/embassiesD/visaFree/passRank/waivers/bans/golden/goldenSold/exitVisa/dissidentPass/passSec/passFee
+//   c.idn.orders/awards/soldHonours/prestige/notes/stampDays/halfmast/tragedy/wins/losses
+//   valet idn: { pride, recog, attach, prestige, topple, tragedy, golden: 'off', flagLaw, anthemRule, exitVisa: false, dissidentPass: false }
+//   platshållarna {flagga} {monument} {orden} {ambassadland} {sang} {valuta}
 //   c.trend(id)        hur mycket ett mått ändrats senaste spelåret (måttets enhet)
 // Händelsen: `kind` = vilket missnöje den handlar om, `react: true` = en reaktion
 // som går före andra när den kan inträffa. Platshållaren {lag} = lagen som senast
@@ -124,6 +134,7 @@ import { EVENTS as YTTERLIGHETER } from './events/ytterligheter.js';
 import { EVENTS as BROTT } from './events/brott.js';   // V5.18 LAG OCH ORDNING
 import { EVENTS as MEDIER } from './events/medier.js';   // V5.20 MEDIERNA
 import { EVENTS as MYNDIGHETER } from './events/myndigheter.js';   // V5.21 MYNDIGHETERNA
+import { EVENTS as IDENTITET } from './events/identitet.js';   // V5.22 STOLTHETEN
 import { EVENTS as SAMHALLSLIV } from './events/samhallsliv.js';
 import { EVENTS as KONSEKVENSER } from './events/konsekvenser.js';
 
@@ -134,7 +145,7 @@ export const BASE_EVENTS = [
     id: 'guilty_politician', icon: '\u{2696}\u{FE0F}', weight: 3,
     title: 'EN AV VÅRA EGNA',
     text: 'En känd politiker från ditt eget parti har befunnits skyldig till avskyvärda brott. Bevisningen är övertygande och pressen har redan fått tag i den. Vad gör du?',
-    when: (c) => c.st.corruption > 5 || c.day > 60,
+    when: (c) => c.st.corruption > 15 && c.day > 60,
     choices: [
       { text: 'LÅT HONOM FÅ VAD HAN FÖRTJÄNAR', temp: { stability: -2, approval: 5 }, perm: { corruption: -3 }, tip: 'Rättvisan går före partiet.' },
       { text: 'MÖRKLÄGG DET', temp: { stability: 2 }, mod: 'cover_up', tip: 'Problemet försvinner. Priset kommer senare.' },
@@ -241,6 +252,7 @@ export const BASE_EVENTS = [
       { text: 'SKICKA IN ARMÉN', cost: { pp: 35 }, temp: { stability: 10, unrest: 18, freedom: -12, approval: -10 }, tip: 'Håller ihop landet med våld.' },
       { text: 'GE DEM SJÄLVSTYRE', cost: { pp: 25 }, temp: { unrest: -15, stability: -8, statepower: -10, approval: 8 }, tip: 'Lugn nu, svagare stat sedan.' },
       { text: 'LÅT DEM RÖSTA — OCH VINN OMRÖSTNINGEN', cost: { money: 1000, pp: 20 }, temp: { unrest: -10, approval: 12, freedom: 8 }, tip: 'Riskabelt. Legitimt om det går vägen.' },
+      { text: 'LÅTSAS ATT OMRÖSTNINGEN INTE FINNS', temp: { unrest: 10, stability: -8, approval: -4 }, tip: 'Gratis. Provinsen tolkar tystnaden som ett ja.' },
     ],
   },
   {
@@ -252,6 +264,7 @@ export const BASE_EVENTS = [
       { text: 'UTEGÅNGSFÖRBUD', cost: { pp: 20 }, temp: { unrest: -14, freedom: -12, safety: 8 }, tip: 'Effektivt och impopulärt.' },
       { text: 'AKUTPAKET TILL DE DRABBADE OMRÅDENA', cost: { money: 1000 }, temp: { unrest: -12, qol: 8, approval: 8 }, tip: 'Adresserar orsaken, inte symptomet.' },
       { text: 'SÄTT IN MILITÄREN', cost: { pp: 30 }, temp: { unrest: -20, freedom: -18, approval: -12 }, mod: 'martyr', tip: 'Det tar slut i natt. Det får följder i åratal.' },
+      { text: 'VÄNTA UT DET', temp: { unrest: 8, safety: -10, approval: -8 }, tip: 'Det brinner en natt till. Kanske flera.' },
     ],
   },
   {
@@ -270,22 +283,24 @@ export const BASE_EVENTS = [
     id: 'hunger_marches', icon: '\u{1F35E}', weight: 2,
     title: 'HUNGERMARSCHER',
     text: 'Folk går till fots mot huvudstaden för att de inte har råd med mat. Bilderna sprids överallt.',
-    when: (c) => c.st.qol < -15 || c.st.welfare < -20,
+    when: (c) => c.st.qol < -20 || c.st.welfare < -25,
     choices: [
       { text: 'PRISTAK PÅ BASVAROR', cost: { money: 800 }, temp: { qol: 12, approval: 10, income: -10, factory: -6 }, tip: 'Fyller magar, tömmer kassan.' },
       { text: 'DELA UT MAT UR MILITÄRENS FÖRRÅD', cost: { man: 15 }, temp: { qol: 8, approval: 8, readiness: -10 }, tip: 'Snabbt. Armén betalar.' },
       { text: 'STOPPA MARSCHEN VID STADSGRÄNSEN', cost: { pp: 20 }, temp: { unrest: 14, approval: -12, freedom: -10 }, tip: 'De syns inte längre.' },
+      { text: 'LÅT DEM MARSCHERA', temp: { unrest: 10, approval: -8, qol: -4 }, tip: 'Hungern försvinner inte för att man tittar bort.' },
     ],
   },
   {
     id: 'terror_attack', icon: '\u{1F4A5}', weight: 2,
     title: 'ATTENTAT I HUVUDSTADEN',
     text: 'En bomb har detonerat mitt i rusningstrafiken. Många döda. Landet är i chock.',
-    when: (c) => c.st.safety < 10 || c.st.unrest > 25,
+    when: (c) => c.st.safety < -5 && (c.st.unrest > 15 || c.atWar || (c.ind.homicide ?? 0) > 6),
     choices: [
       { text: 'TERRORLAGSTIFTNING OCH ÖVERVAKNING', cost: { pp: 30 }, perm: { safety: 10, freedom: -12 }, temp: { approval: 8 }, tip: 'Folket vill ha det nu. De ångrar sig senare.' },
       { text: 'SORGEHÖGTID OCH ENIGHET', cost: { pp: 10 }, mod: 'national_unity', tip: 'Landet håller ihop.' },
       { text: 'SLÅ TILLBAKA MOT DEM SOM STÖDDE DÅDET', cost: { pp: 25, money: 600 }, temp: { milpower: 8, safety: 6 }, rel: -15, tip: 'Utåtriktad vrede. Omvärlden ogillar.' },
+      { text: 'FORTSÄTT SOM VANLIGT — VI LÅTER OSS INTE SKRÄMMAS', temp: { safety: -6, approval: -4, unrest: 5 }, tip: 'Modigt sagt. Många känner sig lämnade.' },
     ],
   },
 
@@ -294,7 +309,7 @@ export const BASE_EVENTS = [
     id: 'oil_discovery', icon: '\u{1F6E2}\u{FE0F}', weight: 2,
     title: 'STOR FYND UNDER MARKEN',
     text: 'Geologerna har hittat en fyndighet som kan förändra landets ekonomi. Frågan är vem som ska äga den.',
-    when: (c) => c.day > 100,
+    when: (c) => c.day > 100 && (c.ind.natres ?? 0) > 3 && c.res('energy') >= 2,
     choices: [
       { text: 'STATLIGT BOLAG TAR HAND OM DET', cost: { money: 900 }, perm: { income: 15, statepower: 8, gdp: 6 }, tip: 'Långsam start, all vinst blir din.' },
       { text: 'SÄLJ KONCESSIONEN TILL UTLÄNDSKA BOLAG', res: { money: 2000 }, perm: { income: 6, gdp: 8, statepower: -6 }, tip: 'Pengar direkt, mindre på sikt.' },
@@ -306,7 +321,7 @@ export const BASE_EVENTS = [
     id: 'market_crash', icon: '\u{1F4C9}', weight: 3,
     title: 'BÖRSEN HAR RASAT',
     text: 'En finanskris har utraderat en tredjedel av landets börsvärde på tre dagar. Bankerna vacklar.',
-    when: (c) => c.day > 120 && c.st.gdp > -20,
+    when: (c) => c.day > 120 && (c.ind.stockcap ?? 0) > 40 && (c.st.gdp > 25 || c.debt > 130 || c.ratingIdx >= 5),
     choices: [
       { text: 'RÄDDA BANKERNA', cost: { money: 2000 }, temp: { gdp: 10, income: -8, approval: -12, corruption: 8 }, tip: 'Systemet överlever. Folket ser vem du räddade.' },
       { text: 'LÅT DEM FALLA', temp: { gdp: -20, factory: -12, unrest: 10, approval: 6 }, mod: 'capital_flight', tip: 'Rättvist. Brutalt.' },
@@ -340,11 +355,11 @@ export const BASE_EVENTS = [
     id: 'infrastructure_choice', icon: '\u{1F309}', weight: 2,
     title: 'ETT STORT BYGGPROJEKT',
     text: 'Ingenjörerna lägger fram ett förslag som skulle förändra landets infrastruktur i grunden. Det kostar därefter.',
-    when: (c) => c.money > 1200,
+    when: (c) => c.money > 1500 && c.st.factory < 25,
     choices: [
       { text: 'BYGG DET — HELA VÄGEN', cost: { money: 2200 }, perm: { factory: 12, income: 10, gdp: 8, qol: 6 }, tip: 'Största möjliga effekt, största möjliga nota.' },
       { text: 'BYGG EN BILLIGARE VERSION', cost: { money: 900 }, perm: { factory: 6, income: 4 }, tip: 'Halva effekten till en tredjedel av priset.' },
-      { text: 'SKJUT UPP DET', tip: 'Gratis. Ingenting händer.' },
+      { text: 'SKJUT UPP DET', temp: { factory: -3, approval: -3 }, tip: 'Gratis nu. Vägarna och broarna fortsätter att förfalla.' },
     ],
   },
   {
@@ -362,7 +377,7 @@ export const BASE_EVENTS = [
     id: 'automation_wave', icon: '\u{1F916}', weight: 2,
     title: 'MASKINERNA TAR JOBBEN',
     text: 'Automatiseringen har nått industrin på allvar. Produktiviteten stiger — och arbetslösheten med den.',
-    when: (c) => c.st.research > 15 || c.res('economy') >= 3,
+    when: (c) => (c.st.research > 15 || c.res('computing') >= 4) && c.st.factory > 0,
     choices: [
       { text: 'OMSKOLNINGSPROGRAM I STOR SKALA', cost: { money: 1200 }, perm: { factory: 10, research: 8, hdi: 6 }, tip: 'Dyrt, men landet följer med.' },
       { text: 'BESKATTA MASKINERNA', cost: { pp: 25 }, perm: { income: 10, factory: -6, approval: 8 }, tip: 'Bromsar omställningen och finansierar den.' },
@@ -384,7 +399,7 @@ export const BASE_EVENTS = [
   // ================= KRIG & MILITÄR =================
   {
     id: 'war_atrocity', icon: '\u{1F480}', weight: 3,
-    title: 'VÅRA SOLDATER HAR GJORT NÅGOT FRUKTANSVÄRT',
+    title: 'VÅRA SOLDATER HAR BEGÅTT ETT ÖVERGREPP',
     text: 'En enhet har begått en massaker mot civila i det ockuperade området. Bilderna finns.',
     when: (c) => c.atWar,
     choices: [
@@ -399,7 +414,7 @@ export const BASE_EVENTS = [
     text: 'Kriget har väckt något i befolkningen. Fler vill ta värvning än ni kan utbilda.',
     when: (c) => c.atWar && c.st.approval > -10,
     choices: [
-      { text: 'TA EMOT ALLA', cost: { money: 800 }, res: { man: 40 }, mod: 'war_fever', tip: 'Armén sväller.' },
+      { text: 'TA EMOT ALLA', cost: { money: 800 }, res: { man: 25 }, mod: 'war_fever', tip: 'Armén sväller.' },
       { text: 'TA BARA DE BÄSTA', res: { man: 15 }, temp: { milpower: 10, readiness: 10 }, tip: 'Färre men bättre.' },
       { text: 'SKICKA HEM DEM — DETTA ÄR YRKESMILITÄRENS KRIG', temp: { approval: -8, readiness: 6 }, tip: 'Kallt. Professionellt.' },
     ],
@@ -413,6 +428,7 @@ export const BASE_EVENTS = [
       { text: 'ACCEPTERA FREDEN', cost: { pp: 20 }, temp: { unrest: -12, approval: 10, milpower: -6 }, rel: 20, tip: 'Kriget tar slut.' },
       { text: 'AVVISA — VI VINNER DETTA', cost: { pp: 15 }, temp: { readiness: 8, milpower: 6, approval: -6 }, mod: 'war_fever', tip: 'Allt eller inget.' },
       { text: 'KRÄV MER OCH FÖRHANDLA VIDARE', cost: { pp: 30 }, temp: { statepower: 8, unrest: 5 }, tip: 'Riskabelt. De kan dra tillbaka budet.' },
+      { text: 'SVARA INTE ALLS', temp: { unrest: 6, approval: -4 }, rel: -6, tip: 'Kriget fortsätter. Tystnaden tolkas som ett nej.' },
     ],
   },
   {
@@ -430,11 +446,12 @@ export const BASE_EVENTS = [
     id: 'weapons_offer', icon: '\u{1F4A3}', weight: 2,
     title: 'EN VAPENAFFÄR',
     text: 'En stormakt erbjuder modern materiel till kraftigt rabatterat pris. Det finns villkor i det finstilta.',
-    when: (c) => c.day > 90,
+    when: (c) => c.day > 90 && (c.coldWar || (c.atWar && c.st.milpower < 10) || c.st.milpower < -30),
     choices: [
       { text: 'KÖP — VI BEHÖVER DEM', cost: { money: 1400 }, perm: { milpower: 15, readiness: 10, statepower: -8 }, tip: 'Stark armé, bunden utrikespolitik.' },
       { text: 'TACKA NEJ OCH BYGG SJÄLVA', cost: { rp: 60 }, perm: { milpower: 8, factory: 8, research: 5 }, tip: 'Långsammare, men det blir ditt.' },
       { text: 'KÖP OCH BRYT VILLKOREN SEDAN', cost: { money: 1400 }, perm: { milpower: 15, readiness: 10 }, rel: -25, tip: 'Fräckt. De glömmer inte.' },
+      { text: 'TACKA NEJ', temp: { milpower: -4, readiness: -4 }, rel: -4, tip: 'Armén får klara sig med det den har. Stormakten noterar svaret.' },
     ],
   },
   {
@@ -446,13 +463,14 @@ export const BASE_EVENTS = [
       { text: 'GE DEM VAD DE BEGÄR', cost: { money: 1500 }, perm: { milpower: 14, readiness: 10, income: -8 }, tip: 'Lojala generaler är inte gratis.' },
       { text: 'AVSLÅ OCH BYT UT LEDNINGEN', cost: { pp: 35 }, temp: { milpower: -12, readiness: -10, statepower: 10 }, tip: 'Du visar vem som bestämmer.' },
       { text: 'GE DEM HÄLFTEN', cost: { money: 700 }, perm: { milpower: 6, readiness: 4 }, temp: { stability: -4 }, tip: 'Ingen blir nöjd. Alla stannar.' },
+      { text: 'SÄG NEJ OCH LÅT DEM HOTA', temp: { milpower: -6, readiness: -6, stability: -6 }, tip: 'Några avgår. Resten muttrar.' },
     ],
   },
   {
     id: 'nuclear_test', icon: '\u{2622}\u{FE0F}', weight: 2,
     title: 'FÖRSTA PROVSPRÄNGNINGEN',
     text: 'Forskarna är redo att demonstrera vad landet nu kan. Världen kommer att se det.',
-    when: (c) => c.res('nuclear') >= 2,
+    when: (c) => c.res('nuclear') >= 4 && c.st.milpower > -20,
     choices: [
       { text: 'SPRÄNG — LÅT VÄRLDEN SE', cost: { money: 800 }, perm: { milpower: 15, statepower: 12, ideopower: 8 }, rel: -25, tip: 'Ingen ignorerar dig igen.' },
       { text: 'TESTA I HEMLIGHET', cost: { money: 1200, rp: 40 }, perm: { milpower: 12, statepower: 6 }, rel: -5, tip: 'Dyrare, tystare.' },
@@ -463,7 +481,7 @@ export const BASE_EVENTS = [
     id: 'veterans_forgotten', icon: '\u{1F396}\u{FE0F}', weight: 2,
     title: 'VETERANERNA HAR GLÖMTS BORT',
     text: 'De som stred åt dig lever i fattigdom. Journalister har börjat skriva om det.',
-    when: (c) => c.day > 150 && (c.wars > 0 || c.claims > 1),
+    when: (c) => c.day > 150 && c.wars > 0 && c.st.welfare < 10,
     choices: [
       { text: 'VETERANPROGRAM MED PENSION OCH VÅRD', cost: { money: 1000 }, perm: { approval: 10, welfare: 6, manpower: 6 }, tip: 'Rätt sak. Kostar.' },
       { text: 'SYMBOLISKA MEDALJER', cost: { money: 100 }, temp: { approval: 4, ideopower: 4 }, tip: 'Billigt. Genomskådas.' },
@@ -481,6 +499,7 @@ export const BASE_EVENTS = [
       { text: 'GENOMFÖR UTRENSNINGEN', cost: { pp: 40 }, mod: 'purge_aftermath', tip: 'Total lojalitet. Tömd kompetens.' },
       { text: 'EN SYMBOLISK UTRENSNING PÅ TOPPEN', cost: { pp: 20 }, temp: { statepower: 8, ideopower: 6, research: -4 }, tip: 'Räcker för att blidka dem.' },
       { text: 'VÄGRA — VI BEHÖVER DE DUGLIGA', cost: { pp: 25 }, temp: { ideopower: -12, research: 8, stability: -8 }, tip: 'Rörelsen börjar tvivla på dig.' },
+      { text: 'SKJUT PÅ FRÅGAN', temp: { ideopower: -10, stability: -6, polpower: -4 }, tip: 'De hårdaste ser det som svaghet.' },
     ],
   },
   {
@@ -514,6 +533,7 @@ export const BASE_EVENTS = [
       { text: 'TILLÅT REFORMERNA', cost: { pp: 30 }, perm: { gdp: 12, income: 10, ideopower: -12 }, tip: 'Ekonomin lyfter. Läran urholkas.' },
       { text: 'KROSSA FALANGEN', cost: { pp: 35 }, perm: { ideopower: 12, statepower: 10, gdp: -8, research: -6 }, tip: 'Renlärigt och fattigt.' },
       { text: 'LÅT DEM DEBATTERA ÖPPET', cost: { pp: 15 }, temp: { freedom: 8, stability: -8, ideopower: -6 }, tip: 'Ovanligt för en enpartistat.' },
+      { text: 'TYSTA DEBATTEN OCH VÄNTA', temp: { stability: -5, ideopower: -6, gdp: -4 }, tip: 'Frågan försvinner inte. Den ruttnar.' },
     ],
   },
   {
@@ -525,6 +545,7 @@ export const BASE_EVENTS = [
       { text: 'GE DEM VETO ÖVER LAGSTIFTNINGEN', cost: { pp: 25 }, perm: { ideopower: 15, stability: 10, freedom: -12, research: -10 }, tip: 'Trosgemenskapen blir orubblig.' },
       { text: 'GE DEM SKOLAN', cost: { pp: 20 }, perm: { ideopower: 10, integration: 8, research: -8 }, tip: 'Nästa generation blir deras.' },
       { text: 'AVSLÅ ALLT', cost: { pp: 30 }, temp: { ideopower: -12, unrest: 12, stability: -8 }, tip: 'De vänder sig mot dig.' },
+      { text: 'SVARA UNDVIKANDE', temp: { ideopower: -6, unrest: 6, approval: -3 }, tip: 'Prästerna tröttnar på att vänta.' },
     ],
   },
   {
@@ -546,6 +567,7 @@ export const BASE_EVENTS = [
     choices: [
       { text: 'UPPLÖS SAMORDNINGEN', cost: { pp: 20 }, perm: { freedom: 10, ideopower: 8, stability: -10, income: -6 }, tip: 'Renlärigt kaos.' },
       { text: 'ACCEPTERA DEN SOM PRAKTISK NÖDVÄNDIGHET', cost: { pp: 15 }, perm: { stability: 12, income: 8, freedom: -8, ideopower: -10 }, tip: 'Det fungerar. Det är inte längre anarki.' },
+      { text: 'LÅT VARJE KOMMUN STRIDA OM DET SJÄLV', temp: { stability: -8, income: -6, ideopower: -4 }, tip: 'Inget beslut. Ingen ordning.' },
     ],
   },
   {
@@ -579,6 +601,7 @@ export const BASE_EVENTS = [
       { text: 'FÖRBJUD DEM', cost: { pp: 30 }, temp: { stability: 10, freedom: -15, ideopower: -8 }, tip: 'Du räddar systemet genom att bryta mot det.' },
       { text: 'MÖT DEM I DEBATTEN', cost: { pp: 20 }, temp: { freedom: 8, approval: 6, stability: -6 }, tip: 'Principfast. Riskabelt.' },
       { text: 'ADRESSERA DET SOM DRIVER DEM', cost: { money: 1200 }, temp: { qol: 10, unrest: -12, approval: 10, income: -8 }, tip: 'Dyrast. Verkar bäst.' },
+      { text: 'GÖR INGENTING — DET ÄR DERAS RÄTT', temp: { stability: -10, unrest: 6 }, tip: 'Rörelsen fortsätter att växa.' },
     ],
   },
   {
@@ -596,11 +619,12 @@ export const BASE_EVENTS = [
     id: 'imperial_burden', icon: '\u{1F451}', weight: 2,
     title: 'IMPERIET KOSTAR MER ÄN DET GER',
     text: 'Räkenskaperna visar att de erövrade områdena kostar mer att hålla än de betalar tillbaka.',
-    when: (c) => c.claims >= 3,
+    when: (c) => c.claims >= 6 && c.st.income < 10,
     choices: [
       { text: 'HÅRDARE BESKATTNING AV PROVINSERNA', cost: { pp: 25 }, perm: { income: 12 }, temp: { unrest: 12, integration: -8 }, tip: 'Pengar in, motstånd upp.' },
       { text: 'INVESTERA I PROVINSERNA', cost: { money: 1500 }, perm: { integration: 12, income: 6, qol: 5 }, tip: 'Dyrt nu, lönsamt sedan.' },
       { text: 'GE ETT OMRÅDE SJÄLVSTYRE', cost: { pp: 20 }, temp: { income: -6, unrest: -12, approval: 8, statepower: -8 }, tip: 'Mindre imperium, mindre problem.' },
+      { text: 'FORTSÄTT SOM FÖRUT', temp: { income: -8, unrest: 6, integration: -4 }, tip: 'Hålet i kassan blir större.' },
     ],
   },
 
@@ -614,6 +638,7 @@ export const BASE_EVENTS = [
       { text: 'FORTSÄTT — VI SVARAR INTE INFÖR NÅGON', cost: { pp: 20 }, temp: { ideopower: 12, statepower: 10 }, rel: -25, tip: 'Linjen håller. Isoleringen ökar.' },
       { text: 'PAUSA OCH LÅT INSPEKTÖRER KOMMA', cost: { pp: 25 }, temp: { freedom: 8, ideopower: -10, income: 8 }, rel: 15, tip: 'Trycket lättar.' },
       { text: 'SKYLL PÅ ENSKILDA TJÄNSTEMÄN', cost: { pp: 15 }, temp: { stability: 4, corruption: 6 }, rel: -8, tip: 'Några får ta smällen.' },
+      { text: 'TIG OCH VÄNTA UT KRITIKEN', temp: { approval: -4 }, rel: -15, tip: 'Omvärlden tolkar tystnaden.' },
     ],
   },
   {
@@ -631,11 +656,12 @@ export const BASE_EVENTS = [
     id: 'death_penalty_error', icon: '\u{1F480}', weight: 2,
     title: 'VI AVRÄTTADE FEL MAN',
     text: 'Nya bevis visar att en person som avrättades förra året var oskyldig.',
-    when: (c) => !c.is('death_penalty', 'notinuse'),
+    when: (c) => !c.is('death_penalty', 'notinuse') && c.st.corruption > -10,
     choices: [
       { text: 'AVSKAFFA DÖDSSTRAFFET', cost: { pp: 35 }, perm: { freedom: 10, approval: 8, safety: -5 }, law: ['death_penalty', 'notinuse'], tip: 'Lagen ändras här och nu.' },
       { text: 'BE OM URSÄKT OCH BETALA FAMILJEN', cost: { money: 600 }, temp: { approval: 6, freedom: 4 }, tip: 'Erkänner felet utan att ändra systemet.' },
       { text: 'BESTRID DE NYA BEVISEN', cost: { pp: 20 }, temp: { statepower: 6, approval: -10, freedom: -6 }, mod: 'cover_up', tip: 'Systemet får inte ha fel.' },
+      { text: 'INGA KOMMENTARER', temp: { approval: -10, freedom: -4, unrest: 6 }, tip: 'Tystnaden blir en egen nyhet.' },
     ],
   },
   {
@@ -647,6 +673,7 @@ export const BASE_EVENTS = [
       { text: 'BEHÅLL DEN — SKÄR NÅGON ANNANSTANS', cost: { pp: 20 }, temp: { approval: 10, milpower: -8, factory: -6 }, tip: 'Vården är helig.' },
       { text: 'INFÖR PATIENTAVGIFTER', cost: { pp: 25 }, temp: { income: 12, approval: -12, qol: -6 }, tip: 'Kassan räddas. Löftet bryts.' },
       { text: 'EFFEKTIVISERA MED TEKNIK', cost: { money: 900, rp: 50 }, perm: { income: 8, qol: 5 }, tip: 'Dyrt en gång. Håller.' },
+      { text: 'LÅT KÖERNA VÄXA', temp: { qol: -8, approval: -6, income: -4 }, tip: 'Ingen bestämmer något. Väntetiderna växer.' },
     ],
   },
   {
@@ -669,6 +696,7 @@ export const BASE_EVENTS = [
       { text: 'GODKÄNN LISTAN I SIN HELHET', cost: { pp: 25 }, perm: { ideopower: 14, integration: 10, freedom: -12, research: -6 }, tip: 'Enhetlighet, med tvång.' },
       { text: 'GODKÄNN EN MILDARE VERSION', cost: { pp: 15 }, perm: { ideopower: 6, integration: 5, freedom: -5 }, tip: 'Halva vägen.' },
       { text: 'AVVISA LISTAN', cost: { pp: 20 }, temp: { ideopower: -10, freedom: 8, stability: -5 }, tip: 'Rörelsen blir förvirrad.' },
+      { text: 'LÄGG LISTAN I EN LÅDA', temp: { ideopower: -8, stability: -4 }, tip: 'Kulturrådet känner sig överkört.' },
     ],
   },
   {
@@ -691,6 +719,7 @@ export const BASE_EVENTS = [
       { text: 'SLÅ TILL MOT SAMLINGARNA', cost: { pp: 25 }, temp: { ideopower: 8, freedom: -12, unrest: 14 }, mod: 'martyr', tip: 'Förföljelse skapar övertygelse.' },
       { text: 'TILLÅT PRIVAT UTÖVNING', cost: { pp: 15 }, temp: { freedom: 10, unrest: -12, approval: 8, ideopower: -6 }, tip: 'Trycket släpper.' },
       { text: 'INFILTRERA OCH ÖVERVAKA', cost: { money: 700 }, temp: { safety: 6, freedom: -8, statepower: 8 }, tip: 'Du vet allt. De vet att du vet.' },
+      { text: 'BLUNDA FÖR DET', temp: { statepower: -6, ideopower: -6, unrest: 4 }, tip: 'Förbudet blir ett skämt.' },
     ],
   },
   {
@@ -714,6 +743,7 @@ export const BASE_EVENTS = [
       { text: 'INFÖR UTFLYTTNINGSSKATT', cost: { pp: 30 }, temp: { income: 10, gdp: -10, freedom: -8 }, tip: 'Låser in kapitalet.' },
       { text: 'SÄNK SKATTEN IGEN', cost: { pp: 20 }, temp: { income: -12, gdp: 12, approval: -6 }, tip: 'Erkänner att det gick för långt.' },
       { text: 'FÖRSTATLIGA DE SOM FLYTTAR', cost: { pp: 40 }, temp: { statepower: 15, factory: 8, gdp: -15 }, mod: 'capital_flight', rel: -20, tip: 'Radikalt. Konsekvenserna är det också.' },
+      { text: 'LÅT DEM GÅ', temp: { income: -8, gdp: -6 }, tip: 'Skatten finns kvar. Skattebetalarna gör det inte.' },
     ],
   },
   {
@@ -725,6 +755,7 @@ export const BASE_EVENTS = [
       { text: 'UTLYS ETT KONTROLLERAT VAL', cost: { pp: 35 }, temp: { freedom: 10, approval: 12, unrest: -12, statepower: -10 }, law: ['elections', 'hybrid'], tip: 'Ventilen öppnas en aning.' },
       { text: 'KROSSA RÖRELSEN', cost: { pp: 30 }, temp: { statepower: 12, freedom: -15, unrest: 15 }, mod: 'martyr', tip: 'Den försvinner inte, den går under jorden.' },
       { text: 'LOVA VAL — SEN', cost: { pp: 10 }, temp: { unrest: -8, approval: 5, corruption: 5 }, tip: 'Köper tid. En gång.' },
+      { text: 'IGNORERA RÖRELSEN', temp: { unrest: 10, approval: -6, stability: -4 }, tip: 'Den växer medan du tittar bort.' },
     ],
   },
   {
@@ -744,7 +775,7 @@ export const BASE_EVENTS = [
     id: 'breakthrough_lab', icon: '\u{1F52C}', weight: 2,
     title: 'ETT OVÄNTAT GENOMBROTT',
     text: 'Ett litet forskarlag har snubblat över något som kan bli mycket stort. De behöver resurser nu.',
-    when: (c) => c.st.research > 0,
+    when: (c) => c.st.research > 10,
     choices: [
       { text: 'FULL FINANSIERING', cost: { money: 1200, rp: 50 }, mod: 'tech_breakthrough', tip: 'Satsa allt.' },
       { text: 'MÅTTLIGT STÖD', cost: { money: 400 }, perm: { research: 5 }, tip: 'Försiktigt.' },
@@ -756,7 +787,7 @@ export const BASE_EVENTS = [
     id: 'ai_regulation', icon: '\u{1F916}', weight: 2,
     title: 'MASKINERNA HAR BLIVIT FÖR BRA',
     text: 'De nya systemen fattar beslut ingen längre kan förklara. Forskarna själva ber om reglering.',
-    when: (c) => c.res('education') >= 4 || c.st.research > 30,
+    when: (c) => (c.res('computing') >= 4 && c.st.research > 0) || c.st.research > 35,
     choices: [
       { text: 'HÅRD REGLERING', cost: { pp: 25 }, perm: { safety: 8, research: -8, freedom: 5 }, tip: 'Bromsar. Tryggt.' },
       { text: 'INGEN REGLERING ALLS', perm: { research: 14, factory: 10, safety: -10, unrest: 6 }, tip: 'Först i mål eller först i diket.' },
@@ -778,7 +809,7 @@ export const BASE_EVENTS = [
     id: 'plague_research', icon: '\u{1F9A0}', weight: 2,
     title: 'EN NY SJUKDOM',
     text: 'Ett okänt smittämne har dykt upp i en av landsändarna. Det sprids snabbt.',
-    when: (c) => c.day > 100,
+    when: (c) => c.day > 100 && (((c.ind.density ?? 0) > 250 && (c.ind.doctors ?? 2) < 2) || (c.ind.doctors ?? 2) < 0.4 || c.st.qol < -35),
     choices: [
       { text: 'FULLSTÄNDIG NEDSTÄNGNING', cost: { pp: 35 }, temp: { qol: -8, factory: -15, income: -12, freedom: -12 }, tip: 'Stoppar smittan. Stoppar allt annat också.' },
       { text: 'KRISPAKET TILL VÅRDEN', cost: { money: 1500 }, temp: { qol: 6, manpower: -5 }, tip: 'Bär genom det utan att stänga.' },
@@ -801,11 +832,12 @@ export const BASE_EVENTS = [
     id: 'lost_archive', icon: '\u{1F4DA}', weight: 1,
     title: 'NATIONALARKIVET BRINNER',
     text: 'En brand har förstört stora delar av landets historiska samlingar.',
-    when: (c) => c.day > 80,
+    when: (c) => c.day > 80 && (c.st.corruption > 15 || c.st.unrest > 30) && c.st.research < 20,
     choices: [
       { text: 'ÅTERSTÄLL VAD SOM GÅR', cost: { money: 800, rp: 30 }, temp: { hdi: 5, ideopower: 5 }, tip: 'Man räddar det man kan.' },
       { text: 'SKRIV HISTORIEN PÅ NYTT', cost: { pp: 30 }, perm: { ideopower: 14, research: -6, freedom: -8 }, tip: 'Det som brann var ändå obekvämt.' },
       { text: 'GÖR PLATSEN TILL ETT MINNESMÄRKE', cost: { money: 300 }, temp: { approval: 6, hdi: 3 }, tip: 'Sorgen får en plats.' },
+      { text: 'LÅT RUINERNA VARA', temp: { approval: -5, ideopower: -4 }, perm: { hdi: -2 }, tip: 'Det som brann är förlorat för alltid.' },
     ],
   },
 
@@ -814,12 +846,13 @@ export const BASE_EVENTS = [
     id: 'refugee_wave', icon: '\u{1F6F6}', weight: 2,
     title: 'FLYKTINGAR VID GRÄNSEN',
     text: 'Ett krig i grannskapet har drivit hundratusentals mot din gräns. De står där nu.',
-    when: (c) => c.day > 100,
+    when: (c) => c.day > 100 && (c.coldWar || c.worldRevolutions >= 3),
     choices: [
       { text: 'SLÄPP IN ALLA', cost: { money: 1200 }, temp: { immigration: 20, manpower: 10, welfare: -10, unrest: 8 }, rel: 20, tip: 'Humant. Dyrt. Beundrat.' },
       { text: 'STÄNG GRÄNSEN HELT', cost: { pp: 20 }, temp: { safety: 8, integration: 8, approval: -6 }, rel: -18, tip: 'Problemet blir någon annans.' },
       { text: 'SLÄPP IN ETT BEGRÄNSAT ANTAL', cost: { money: 500 }, temp: { immigration: 8, manpower: 4, unrest: 3 }, rel: 8, tip: 'Kompromiss som ingen älskar.' },
       { text: 'BETALA GRANNLANDET ATT BEHÅLLA DEM', cost: { money: 1800 }, temp: { integration: 6, approval: -4 }, rel: -8, tip: 'Ur syne, ur sinne.' },
+      { text: 'GÖR INGENTING — LÅT DEM STÅ KVAR', temp: { approval: -6, safety: -4, unrest: 6 }, rel: -12, tip: 'Lägret vid gränsen växer.' },
     ],
   },
   {
@@ -832,13 +865,14 @@ export const BASE_EVENTS = [
       { text: 'AVVISA ULTIMATUMET', cost: { pp: 20 }, temp: { ideopower: 14, approval: 8, income: -12 }, rel: -22, tip: 'Stolt. Dyrt.' },
       { text: 'FÖRHANDLA I DET TYSTA', cost: { money: 1000, pp: 15 }, temp: { income: 5, corruption: 6 }, rel: 8, tip: 'Ingen behöver förlora ansiktet.' },
       { text: 'SÖK STÖD HOS DERAS RIVALER', cost: { pp: 30 }, temp: { statepower: 8, milpower: 6 }, rel: -12, tip: 'Byter en beroendeställning mot en annan.' },
+      { text: 'LÅTSAS ATT DU INTE HÖRT', temp: { income: -10, statepower: -4 }, rel: -15, tip: 'Sanktionerna kommer som utlovat.' },
     ],
   },
   {
     id: 'summit_invite', icon: '\u{1F310}', weight: 2,
     title: 'INBJUDAN TILL TOPPMÖTET',
     text: 'Världens ledare samlas och du är inbjuden. Det finns saker att vinna och saker att förlora.',
-    when: (c) => c.day > 120,
+    when: (c) => c.day > 120 && c.allies > 0 && !c.atWar && c.st.statepower > -20,
     choices: [
       { text: 'ÅK OCH SAMARBETA', cost: { money: 400 }, temp: { income: 10, research: 8, statepower: -5 }, rel: 18, tip: 'Öppnar dörrar.' },
       { text: 'ÅK OCH PROVOCERA', cost: { pp: 20 }, temp: { ideopower: 14, approval: 10 }, rel: -20, tip: 'Alla pratar om dig.' },
@@ -849,18 +883,19 @@ export const BASE_EVENTS = [
     id: 'spy_caught', icon: '\u{1F575}\u{FE0F}', weight: 2,
     title: 'EN SPION HAR GRIPITS',
     text: 'En utländsk agent har gripits med dokument från försvarsdepartementet.',
-    when: (c) => c.res('espionage') >= 1 || c.day > 130,
+    when: (c) => c.res('espionage') >= 2 && (c.coldWar || c.atWar || c.st.safety > 20),
     choices: [
       { text: 'OFFENTLIG RÄTTEGÅNG', cost: { pp: 20 }, temp: { approval: 10, ideopower: 8, safety: 5 }, rel: -15, tip: 'Uppvisning i styrka.' },
       { text: 'BYT HONOM MOT VÅR EGEN AGENT', cost: { pp: 15 }, temp: { safety: 4 }, rel: 10, tip: 'Diskret och praktiskt.' },
       { text: 'VÄND HONOM MOT SIN EGEN SIDA', cost: { money: 800 }, perm: { research: 6, milpower: 5 }, tip: 'Nu arbetar han för dig.' },
+      { text: 'UTVISA HONOM I TYSTHET', temp: { safety: -3, approval: -3 }, rel: -3, tip: 'Han åker hem. Det han visste följer med.' },
     ],
   },
   {
     id: 'ally_calls', icon: '\u{1F91D}', weight: 2,
     title: 'EN ALLIERAD BER OM HJÄLP',
     text: 'Ett land ni har avtal med har blivit angripet och åberopar er allians.',
-    when: (c) => c.allies > 0,
+    when: (c) => c.allies > 0 && (c.coldWar || c.worldRevolutions >= 2),
     choices: [
       { text: 'SKICKA TRUPPER', cost: { man: 25, money: 900 }, temp: { milpower: -8, readiness: -8, ideopower: 8 }, rel: 25, tip: 'Ni står vid ert ord.' },
       { text: 'SKICKA PENGAR OCH MATERIEL', cost: { money: 1500 }, rel: 12, tip: 'Hjälp utan blod.' },
@@ -871,7 +906,7 @@ export const BASE_EVENTS = [
     id: 'trade_bloc_offer', icon: '\u{1F4E6}', weight: 2,
     title: 'ERBJUDANDE OM FRIHANDEL',
     text: 'Ett handelsblock vill ha med er. Villkoren innebär att ni ger upp kontroll över vissa regler.',
-    when: (c) => c.day > 140,
+    when: (c) => c.day > 140 && (c.ind.exports ?? 0) > 35 && c.st.statepower < 25,
     choices: [
       { text: 'GÅ MED', cost: { pp: 25 }, perm: { income: 14, gdp: 12, statepower: -10, ideopower: -6 }, rel: 18, tip: 'Rikare och mindre fri.' },
       { text: 'FÖRHANDLA FRAM UNDANTAG', cost: { pp: 40, money: 600 }, perm: { income: 8, gdp: 6, statepower: -3 }, rel: 10, tip: 'Det bästa av båda, dyrt köpt.' },
@@ -882,18 +917,19 @@ export const BASE_EVENTS = [
     id: 'foreign_meddling', icon: '\u{1F5F3}\u{FE0F}', weight: 2,
     title: 'NÅGON PÅVERKAR VÅRA VAL',
     text: 'Underrättelsetjänsten har hittat storskalig utländsk påverkan i den inhemska debatten.',
-    when: (c) => !c.is('elections', 'no') && c.day > 140,
+    when: (c) => !c.is('elections', 'no') && c.day > 140 && (c.coldWar || c.st.freedom > 20),
     choices: [
       { text: 'GÅ UT OFFENTLIGT MED DET', cost: { pp: 20 }, temp: { approval: 10, freedom: 5 }, mod: 'national_unity', rel: -15, tip: 'Sanningen samlar landet.' },
       { text: 'STÄNG NER DE UTLÄNDSKA KANALERNA', cost: { pp: 25 }, temp: { statepower: 10, freedom: -12, safety: 6 }, tip: 'Effektivt och farligt.' },
       { text: 'GÖR SAMMA SAK MOT DEM', cost: { money: 1200 }, perm: { statepower: 8 }, rel: -20, tip: 'Nu är ni likadana.' },
+      { text: 'TIG OM DET', temp: { stability: -6, approval: -4, unrest: 4 }, tip: 'Påverkan fortsätter ostört.' },
     ],
   },
   {
     id: 'humanitarian_call', icon: '\u{1F30D}', weight: 1,
     title: 'VÄRLDEN BER OM HJÄLP',
     text: 'En katastrof har drabbat ett annat land. Ni har resurser att skicka.',
-    when: (c) => c.money > 800,
+    when: (c) => c.money > 800 && c.st.income > -10,
     choices: [
       { text: 'SKICKA ETT STORT BISTÅND', cost: { money: 1200 }, temp: { approval: 8, ideopower: 6 }, rel: 22, tip: 'Vänner köps inte, men de minns.' },
       { text: 'SKICKA EN SYMBOLISK SUMMA', cost: { money: 200 }, rel: 6, tip: 'Bättre än inget.' },
@@ -903,26 +939,28 @@ export const BASE_EVENTS = [
 
   // ================= KATASTROF & NATUR =================
   {
-    id: 'earthquake', icon: '\u{1F30B}', weight: 2,
+    id: 'earthquake', icon: '\u{1F30B}', weight: 2, rare: true,
     title: 'JORDBÄVNING',
     text: 'En kraftig skalvvåg har jämnat delar av en storstad med marken.',
-    when: () => true,
+    when: (c) => (c.ind.density ?? 0) > 200 && (c.ind.urban ?? 0) > 50,
     choices: [
       { text: 'MOBILISERA ALLT', cost: { money: 1500, man: 20 }, temp: { approval: 14, qol: -6, income: -8 }, tip: 'Folket ser att staten finns när det gäller.' },
       { text: 'BEGÄR INTERNATIONELL HJÄLP', cost: { pp: 20 }, temp: { qol: -4, statepower: -8 }, rel: 15, tip: 'Hjälpen kommer. Så gör kamerorna.' },
       { text: 'GÖR VAD BUDGETEN TILLÅTER', cost: { money: 400 }, temp: { approval: -10, unrest: 10, qol: -10 }, mod: 'natural_disaster', tip: 'Otillräckligt, och alla vet det.' },
+      { text: 'VI KLARAR OSS SJÄLVA — INGEN HJÄLP FRÅN STATEN', temp: { approval: -14, unrest: 12, qol: -12 }, mod: 'natural_disaster', tip: 'De drabbade glömmer inte vem som aldrig kom.' },
     ],
   },
   {
     id: 'harvest_fail', icon: '\u{1F33E}', weight: 2,
     title: 'SKÖRDEN SLOG FEL',
     text: 'Torkan har förstört merparten av årets skörd. Lagren räcker till våren.',
-    when: () => true,
+    when: (c) => (c.ind.agri ?? 0) > 5 && ((c.ind.disasters ?? 0) > 0.5 || (c.ind.waterstress ?? 0) > 50),
     choices: [
       { text: 'KÖP MAT PÅ VÄRLDSMARKNADEN', cost: { money: 1600 }, temp: { qol: 4 }, tip: 'Dyrt. Ingen svälter.' },
       { text: 'RANSONERA', cost: { pp: 25 }, temp: { qol: -10, unrest: 10, freedom: -8, income: 8 }, tip: 'Rättvis brist.' },
       { text: 'BESLAGTA BÖNDERNAS LAGER', cost: { pp: 30 }, temp: { qol: -4, factory: -8, unrest: 15, statepower: 10 }, tip: 'Fungerar en gång.' },
       { text: 'BYGG BEVATTNING FÖR FRAMTIDEN', cost: { money: 1200, rp: 40 }, temp: { qol: -8, unrest: 8 }, perm: { factory: 8, qol: 5 }, tip: 'Löser nästa år, inte detta.' },
+      { text: 'LÅT MARKNADEN SÄTTA PRISET', temp: { qol: -14, unrest: 12, approval: -10 }, tip: 'Den som har pengar äter.' },
     ],
   },
   {
@@ -934,35 +972,38 @@ export const BASE_EVENTS = [
       { text: 'FULL ÖPPENHET OCH EVAKUERING', cost: { money: 1200 }, temp: { approval: 8, factory: -12, freedom: 6 }, tip: 'Dyrt, ärligt, rätt.' },
       { text: 'TONA NER DET', cost: { pp: 20 }, temp: { factory: -4, qol: -10, unrest: 8 }, mod: 'cover_up', tip: 'Kostar mindre nu.' },
       { text: 'SKYLL PÅ SABOTAGE', cost: { pp: 25 }, temp: { unrest: -6, ideopower: 8, freedom: -10 }, rel: -12, tip: 'Ilskan riktas utåt.' },
+      { text: 'LÅT FÖRETAGET STÅ FÖR DET', temp: { qol: -8, approval: -8, factory: -6 }, tip: 'Staten tittar bort. Grannarna gör det inte.' },
     ],
   },
   {
     id: 'flood', icon: '\u{1F30A}', weight: 2,
     title: 'ÖVERSVÄMNINGAR',
     text: 'Floderna har svämmat över och satt hela landsändar under vatten.',
-    when: () => true,
+    when: (c) => (c.ind.disasters ?? 0) > 1 || ((c.ind.density ?? 0) > 400 && (c.ind.forest ?? 100) < 20),
     choices: [
       { text: 'BYGG PERMANENTA SKYDDSVALLAR', cost: { money: 1800 }, perm: { qol: 6, factory: 5 }, temp: { income: -10 }, tip: 'Sista gången det händer.' },
       { text: 'AKUT NÖDHJÄLP', cost: { money: 700 }, temp: { approval: 8, qol: -5 }, tip: 'Räddar liv nu.' },
       { text: 'FLYTTA BEFOLKNINGEN', cost: { pp: 30, money: 900 }, temp: { unrest: 10, qol: -6, approval: -8 }, tip: 'Ingen vill lämna sitt hem.' },
+      { text: 'LÅT KOMMUNERNA STÅ FÖR DET', temp: { approval: -10, qol: -10, unrest: 8 }, tip: 'Vattnet sjunker. Ilskan stiger.' },
     ],
   },
   {
     id: 'blackout', icon: '\u{1F50C}', weight: 1,
     title: 'HELA LANDET ÄR MÖRKLAGT',
     text: 'Elnätet har kollapsat. Ingen vet säkert varför.',
-    when: (c) => c.st.factory > -10,
+    when: (c) => c.st.factory > -10 && ((c.ind.elecloss ?? 0) > 15 || c.st.corruption > 30 || (c.ind.elec ?? 100) < 85),
     choices: [
       { text: 'BYGG UT NÄTET ORDENTLIGT', cost: { money: 1600 }, perm: { factory: 10, income: 6, qol: 5 }, tip: 'Löser grundproblemet.' },
       { text: 'NÖDREPARATIONER', cost: { money: 500 }, temp: { factory: -6 }, tip: 'Lampor på. Nästa gång kommer.' },
       { text: 'PÅSTÅ ATT DET VAR ETT ANGREPP', cost: { pp: 20 }, temp: { milpower: 6, ideopower: 8, freedom: -6 }, rel: -12, tip: 'Ett mörker kan användas.' },
+      { text: 'VÄNTA TILLS NÄTET HÄMTAR SIG', temp: { factory: -12, income: -6, approval: -6 }, tip: 'Mörkret varar i flera dagar.' },
     ],
   },
   {
     id: 'winter_crisis', icon: '\u{2744}\u{FE0F}', weight: 1,
     title: 'DEN VÄRSTA VINTERN PÅ HUNDRA ÅR',
     text: 'Kylan har slagit ut transporter och uppvärmning. Folk fryser i sina hem.',
-    when: () => true,
+    when: (c) => (c.ind.energyuse ?? 0) > 2500 && (c.st.qol < 15 || (c.ind.energyimp ?? 0) > 30),
     choices: [
       { text: 'ÖPPNA OFFENTLIGA BYGGNADER SOM VÄRMESTUGOR', cost: { money: 400 }, temp: { qol: 8, approval: 10 }, tip: 'Billigt och mänskligt.' },
       { text: 'SUBVENTIONERA UPPVÄRMNING', cost: { money: 1300 }, temp: { qol: 12, approval: 12, income: -12 }, tip: 'Ingen fryser.' },
@@ -975,29 +1016,31 @@ export const BASE_EVENTS = [
     id: 'national_artist', icon: '\u{1F3A8}', weight: 1,
     title: 'ETT KONSTVERK SOM DELAR LANDET',
     text: 'En hyllad konstnär har skapat något som halva landet kallar mästerverk och andra halvan hädelse.',
-    when: (c) => c.day > 90,
+    when: (c) => c.day > 90 && c.st.freedom > -10 && c.st.ideopower > 0,
     choices: [
       { text: 'STÄLL UT DET I NATIONALGALLERIET', cost: { pp: 10 }, temp: { freedom: 8, ideopower: -5, unrest: 5 }, tip: 'Konsten får plats.' },
       { text: 'FÖRBJUD DET', cost: { pp: 15 }, temp: { ideopower: 8, freedom: -10, research: -4 }, tip: 'Nu vill alla se det.' },
       { text: 'KÖP DET OCH LÅT DET FÖRSVINNA', cost: { money: 700 }, temp: { stability: 4, freedom: -5 }, tip: 'Diskret.' },
+      { text: 'SÄG INGENTING', temp: { unrest: 4, stability: -3 }, tip: 'Debatten rasar vidare utan dig.' },
     ],
   },
   {
     id: 'sports_triumph', icon: '\u{1F3C6}', weight: 1,
     title: 'VI VANN',
     text: 'Landslaget har vunnit den största turneringen som finns. Gatorna är fulla av firande.',
-    when: (c) => c.day > 100,
+    when: (c) => c.day > 100 && c.st.qol > 5 && c.st.manpower > 0,
     choices: [
       { text: 'NATIONELL FIRANDEDAG', cost: { money: 300 }, mod: 'olympic_glory', tip: 'Låt dem fira.' },
       { text: 'ANVÄND SEGERN POLITISKT', cost: { pp: 15 }, temp: { ideopower: 12, approval: 10 }, tip: 'Segern blir din.' },
       { text: 'INVESTERA I UNGDOMSIDROTT', cost: { money: 800 }, perm: { qol: 6, hdi: 5, manpower: 5 }, tip: 'Fler segrar sedan.' },
+      { text: 'GRATULERA MED ETT TELEGRAM', temp: { approval: -4 }, tip: 'Folket hade hoppats på mer.' },
     ],
   },
   {
     id: 'language_debate', icon: '\u{1F5E3}\u{FE0F}', weight: 1,
     title: 'VILKET SPRÅK SKA SKOLAN HA?',
     text: 'Minoritetsspråken i landet kräver egen undervisning. Frågan har blivit större än den ser ut.',
-    when: (c) => c.st.integration < 20,
+    when: (c) => c.st.integration < 0 && ((c.ind.reldiv ?? 0) > 30 || c.st.immigration > 10),
     choices: [
       { text: 'ETT SPRÅK FÖR ALLA', cost: { pp: 20 }, perm: { integration: 12, ideopower: 8, freedom: -8, unrest: 6 }, tip: 'Enhet med tvång.' },
       { text: 'TVÅSPRÅKIG UNDERVISNING', cost: { money: 800 }, perm: { integration: 6, freedom: 8, hdi: 5 }, tip: 'Dyrare, mjukare.' },
@@ -1008,7 +1051,7 @@ export const BASE_EVENTS = [
     id: 'birth_rate_crisis', icon: '\u{1F476}', weight: 2,
     title: 'INGEN FÅR BARN LÄNGRE',
     text: 'Födelsetalen har fallit till en nivå där befolkningen kommer att halveras inom två generationer.',
-    when: (c) => c.st.manpower < 10 || c.is('popgrowth', 'none', 'discouraged'),
+    when: (c) => ((c.ind.fert ?? 2.1) < 1.8 && c.st.manpower < 15) || c.is('popgrowth', 'none', 'discouraged'),
     choices: [
       { text: 'GENERÖSA FAMILJESTÖD', cost: { money: 1400 }, perm: { manpower: 12, welfare: 8, qol: 5, income: -8 }, tip: 'Fungerar, långsamt.' },
       { text: 'ÖPPNA FÖR ARBETSKRAFTSINVANDRING', cost: { pp: 20 }, perm: { immigration: 15, manpower: 10, gdp: 8, integration: -8 }, tip: 'Snabbaste lösningen.' },
@@ -1025,13 +1068,14 @@ export const BASE_EVENTS = [
       { text: 'STORT UNGDOMSPAKET: BOSTÄDER OCH JOBB', cost: { money: 1600 }, perm: { qol: 10, manpower: 10, gdp: 6, income: -8 }, tip: 'Ger dem ett skäl att stanna.' },
       { text: 'GÖR DET SVÅRT ATT FLYTTA', cost: { pp: 30 }, perm: { manpower: 8, freedom: -15, approval: -10 }, tip: 'De stannar. Motvilligt.' },
       { text: 'UPPMUNTRA DEM ATT ÅTERVÄNDA SENARE', cost: { money: 500 }, temp: { manpower: 4, research: 4 }, tip: 'Vissa kommer tillbaka.' },
+      { text: 'LÅT DEM GÅ', perm: { manpower: -6, research: -3 }, temp: { gdp: -4 }, tip: 'De bästa försvinner först.' },
     ],
   },
   {
     id: 'organized_crime', icon: '\u{1F52B}', weight: 2,
     title: 'DEN ORGANISERADE BROTTSLIGHETEN VÄXER',
     text: 'Kriminella nätverk har tagit över hela branscher och köpt sig in i politiken.',
-    when: (c) => c.st.safety < 5 || c.st.corruption > 20,
+    when: (c) => (c.st.safety < -5 && c.st.corruption > 10) || (c.ind.gangs ?? 0) > 250,
     choices: [
       { text: 'SÄRSKILD INSATSSTYRKA', cost: { money: 1200, pp: 20 }, perm: { safety: 14, corruption: -10 }, temp: { unrest: 8 }, tip: 'Dyrt och effektivt.' },
       { text: 'LEGALISERA DERAS VERKSAMHET', cost: { pp: 30 }, perm: { income: 12, safety: 6, corruption: 8, approval: -8 }, tip: 'Tar ifrån dem marknaden.' },
@@ -1043,18 +1087,19 @@ export const BASE_EVENTS = [
     id: 'monument_question', icon: '\u{1F5FF}', weight: 1,
     title: 'STATYN MÅSTE BORT — ELLER STÅ KVAR',
     text: 'En staty över en historisk gestalt har blivit stridsfråga. Båda sidor är högljudda.',
-    when: (c) => c.day > 110,
+    when: (c) => c.day > 110 && c.st.unrest > 5 && c.st.freedom > -20,
     choices: [
       { text: 'RIV DEN', cost: { pp: 15 }, temp: { freedom: 6, approval: 4, ideopower: -6, unrest: 6 }, tip: 'En sida jublar.' },
       { text: 'LÅT DEN STÅ', cost: { pp: 15 }, temp: { ideopower: 8, stability: 5, unrest: 6 }, tip: 'Den andra sidan jublar.' },
       { text: 'FLYTTA DEN TILL ETT MUSEUM MED FÖRKLARANDE TEXT', cost: { money: 300, pp: 10 }, temp: { hdi: 5, unrest: -6, approval: 5 }, tip: 'Ingen jublar. Alla kan leva med det.' },
+      { text: 'LÅT FRÅGAN LIGGA', temp: { unrest: 8, stability: -4 }, tip: 'Båda sidor blir argare.' },
     ],
   },
   {
     id: 'pension_crisis', icon: '\u{1F475}', weight: 2,
     title: 'PENSIONERNA RÄCKER INTE',
     text: 'Pensionssystemet går back och de äldsta får allt mindre att leva på.',
-    when: (c) => c.day > 160,
+    when: (c) => c.day > 160 && ((c.ind.old ?? 0) > 17 || c.st.welfare < -25) && c.st.income < 20,
     choices: [
       { text: 'HÖJ PENSIONSÅLDERN', cost: { pp: 30 }, perm: { income: 12, manpower: 6, approval: -14, unrest: 8 }, tip: 'Matematiskt riktigt, politiskt dyrt.' },
       { text: 'HÖJ AVGIFTERNA', cost: { pp: 20 }, perm: { welfare: 8, income: -8, approval: -6 }, tip: 'De arbetande får betala.' },
@@ -1068,9 +1113,9 @@ export const BASE_EVENTS = [
     id: 'crossroads_state', icon: '\u{1F5FA}\u{FE0F}', weight: 1, cooldown: 900,
     title: 'VAD SKA DETTA LAND VARA?',
     text: 'En författningskommission har arbetat i åratal och lägger nu fram fem vägar framåt. Valet kommer att prägla landet i generationer.',
-    when: (c) => c.day > 200 && c.pp > 40,
+    when: (c) => c.day > 360 && c.pp > 150 && c.st.stability < 10,
     choices: [
-      { text: 'EN FRI REPUBLIK', cost: { pp: 40 }, perm: { freedom: 15, approval: 12, corruption: -8, statepower: -12 }, tip: 'Rättigheter först, makt sedan.' },
+      { text: 'EN FRI REPUBLIK', perm: { freedom: 12, approval: 6, corruption: -6, statepower: -14, polpower: -12 }, temp: { stability: -8 }, tip: 'Kostar ingen makt att välja — makten lämnas bort.' },
       { text: 'EN STARK STAT', cost: { pp: 40 }, perm: { statepower: 18, polpower: 12, stability: 10, freedom: -15 }, tip: 'Ordning först, allt annat sedan.' },
       { text: 'ETT VÄLFÄRDSSAMHÄLLE', cost: { pp: 40, money: 1200 }, perm: { welfare: 18, qol: 14, hdi: 10, income: -12 }, tip: 'Trygghet först.' },
       { text: 'EN HANDELSNATION', cost: { pp: 40 }, perm: { income: 16, gdp: 14, factory: 10, statepower: -8, ideopower: -8 }, tip: 'Välstånd först.' },
@@ -1087,20 +1132,20 @@ export const BASE_EVENTS = [
       { text: 'KÖP LUGN MED VÄLFÄRD', cost: { money: 1400 }, temp: { unrest: -18, approval: 15, income: -12 }, tip: 'Gatorna tystnar. Kassan blöder.' },
       { text: 'SLÅ NER ORON MED HÅRD HAND', cost: { pp: 35 }, temp: { unrest: -20, freedom: -18, approval: -12, statepower: 12 }, tip: 'Snabbast. Fulast.' },
       { text: 'BÖJ DIG FÖR OMVÄRLDEN OCH FÅ HJÄLP', cost: { pp: 25 }, res: { money: 1600 }, temp: { statepower: -12, ideopower: -10 }, rel: 20, tip: 'Pengar och andrum, mot självständighet.' },
-      { text: 'SKYLL ALLT PÅ EN YTTRE FIENDE', cost: { pp: 20 }, temp: { unrest: -10, ideopower: 14, approval: 8 }, mod: 'war_fever', rel: -22, tip: 'Samlar landet. Mot något.' },
+      { text: 'SKYLL ALLT PÅ EN YTTRE FIENDE', temp: { unrest: -6, ideopower: 10, stability: -6 }, mod: 'war_fever', rel: -25, tip: 'Gratis. Samlar landet — mot något, och omvärlden hör det.' },
     ],
   },
   {
     id: 'crossroads_succession', icon: '\u{1F451}', weight: 1, cooldown: 700,
     title: 'VEM TAR ÖVER EFTER DIG?',
     text: 'Frågan går inte längre att skjuta upp. Hur makten ska föras vidare avgör vad landet blir.',
-    when: (c) => c.day > 260,
+    when: (c) => c.day > 600 && c.st.stability < 5 && c.st.approval < 20,
     choices: [
       { text: 'GENOM FRIA VAL', cost: { pp: 30 }, perm: { freedom: 12, approval: 12, stability: 8, polpower: -10 }, tip: 'Folket avgör.' },
       { text: 'GENOM PARTIET', cost: { pp: 30 }, perm: { ideopower: 14, statepower: 10, polpower: 8, freedom: -10 }, tip: 'Rörelsen avgör.' },
       { text: 'GENOM ARV', cost: { pp: 30 }, perm: { stability: 15, ideopower: 8, freedom: -12, approval: -6 }, tip: 'Blodet avgör.' },
       { text: 'GENOM MILITÄREN', cost: { pp: 30 }, perm: { milpower: 14, statepower: 12, freedom: -15, unrest: 8 }, tip: 'Vapnen avgör.' },
-      { text: 'INGEN EFTERTRÄDARE — JAG STANNAR', cost: { pp: 50 }, perm: { polpower: 15, statepower: 12, stability: -12, unrest: 10 }, tip: 'Frågan skjuts upp. Igen.' },
+      { text: 'INGEN EFTERTRÄDARE — JAG STANNAR', perm: { stability: -10, approval: -8 }, temp: { unrest: 10, polpower: 5 }, tip: 'Frågan skjuts upp. Igen. Alla undrar vad som händer sedan.' },
     ],
   },
   {
@@ -1109,7 +1154,7 @@ export const BASE_EVENTS = [
     text: 'En enorm summa har landat i statskassan. Alla departement har en åsikt om vad den ska gå till.',
     when: (c) => c.money > 2500,
     choices: [
-      { text: 'INDUSTRIN', cost: { money: 2200 }, mod: 'industrial_boom', tip: 'Bygger varaktig kapacitet.' },
+      { text: 'LÅT DEN LIGGA I STATSKASSAN', temp: { approval: -6, stability: -4 }, tip: 'Pengarna ligger kvar. Inget departement blir nöjt.' },
       { text: 'FORSKNINGEN', cost: { money: 2200 }, mod: 'tech_breakthrough', res: { rp: 150 }, tip: 'Kunskap som håller.' },
       { text: 'FOLKET', cost: { money: 2200 }, perm: { qol: 12, welfare: 10, approval: 15 }, tip: 'De märker det direkt.' },
       { text: 'ARMÉN', cost: { money: 2200 }, perm: { milpower: 16, readiness: 12, manpower: 8 }, tip: 'Ingen ifrågasätter dig igen.' },
@@ -1120,10 +1165,10 @@ export const BASE_EVENTS = [
     id: 'crossroads_verdict', icon: '\u{2696}\u{FE0F}', weight: 1, cooldown: 600,
     title: 'DOMEN MOT DEN FÖRRA REGERINGEN',
     text: 'De som styrde före dig står nu inför rätta. Hur du hanterar dem säger allt om vad slags stat du leder.',
-    when: (c) => c.day > 220,
+    when: (c) => c.day > 220 && c.st.corruption > 5 && c.st.freedom > -30,
     choices: [
       { text: 'RÄTTVIS RÄTTEGÅNG, VAD DEN ÄN LEDER TILL', cost: { pp: 25 }, perm: { freedom: 10, corruption: -10, approval: 8 }, tip: 'Lagen gäller alla.' },
-      { text: 'AMNESTI FÖR FÖRSONINGENS SKULL', cost: { pp: 20 }, perm: { stability: 12, unrest: -10, corruption: 6 }, tip: 'Landet går vidare. Ingen får upprättelse.' },
+      { text: 'AMNESTI FÖR FÖRSONINGENS SKULL', perm: { stability: 8, corruption: 10, approval: -6 }, temp: { unrest: -6 }, tip: 'Landet går vidare. Ingen får upprättelse — och det svider.' },
       { text: 'AVRÄTTA DEM', cost: { pp: 30 }, perm: { statepower: 15, ideopower: 12, freedom: -15, approval: -8 }, temp: { unrest: 10 }, tip: 'Ingen väg tillbaka — för någon.' },
       { text: 'LANDSFÖRVISNING', cost: { pp: 20 }, perm: { stability: 8, statepower: 6 }, rel: -10, tip: 'Ur landet, ur historien.' },
       { text: 'ERBJUD DEM PLATSER I DIN REGERING', cost: { pp: 35 }, perm: { polpower: 12, corruption: 12, stability: 10, approval: -12 }, tip: 'Cyniskt, effektivt, genomskådat.' },
@@ -1136,7 +1181,7 @@ export const EVENTS = [
   ...NYA_IDEOLOGIER, ...MILITAR, ...VETENSKAP, ...SAMHALLE, ...OMVARLD, ...KALLA_KRIGET, ...NYA_LAGAR_58,
   ...VARDAG, ...KATASTROF, ...AFFARER, ...DIPLOMATI, ...INTRIGER, ...FRAMTID, ...KURIOSA, ...KEDJOR, ...RIKET,
   ...REAKTIONER, ...PROTESTER, ...MIGRATION, ...STATSFINANS, ...DEMOKRATI, ...SAMHALLSLIV, ...KONSEKVENSER,
-  ...YTTERLIGHETER, ...BROTT, ...MEDIER, ...MYNDIGHETER,
+  ...YTTERLIGHETER, ...BROTT, ...MEDIER, ...MYNDIGHETER, ...IDENTITET,
 ];
 
 export const EVENT_BY_ID = Object.fromEntries(EVENTS.map((e) => [e.id, e]));
@@ -1186,7 +1231,7 @@ export function nextEventGap() {
 // I titlar (VERSALER) skrivs de med versaler: {GRANNE}, {STAD} …
 // V5.16: {lag} = lagen som senast ändrats (händelsens slag), t.ex. 'pensionerna'.
 // V5.17: {utopi} {utopilag} {brutal} {brutallag} — se ovan.
-export const PLACEHOLDERS = ['rike', 'granne', 'land', 'stad', 'huvudstad', 'lag', 'utopi', 'utopilag', 'brutal', 'brutallag'];
+export const PLACEHOLDERS = ['rike', 'granne', 'land', 'stad', 'huvudstad', 'lag', 'utopi', 'utopilag', 'brutal', 'brutallag', 'flagga', 'monument', 'orden', 'ambassadland', 'sang', 'valuta'];   // V5.22: + identiteten
 export function fillText(str, vars) {
   if (typeof str !== 'string' || !str.includes('{')) return str;
   return str.replace(/\{(\w+)\}/g, (m, k) => {
@@ -1209,10 +1254,11 @@ export function rollNext(next) {
 export function affordable(choice, c) {
   const need = choice.cost || {};
   // V5.16: banken lånar ut — det som räcker är kassan plus krediten (c.spend)
-  if ((need.money || 0) > (c.spend ?? c.money)) return `KRÄVER ${money(need.money)}`;
-  if ((need.pp || 0) > c.pp) return `KRÄVER ${need.pp} \u{2696}\u{FE0F}`;
-  if ((need.rp || 0) > c.rp) return `KRÄVER ${need.rp} \u{1F52C}`;
-  if ((need.man || 0) > c.man) return `KRÄVER ${people(need.man)} \u{1FA96}`;
+  // V5.22: bara en kostnad över noll kan spärra — med kassan under krediten blev annars även de gratis valen låsta
+  if (need.money > 0 && need.money > (c.spend ?? c.money)) return `KRÄVER ${money(need.money)}`;
+  if (need.pp > 0 && need.pp > c.pp) return `KRÄVER ${need.pp} \u{2696}\u{FE0F}`;
+  if (need.rp > 0 && need.rp > c.rp) return `KRÄVER ${need.rp} \u{1F52C}`;
+  if (need.man > 0 && need.man > c.man) return `KRÄVER ${people(need.man)} \u{1FA96}`;
   return null;
 }
 

@@ -36,6 +36,7 @@ export const GRIEV_KINDS = {
   underskott: { name: 'TOM STATSKASSA', icon: '\u{1F3E6}', desc: 'löner och bidrag som betalas sent när kassan är under noll' },
   kris: { name: 'KRISEN', icon: '\u{1F4C9}', desc: 'arbetslöshet, inflation och fattigdom' },
   trygghet: { name: 'TRYGGHETEN', icon: '\u{1F6A8}', desc: 'brott, skjutningar och gäng som växer, eller polis och straff som rivs ner' },   // V5.18
+  identitet: { name: 'IDENTITETEN', icon: '\u{1F6A9}', desc: 'flaggan, nationalsången, helgdagarna och symbolerna som byts eller rivs' },   // V5.22
 };
 export const GRIEV_IDS = Object.keys(GRIEV_KINDS);
 
