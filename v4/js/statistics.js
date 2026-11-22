@@ -2510,8 +2510,42 @@ function minus(T, T0) {
 // V5.8: måtten med mode och deras fx som listor, så att de inte packas upp
 // på nytt för varje land varje gång (countryIndicators körs för hela världen)
 // V5.10: fx som två raka listor (nycklar + vikter) — snabbare att loopa, samma summa i samma ordning
+// V5.23 TILLVÄXTEN: nationsvärdena klipps vid 100, men det som PRODUCERAS (BNP, fabriker,
+// forskning, inkomst) har inget tak (stats.js: raw). Förut stannade BNP per capita när BNP-värdet
+// nådde 100, hur mycket man än forskade eller byggde. Överskottet över 100 ligger nu i
+// T['o_gdp'] osv. (main.js: statTotals) och driver bara måtten åt det GODA hållet — mer forskning
+// gör aldrig något mått sämre (ingen extra inflation, inga fler utsläpp av överskottet).
+// OVER_BOOST: BNP per capita växer dubbelt så fort av överskottet.
+export const OVER_STATS = ['gdp', 'factory', 'research', 'income'];
+const OVER_SET = new Set(OVER_STATS);
+const OVER_BOOST = { gdppc: 2 };
 const MODE_LIST = INDICATORS.filter((d) => d.mode)
-  .map((d) => ({ id: d.id, mul: d.mode === 'mul', fk: Object.keys(d.fx || {}), fw: Object.values(d.fx || {}), min: d.min, max: d.max }));
+  .map((d) => {
+    const ok = [];
+    for (const [k, w] of Object.entries(d.fx || {})) {
+      if (!OVER_SET.has(k)) continue;
+      // procentmått där lågt är bra (arbetslöshet …) rörs inte — de skulle bara slå i golvet (0,2 %)
+      if (d.mode === 'add' && d.better === 'low') continue;
+      if ((d.better === 'high' && w > 0) || (d.better === 'low' && w < 0)) ok.push(['o_' + k, w * (OVER_BOOST[d.id] || 1)]);
+    }
+    return { id: d.id, mul: d.mode === 'mul', fk: Object.keys(d.fx || {}), fw: Object.values(d.fx || {}), min: d.min, max: d.max, ok };
+  });
+
+// V5.23: lägg till en ändring i nationsvärdena (t.ex. ett lands egen utvecklingsnivå i stället för
+// rikets) och håll isär värdet (−100…100) och överskottet över 100
+export function addStatDelta(T, dT) {
+  if (!T || !dT) return T;
+  const out = { ...T };
+  for (const [k, d] of Object.entries(dT)) {
+    if (!d) continue;
+    if (OVER_SET.has(k)) {
+      const raw = (T[k] || 0) + (T['o_' + k] || 0) + d;
+      out[k] = clampV(raw, -100, 100);
+      out['o_' + k] = Math.max(0, raw - 100);
+    } else out[k] = clampV((T[k] || 0) + d, -100, 100);
+  }
+  return out;
+}
 // V5.10: hur varje mått räknas ihop över ett rike (0 = summa, 1 = störst, 2 = vägt efter BNP, 3 = efter befolkning)
 const AGG_LIST = INDICATORS.filter((d) => d.agg !== 'derived')
   .map((d) => ({ id: d.id, how: d.agg === 'sum' ? 0 : d.agg === 'max' ? 1 : d.agg === 'gdp' ? 2 : 3 }));
@@ -2717,6 +2751,7 @@ export function countryIndicators(cid, T, T0 = null, laws = null) {
     let e = 0;
     const fk = d.fk, fw = d.fw;
     for (let i = 0; i < fk.length; i++) e += fw[i] * (D[fk[i]] || 0);
+    for (const [k, w] of d.ok) e += w * Math.max(0, D[k] || 0);   // V5.23: överskottet över 100
     e /= 100;
     v[d.id] = d.mul ? clampV(base * Math.max(0.05, 1 + e), d.min, d.max) : clampV(base + e, d.min, d.max);
   }
@@ -2858,9 +2893,10 @@ export function realmPyramid(parts, T, t0Of = null, laws = null) {
 // politik (det spelet utgår från innan lagarna hunnit verka).
 export function realmIndicators(parts, T, extra = {}, t0Of = null, laws = null, noPolicy = false) {
   const per = [];
-  for (const { cid, share = 1 } of parts) {
+  for (const { cid, share = 1, dT } of parts) {
     const T0 = t0Of?.(cid) || null;
-    const v = noPolicy ? countryIndicators(cid, T0, T0, null) : countryIndicators(cid, T, T0, laws);
+    // V5.23: dT = landets egen del (t.ex. dess egen utvecklingsnivå i stället för rikets)
+    const v = noPolicy ? countryIndicators(cid, T0, T0, null) : countryIndicators(cid, dT ? addStatDelta(T, dT) : T, T0, laws);
     if (v) per.push({ cid, v, w: share });
   }
   if (!per.length) return null;

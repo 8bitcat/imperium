@@ -72,13 +72,15 @@ export function computeStats(nation, sources = {}) {
     const bld = sources.buildings?.[id] || 0;     // V5.17: stadsbyggnaderna
     const med = sources.media?.[id] || 0;         // V5.20: public service och nyhetskanalerna
     const myn = sources.agencies?.[id] || 0;      // V5.21: myndigheternas budget
-    const sum = b + law + ideo + res + mods + dev + extra + faith + bank + protest + utopia + bld + med + myn;
+    // V5.23: stoltheten, flaggan och symbolerna (V5.22) — källan skickades in men räknades aldrig
+    const idn = sources.identity?.[id] || 0;
+    const sum = b + law + ideo + res + mods + dev + extra + faith + bank + protest + utopia + bld + med + myn + idn;
     const total = Math.max(-100, Math.min(100, sum));
     // V5.15: raw har inget tak uppåt. Det är raw som ger pengar, forskning,
     // politisk makt och rekryter per dag (UNCAPPED) — statistiken och allt
     // annat läser fortfarande total (−100…100).
     const raw = Math.max(-100, sum);
-    breakdown[id] = { base: b, laws: law, ideology: ideo, research: res, modifiers: mods, development: dev, extra, faith, bank, protest, utopia, buildings: bld, media: med, agencies: myn, total, raw };
+    breakdown[id] = { base: b, laws: law, ideology: ideo, research: res, modifiers: mods, development: dev, extra, faith, bank, protest, utopia, buildings: bld, media: med, agencies: myn, identity: idn, total, raw };
   }
   return breakdown;
 }

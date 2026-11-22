@@ -156,7 +156,10 @@ export const DEMO_SUBS = ['demo_el', 'demo_gov', 'demo_part', 'demo_cult', 'demo
 // ---------- TIDEN: hur fort varje mått rör sig ----------
 // [halveringstid i spelår, största ändring per spelår (eller null), true = taket är en andel av värdet]
 const SPEED = {
-  gdppc: [3, 0.07, true], gdppcppp: [3, 0.07, true], gnipc: [3, 0.07, true], productivity: [3, 0.07, true],
+  // V5.23 TILLVÄXTEN: BNP per capita följer forskningen och byggena fortare — förut högst 7 % per
+  // spelår, så tio nivåer forskning såg ut att stå still. Nu högst 20 % per år (Kinas och Sydkoreas
+  // bästa år låg på 10–15 %), halveringstid 1,5 år.
+  gdppc: [1.5, 0.2, true], gdppcppp: [1.5, 0.2, true], gnipc: [1.5, 0.2, true], productivity: [1.5, 0.2, true],
   healthpc: [3, 0.08, true], gdpgrowth: [0.75], unemp: [1, 4], youthunemp: [1, 8], unempfem: [1, 4],
   unempmale: [1, 4], unempedu: [1, 4], infl: [0.5], lendrate: [0.75], realrate: [0.75], stockcap: [0.5],
   fdi: [1], tourists: [1, 0.35, true], airpax: [1, 0.35, true], exports: [2, 0.15, true], imports: [2, 0.15, true],
@@ -179,7 +182,7 @@ const SPEED = {
   trustgov: [0.75], trustparl: [1], trustcourt: [2], turnout: [2, 6], protests: [0.4], strikes: [0.4],
   polprisoners: [1], unionrate: [5, 2], xenophobia: [2, 4], segreg: [6, 2], integ: [4, 3], migemp: [3, 3],
   exclusion: [6, 1], homeless: [2, 0.25, true], houseprice: [2, 0.12, true], rentshare: [3, 2], hhdebt: [3, 6],
-  medinc: [3, 0.07, true], wage: [3, 0.07, true], minwage: [1], foodprice: [1], fuelprice: [0.5], elprice: [0.75],
+  medinc: [2, 0.15, true], wage: [2, 0.15, true], minwage: [1], foodprice: [1], fuelprice: [0.5], elprice: [0.75],
   carewait: [2], pisa: [6, 4], housingshort: [3, 0.15, true], sickleave: [2, 1], mentalill: [4, 1],
 };
 // halveringstid per grupp för allt som inte står ovan

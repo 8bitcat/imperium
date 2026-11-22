@@ -3,7 +3,7 @@
 // daily = daglig avkastning. resource = landet producerar råvaran. tradeSlot = +1 handelsavtal.
 //
 // V5.17 BYGGBOOM (Henrys önskemål): 30 nya byggnader, 15 platser per stad och bygge i
-// många städer på en gång. Nya fält:
+// många städer på en gång. V5.23 TILLVÄXTEN: 20 till (60 st) och 30 platser per stad. Nya fält:
 //   cat        avdelning i byggmenyn (BUILD_CATS)
 //   drift      driftkostnad i % av rikets dagsinkomst när VARJE stad har byggnaden — varje
 //              byggnad kostar sin stads andel av folket. driftFix = % per byggnad (en per land)
@@ -92,14 +92,60 @@ export const BUILDINGS = {
     desc: 'PRODUCERAR URAN' },
   diamantgruva: { cat: 'rav', name: 'DIAMANTGRUVA', icon: '\u{1F48E}', money: 520, days: 10, resource: 'DIAMANT', research: ['economy', 2],
     daily: { money: 5 }, desc: 'PRODUCERAR DIAMANTER' },
+
+  // ---------- V5.23 TILLVÄXTEN: 20 nya ----------
+  industripark: { cat: 'eko', name: 'INDUSTRIPARK', icon: '\u{1F3D7}\u{FE0F}', money: 340, days: 8, drift: 1,
+    daily: { money: 4 }, stats: { factory: 9, gdp: 5, income: 3 }, desc: 'FABRIKER, LAGER OCH TUSENTALS JOBB' },
+  kopcentrum: { cat: 'eko', name: 'KÖPCENTRUM', icon: '\u{1F6CD}\u{FE0F}', money: 260, days: 6,
+    daily: { money: 5 }, stats: { gdp: 3, income: 3, qol: 2 }, desc: 'HANDEL, CAFÉER OCH BIOGRAF UNDER ETT TAK' },
+  logistik: { cat: 'eko', name: 'LOGISTIKCENTER', icon: '\u{1F4E6}', money: 380, days: 8, research: ['logistics', 2],
+    daily: { money: 4 }, stats: { factory: 6, gdp: 4, readiness: 3 }, desc: 'VARORNA FRAM I TID — I FRED OCH KRIG' },
+  teknikpark: { cat: 'eko', name: 'TEKNIKPARK', icon: '\u{1F4A1}', money: 640, days: 12, drift: 1, research: ['computing', 3],
+    daily: { rp: 3, money: 6 }, stats: { research: 6, gdp: 6, income: 3 }, desc: 'NYSTARTADE BOLAG BREDVID UNIVERSITETET' },
+  frizon: { cat: 'eko', name: 'FRIHANDELSZON', icon: '\u{1F6A2}', money: 900, days: 16, perCountry: 1, research: ['economy', 3], tradeSlot: 1,
+    daily: { money: 18 }, stats: { gdp: 6, income: 5, factory: 4, corruption: 1 }, desc: 'TULLFRITT FÖR UTLÄNDSKA FÖRETAG — EN PER LAND' },
+  varv: { cat: 'eko', name: 'SKEPPSVARV', icon: '\u{1F6E5}\u{FE0F}', money: 480, days: 10, drift: 1, research: ['navy', 1],
+    daily: { money: 5 }, stats: { factory: 7, milpower: 4, gdp: 2 }, desc: 'FRAKTFARTYG I FRED, ÖRLOGSFARTYG I KRIG' },
+  bibliotek: { cat: 'kun', name: 'BIBLIOTEK', icon: '\u{1F4DA}', money: 120, days: 3, drift: 1,
+    stats: { hdi: 3, research: 2, integration: 3, qol: 1 }, desc: 'GRATIS BÖCKER, SPRÅKKURSER OCH INTERNET' },
+  yrkesskola: { cat: 'kun', name: 'YRKESHÖGSKOLA', icon: '\u{1F527}', money: 210, days: 5, drift: 2,
+    stats: { factory: 5, gdp: 3, hdi: 3, integration: 2 }, desc: 'SVETSARE, SJUKSKÖTERSKOR OCH PROGRAMMERARE' },
+  observatorium: { cat: 'kun', name: 'OBSERVATORIUM', icon: '\u{1F52D}', money: 360, days: 8, research: ['space', 1],
+    daily: { rp: 2 }, stats: { research: 3, ideopower: 2 }, desc: 'TELESKOP MOT UNIVERSUMS KANT' },
+  vardcentral: { cat: 'val', name: 'VÅRDCENTRAL', icon: '\u{1FA7A}', money: 160, days: 4, drift: 3,
+    stats: { qol: 4, hdi: 4, manpower: 2, approval: 2 }, desc: 'DOKTORN NÄRA HEMMET' },
+  forskola: { cat: 'val', name: 'FÖRSKOLA', icon: '\u{1F9F8}', money: 140, days: 4, drift: 2,
+    stats: { welfare: 4, approval: 3, hdi: 2, gdp: 2 }, desc: 'BÅDA FÖRÄLDRARNA KAN JOBBA' },
+  stadspark: { cat: 'val', name: 'STADSPARK', icon: '\u{1F333}', money: 110, days: 3,
+    stats: { qol: 4, approval: 2, unrest: -1 }, desc: 'GRÖNSKA, LEKPLATS OCH DAMM MED ÄNDER' },
+  konserthus: { cat: 'sam', name: 'KONSERTHUS', icon: '\u{1F3BB}', money: 320, days: 7, drift: 1,
+    daily: { money: 1 }, stats: { qol: 3, ideopower: 3, approval: 2 }, desc: 'SYMFONIER OCH POPKONSERTER' },
+  nojespark: { cat: 'sam', name: 'NÖJESPARK', icon: '\u{1F3A2}', money: 450, days: 10,
+    daily: { money: 6 }, stats: { approval: 4, qol: 3, unrest: -2 }, desc: 'BERG-OCH-DALBANA — TURISTERNA KOMMER' },
+  brandstation: { cat: 'kon', name: 'BRANDSTATION', icon: '\u{1F692}', money: 150, days: 4, drift: 1,
+    stats: { safety: 6, qol: 2, stability: 1 }, desc: 'RÄDDAR LIV NÄR DET BRINNER' },
+  tingsratt: { cat: 'kon', name: 'TINGSRÄTT', icon: '\u{2696}\u{FE0F}', money: 260, days: 6, drift: 2,
+    stats: { safety: 4, corruption: -4, stability: 3, freedom: 1 }, desc: 'RÄTTVISA PROCESSER — LAGEN GÄLLER ALLA' },
+  solpark: { cat: 'eng', name: 'SOLCELLSPARK', icon: '\u{2600}\u{FE0F}', money: 320, days: 7, research: ['energy', 2],
+    daily: { money: 2 }, stats: { factory: 6, income: 3, qol: 2 }, desc: 'REN EL NÄR SOLEN SKINER' },
+  vattenkraft: { cat: 'eng', name: 'VATTENKRAFTVERK', icon: '\u{1F30A}', money: 700, days: 14, drift: 1, research: ['energy', 1],
+    daily: { money: 5 }, stats: { factory: 12, income: 5, stability: 1 }, desc: 'DAMMEN GER EL DYGNET RUNT I HUNDRA ÅR' },
+  oljeplattform: { cat: 'rav', name: 'OLJEPLATTFORM', icon: '\u{26FD}', money: 680, days: 14, resource: 'OLJA', research: ['economy', 3],
+    daily: { money: 10 }, stats: { gdp: 3, qol: -1 }, desc: 'OLJA UR HAVSBOTTEN' },
+  marinbas: { cat: 'mil', name: 'MARINBAS', icon: '\u{1F531}', money: 520, days: 10, drift: 2, research: ['navy', 2],
+    stats: { milpower: 7, readiness: 5, safety: 2 }, desc: 'FLOTTAN VAKTAR KUSTEN' },
 };
 
-export const CITY_SLOTS = 15;   // V5.17: 3 → 15
+export const CITY_SLOTS = 30;   // V5.17: 3 → 15, V5.23: 15 → 30
 
-// V5.17: pengar, forskning och rekryter per byggnad är som förut i landets första
-// YIELD_FULL städer — sedan mättas marknaden och varje ny ger lite mindre.
-export const YIELD_FULL = 14;
-export const yieldWeight = (i) => (i < YIELD_FULL ? 1 : 1 / (1 + (i - YIELD_FULL + 1) / 8));
+// V5.23 TILLVÄXTEN: ingen mättnad längre — varje byggnad ger fullt i varje stad.
+// (V5.17: efter 14 städer per sort gav varje ny mindre och mindre.)
+export const YIELD_FULL = Infinity;
+export const yieldWeight = () => 1;
+
+// V5.23: driften är en andel av rikets inkomst, men aldrig mer än så här — fler byggnader
+// får aldrig göra riket fattigare än det var utan dem
+export const DRIFT_MAX = 40;
 
 // Byggnadernas nationsvärden: `cover` = { byggnad: andel av rikets befolkning (0..1)
 // som bor i en stad med byggnaden }. Full effekt först när hela riket har den.

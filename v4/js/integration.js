@@ -108,9 +108,11 @@ export function startPercent(myIdeo, theirIdeo, myRel, theirRel, adjacent = true
 // ---------- tre integrationsfaser ----------
 // Fas 1 (ockupation) kostar mest — därefter går landet plus minus noll.
 export const PHASES = [
-  { at: 0, name: 'OCKUPATION', desc: 'INGEN INKOMST — LANDET KOSTAR ATT HÅLLA', income: -0.5, pp: -0.4, unrest: 34 },
-  { at: 40, name: 'PACIFICERING', desc: 'LANDET BÄR SIG SJÄLVT (\u{00B1}0)', income: 0, pp: 0, unrest: 18 },
-  { at: 75, name: 'ASSIMILERING', desc: 'HALV INKOMST, ORON LÄGGER SIG', income: 0.5, pp: 0.5, unrest: 8 },
+  // V5.23: tillväxten (din forskning + det du investerat i landet, main.js: countryYield) läggs
+  // ovanpå — redan under ockupationen slår 60 % av den igenom, så en satsning ger plus
+  { at: 0, name: 'OCKUPATION', desc: 'KOSTAR ATT HÅLLA — MEN 60 % AV TILLVÄXTEN SLÅR IGENOM', income: -0.5, pp: -0.4, unrest: 34 },
+  { at: 40, name: 'PACIFICERING', desc: 'BÄR SIG SJÄLVT + 80 % AV TILLVÄXTEN', income: 0, pp: 0, unrest: 18 },
+  { at: 75, name: 'ASSIMILERING', desc: 'HALV INKOMST + HELA TILLVÄXTEN, ORON LÄGGER SIG', income: 0.5, pp: 0.5, unrest: 8 },
   { at: 100, name: 'INTEGRERAT', desc: 'FULL INKOMST — LANDET ÄR DITT', income: 1, pp: 1, unrest: 0 },
 ];
 
@@ -151,7 +153,8 @@ export function garrisonNeeded(pop, myIdeo, theirIdeo, myRel, theirRel, adjacent
   return Math.max(2, Math.round(size * (1 + gap * 0.14 + relDiff + (adjacent ? 0 : 0.4))));
 }
 
-export function dailyRate({ researchTier = 0, office = false, armyUnits = 0, needed = 0, sameIdeo = false, adjacent = true }) {
+// V5.23: dev = landets infrastruktur + stadsnivå (0–200). Vägar, skolor och jobb vinner folket.
+export function dailyRate({ researchTier = 0, office = false, armyUnits = 0, needed = 0, sameIdeo = false, adjacent = true, dev = 0 }) {
   // Utan tillräcklig ockupationsstyrka BACKAR integrationen — landet glider ur
   // händerna. Med rätt styrka går den framåt, och överskott snabbar på.
   const deficit = Math.max(0, needed - armyUnits);
@@ -159,7 +162,7 @@ export function dailyRate({ researchTier = 0, office = false, armyUnits = 0, nee
     ? -0.1 - 0.22 * Math.min(8, deficit)              // för lite trupp → tydligt nedåt
     : 0.55 + 0.05 * Math.min(12, armyUnits - needed); // full styrka → uppåt
   // bonusarna hjälper, men kan inte ersätta soldater på marken
-  const help = 0.15 * researchTier + (office ? 0.5 : 0) + (sameIdeo ? 0.2 : 0);
+  const help = 0.15 * researchTier + (office ? 0.5 : 0) + (sameIdeo ? 0.2 : 0) + 0.4 * Math.min(200, dev) / 200;
   r += deficit > 0 ? help * 0.35 : help;
   if (!adjacent) r = r > 0 ? r * 0.4 : r * 1.4;       // exklav: trögt och skörare
   return r;

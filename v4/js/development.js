@@ -80,6 +80,34 @@ export function devMods(world, cids) {
   };
 }
 
+// V5.23 TILLVÄXTEN: rikets utvecklingsbonus. Förut var den SNITTET över alla dina länder,
+// så varje erövrat, outvecklat land drog ner hela riket — och en satsning i ett litet land
+// späddes ut av alla andra. Nu räknas hemlandet fullt, och varje annat land LÄGGER TILL
+// sin egen nivå efter sin ekonomiska tyngd jämfört med hemlandet (w, 0–1). Det som
+// produceras (fabriker, inkomst, BNP, forskning) summeras; livskvalitet och HDI blir det
+// bästa av hemlandet och det vägda snittet — så ett nytt land aldrig ger minus.
+const DEV_SUM = new Set(['factory', 'income', 'gdp', 'research']);
+export function devModsRealm(world, list) {
+  if (!list?.length) return devMods(world, []);
+  const home = devMods(world, [list[0].cid]);
+  const out = {}, avg = {};
+  let wsum = 0;
+  for (const { cid, w } of list) {
+    if (!(w > 0)) continue;
+    const m = devMods(world, [cid]);
+    wsum += w;
+    for (const [k, v] of Object.entries(m)) {
+      if (DEV_SUM.has(k)) out[k] = (out[k] || 0) + v * w;
+      avg[k] = (avg[k] || 0) + v * w;
+    }
+  }
+  for (const k of Object.keys(home)) {
+    if (DEV_SUM.has(k)) out[k] = Math.round(out[k] || 0);
+    else out[k] = Math.round(Math.max(home[k], wsum ? (avg[k] || 0) / wsum : 0));
+  }
+  return out;
+}
+
 // Handelsavtal blir billigare ju bättre infrastruktur du har (0.6× vid nivå 100).
 export function tradeDevFactor(world, cids) {
   return 1 - 0.4 * (realmDev(world, cids).infra / DEV_MAX);

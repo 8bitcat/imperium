@@ -19,12 +19,12 @@ import { BUDGETS as AG_BUDGETS, NORMAL as AG_NORMAL, SKILLS as AG_SKILLS, AG_COS
   LOGO_STYLES, EMBLEMS, emblemSvg, logoSvg, cleanLogo, defaultLogo, agencyListFor, initAgencies, newAgency, agencyMods,
   agencyCostPct, agencyBudgetPct, agencyIndTargets, agencySummary, agencyModsAt, rollSkill, hasRealAgencies } from './agencies.js';   // V5.21 MYNDIGHETERNA
 import { RESEARCH, researchMods, combatBonus, hasUnlock, logisticsRange, satCoverage, espionageTier,
-  tierOf, tierCost, tierDays, missingNeeds, unitUpgrades, UNIT_STATS, ENDLESS_NAME, roman } from './research.js';
+  tierOf, tierCost, tierDays, missingNeeds, unitUpgrades, UNIT_STATS, ENDLESS_NAME, ENDLESS_GROWTH, roman } from './research.js';
 import { MODIFIERS, modifierMods, tickModifiers, tickTrend, grant as grantMod, revoke as revokeMod, activeList as modList } from './modifiers.js';
 import { EVENTS, pickEvent, affordable, EVENT_COUNT, EVENT_BY_ID, nextEventGap, fillText, rollNext } from './events.js';
-import { DEV_MAX, DEV_STEP, DEV_KINDS, DEV_RAMP, stepCost, devOf, raiseDev, realmDev, devMods, tradeDevFactor, devColor, devLabel, devColorMap, aiDevStep } from './development.js';
+import { DEV_MAX, DEV_STEP, DEV_KINDS, DEV_RAMP, stepCost, devOf, raiseDev, realmDev, devMods, devModsRealm, tradeDevFactor, devColor, devLabel, devColorMap, aiDevStep } from './development.js';
 import { BUILDINGS, CITY_SLOTS, UNIT_NEEDS_BUILDING, TRADE_PRICES, TRADE_DEFAULT,
-  BUILD_CATS, coverageMods, buildingEffects, yieldWeight } from './buildings.js';
+  BUILD_CATS, coverageMods, buildingEffects, yieldWeight, DRIFT_MAX } from './buildings.js';
 import { countryIncomeOf, armySizeOf, econOf, WEALTH_TIER } from './economy.js';
 import { CASUS_BELLI, justifyDays, seizeAmount, FEDERATION_FORMS, HISTORICAL_EMPIRES, DYNAMIC_GOALS, formableEmpires, empireProgress, empireComplete } from './war.js';
 import { FACTIONS } from './factions.js';
@@ -38,7 +38,7 @@ import { scoreCountry, medalFor } from './ranking.js';
 import { money, people, soldiersOf, soldiersText, PEOPLE_PER_MAN } from './real.js';
 import { INDICATORS, IND, IND_GROUPS, RANKINGS, fmtInd, setIndicatorData, hasIndicatorData, isEstimated,
   baseOf as baseOfInd, countryIndicators, realmIndicators, biggestChanges, rankBy, realmPyramid, setFaith, refreshDerived,
-  worldMedian, lawFxIds } from './statistics.js';
+  worldMedian, lawFxIds, addStatDelta, OVER_STATS } from './statistics.js';
 import { newSaveId, writeSave, listSaves, readSave, deleteSave, renameSave, copySave, exportSave, importSave,
   persist as persistSaves, storageInfo } from './saves.js';   // V5.18 SPARADE SPEL
 import { svName, alpha2 } from './names.js';
@@ -85,9 +85,9 @@ function puppetColor() { const c = soloColor(); return lumOf(c) > 200 ? mixHex(c
 
 const net = new Net();
 // Version: höj vid varje release så alla ser vilken version de spelar
-export const VERSION = '5.22.0';
+export const VERSION = '5.23.0';
 export const VERSION_DATE = '2026-11-22';
-export const VERSION_NAME = 'STOLTHETEN';
+export const VERSION_NAME = 'TILLVÄXTEN';
 
 const globe = new Globe($('#globe'));
 
@@ -130,6 +130,12 @@ state.debug = {
     order: (n, a, b) => foundOrder(n, a, b), award: (k, t) => award(k, t), notes: (k) => setNotes(k), stamp: (t) => issueStamp(t), sec: (i) => upgradePassSec(i),
     golden: (k) => setGolden(k), rule: (k) => togglePassRule(k), fee: (i) => setPassFee(i), policy: (k, v) => setIdnPolicy(k, v), propose: (spec, m) => proposeFlag(spec, m), halfMast: () => halfMast(),
     setLandSub: (x) => { landSub = x; } },
+  // V5.23 TILLVÄXTEN
+  gro: { ind: (t) => myIndicators(t), recompute: () => recomputeNation(), yield: (c) => countryYield(c), growth: (c) => countryGrowth(c),
+    bYield: () => buildingYield(), parts: () => myRealmParts(), dev: () => state.solo.nationSources?.development,
+    conquer: (c) => { const s = state.solo; s.claims[c] = { color: soloColor(), playerName: 'DU' }; startIntegration(c); recomputeNation(); },
+    puppet: (c) => { state.solo.claims[c] = { color: puppetColor(), playerName: 'DIN LYDSTAT', puppet: true }; recomputeNation(); },
+    invest: (c, kind, n) => { raiseDev(worldCtx().world, c, kind, n); recomputeNation(); } },
 };
 
 document.fonts?.load('10px "Press Start 2P"').then(() => { globe.sceneDirty = true; }).catch(() => {});
@@ -541,7 +547,7 @@ function refreshInfoPanel() {
     const so = state.solo;
     const mineC = so?.stats && (so.home === c.id || (so.claims?.[c.id] && !isSplit(c.id)));
     const ownerC = worldCtx().world?.aiOwned?.[c.id] || c.id;
-    const v = realmRow?.ind || countryIndicators(c.id, mineC ? statTotals(so.stats) : nationTotalsOf(ownerC),
+    const v = realmRow?.ind || countryIndicators(c.id, mineC ? myTotalsFor(c.id) : nationTotalsOf(ownerC),
       baselineTotalsOf(c.id), mineC ? so.nation?.laws : state.world?.[ownerC]?.laws || null);
     const placeOf = (id) => {
       if (!realmRow) return '';
@@ -574,9 +580,13 @@ function refreshInfoPanel() {
   const mineInc = state.solo?.claims[c.id];
   const itg = integOf(c.id);
   const factor = itg ? phaseOf(itg.pct).income : 1;
+  // V5.23: ditt eget land växer med din forskning och det du investerat där
+  const yNow = mineInc ? countryYield(c.id) : inc;
+  const gro = mineInc ? countryGrowth(c.id) : 1;
   $('#finc').innerHTML = (part ? `<b style="color:var(--amber)">DIN DEL:</b> ${part.taken}/${part.of} ORTER (${Math.round(part.share * 100)}%) — RESTEN ÄR SJÄLVSTÄNDIG<br>` : '')
-    + `<b>INKOMST:</b> ${mineInc ? '' : '+'}${money(inc * (mineInc ? factor : 1))}/DAG`
-    + (mineInc ? (factor < 1 ? ` <span style="color:var(--red)">(AV ${inc} — EJ INTEGRERAT)</span>` : '')
+    + `<b>INKOMST:</b> ${yNow >= 0 ? '+' : ''}${money(Math.round(yNow * 10) / 10)}/DAG`
+    + (mineInc ? (gro > 1.005 ? ` <span style="color:#4ae37a">(GRUND ${money(inc)} \u{00D7}${gro.toFixed(2).replace(".", ",")} TILLVÄXT)</span>` : '')
+      + (factor < 1 ? ` <span style="color:var(--red)">EJ INTEGRERAT</span>` : '')
       : ' <span style="color:var(--holo-dim)">VID ERÖVRING</span>');
 
   renderFactDev(c);
@@ -750,14 +760,14 @@ function renderFactDev(c) {
   }
   // vad din samlade nivå ger dig just nu
   if (mine) {
-    const owned = Object.keys(state.solo.claims || {});
-    const avg = realmDev(world, owned);
-    const m = devMods(world, owned);
+    // V5.23: varje land LÄGGER TILL i riket (devModsRealm) — och växer självt med det du satsar
+    const m = state.solo.nationSources?.development || devModsRealm(world, devWeights());
     const bits = Object.entries(m).filter(([, v]) => v).map(([k, v]) => `+${v} ${STATS[k].name.toUpperCase()}`);
+    const g = countryGrowth(c.id);
     const note = document.createElement('div');
     note.style.cssText = 'font-size:6px;color:var(--holo-dim);line-height:1.9;margin-top:3px';
-    note.innerHTML = `RIKETS SNITT: \u{1F6A7} ${Math.round(avg.infra)} \u{00B7} \u{1F3D9}\u{FE0F} ${Math.round(avg.tier)}`
-      + (bits.length ? ` \u{2192} <span style="color:#4ae37a">${bits.join(', ')}</span>` : '');
+    note.innerHTML = `LANDETS EKONOMI: <span style="color:#4ae37a">\u{00D7}${g.toFixed(2).replace(".", ",")}</span> AV DIN FORSKNING OCH DET DU BYGGT HÄR`
+      + `<br>HELA RIKETS BONUS (VARJE LAND LÄGGER TILL)${bits.length ? `: <span style="color:#4ae37a">${bits.join(', ')}</span>` : ': INGEN ÄN'}`;
     el.appendChild(note);
   }
 }
@@ -902,6 +912,16 @@ function renderFactIntegration(c) {
     : `\u{1F91D} INTEGRATION ${Math.floor(pct)}% <span style="color:${col}">${arrow} ${rate > 0 ? '+' : ''}${rate.toFixed(2)}%/DAG</span>`
       + `<br>FAS ${idx + 1} AV 3: ${ph.name}`;
   el.appendChild(head);
+  // V5.23: ett fullt integrerat land är ditt — ingen ockupationsstyrka, ingen glidning
+  if (pct >= 100) {
+    const g = countryGrowth(c.id);
+    const done = document.createElement('div');
+    done.className = 'isub';
+    done.innerHTML = `${ph.desc}<br><span style="color:#4ae37a">INKOMST ${money(Math.round(countryYield(c.id) * 10) / 10)}/DAG \u{00B7} TILLVÄXT \u{00D7}${g.toFixed(2).replace(".", ",")}</span>`;
+    el.appendChild(done);
+    show(el, true);
+    return;
+  }
 
   // ockupationsstyrkan: den viktigaste knappen på hela panelen
   const gar = document.createElement('div');
@@ -934,6 +954,8 @@ function renderFactIntegration(c) {
   const bonuses = [];
   if (hasOfficeIn(c.id)) bonuses.push('\u{1F3DB}\u{FE0F} KONTOR +0.5%/DAG');
   if (tier) bonuses.push(`\u{1F52C} FORSKNING +${(0.15 * tier).toFixed(2)}%/DAG`);
+  const dv = devOf(worldCtx().world, c.id), dvSum = (dv.infra || 0) + (dv.tier || 0);   // V5.23
+  if (dvSum) bonuses.push(`\u{1F3D7}\u{FE0F} UTBYGGNAD +${(0.4 * Math.min(200, dvSum) / 200).toFixed(2)}%/DAG`);
   sub.innerHTML = `${ph.desc}<br>`
     + `<span style="color:${col}">${daysLeft ? `KLART OM CA ${daysLeft} DAGAR` : down ? 'LANDET GLIDER UR HÄNDERNA — MER TRUPP KRÄVS' : 'STÅR STILL'}</span><br>`
     + `IDEOLOGI: ${IDEOLOGIES[theirIdeo]?.name.toUpperCase() || '?'} MOT DIN ${IDEOLOGIES[s.nation.ideology]?.name.toUpperCase() || '?'}<br>`
@@ -943,7 +965,6 @@ function renderFactIntegration(c) {
     + (ph.unrest >= 30 ? `<br><span style="color:var(--red)">\u{26A0}\u{FE0F} OROLIGT — ${it.unrestDays}/${forcesIn(c.id) ? 26 : 14} DAGAR TILL UPPROR</span>` : '');
   el.appendChild(sub);
 
-  if (pct >= 100) { show(el, true); return; }
   const btn = document.createElement('button');
   btn.className = 'btn amber';
   btn.style.marginTop = '5px';
@@ -1047,7 +1068,7 @@ function renderCityPanel(cid) {
   const info = document.createElement('div');
   info.style.cssText = 'font-size:7px;color:var(--holo-dim);margin-bottom:8px;line-height:1.8';
   info.innerHTML = `${idx.length} STÄDER · ${CITY_SLOTS} BYGGPLATSER I VARJE · ALLA BYGGEN PÅGÅR SAMTIDIGT. BOCKA FÖR STÄDER (ELLER VÄLJ ALLA) OCH BYGG I ALLA PÅ EN GÅNG. `
-    + `STORA STÄDER VÄGER TYNGST, FÖR DÄR BOR FLEST. EFTER 14 AV SAMMA SORT I ETT LAND GER VARJE NY LITE MINDRE (MARKNADEN MÄTTAS).<br>HELA RIKET: <span class="dp">+${money(Math.round(by.money))}/DAG</span>`
+    + `STORA STÄDER VÄGER TYNGST, FÖR DÄR BOR FLEST. VARJE BYGGNAD GER FULLT I VARJE STAD — INGET MÄTTAS, OCH DRIFTEN STANNAR PÅ HÖGST ${DRIFT_MAX} % AV INKOMSTEN.<br>HELA RIKET: <span class="dp">+${money(Math.round(by.money))}/DAG</span>`
     + (by.rp >= 0.5 ? ` <span class="dp">+${Math.round(by.rp)} \u{1F52C}/DAG</span>` : '')
     + (by.upkeep >= 0.5 ? ` · DRIFT <span class="dn">-${money(Math.round(by.upkeep))}/DAG</span> (${Math.round(by.driftPct)} % AV INKOMSTEN)` : '');
   body.appendChild(info);
@@ -1548,8 +1569,7 @@ function recomputeNation() {
   // V5: modifierarna och utvecklingsnivåerna räknas in som egna källor, så de
   // syns separat i NATION-fliken i stället för att smälta in i "extra".
   s.mods ||= {};
-  const owned = Object.keys(s.claims || {});
-  const devSrc = devMods(worldCtx().world, owned.length ? owned : [s.home]);
+  const devSrc = devModsRealm(worldCtx().world, devWeights());   // V5.23: varje land lägger till
   // V5.16: lagarna och ideologin slår igenom gradvis — s.lawFx/s.ideoFx glider mot
   // målet i tickPolicyPhase. Ett nytt parti börjar med lagarna redan i kraft.
   s.lawFx ||= { ...lawMods(s.nation.laws) };
@@ -1572,6 +1592,21 @@ function recomputeNation() {
   };
   s.stats = computeStats(s.nation, s.nationSources);
   syncFaith();
+}
+
+// V5.23 TILLVÄXTEN: hemlandet först (vikt 1), sedan varje annat land efter sin ekonomiska tyngd
+// jämfört med hemlandet (högst 1) och den del du äger. Lydstaterna räknas till hälften.
+function devWeights() {
+  const s = state.solo;
+  const inc = (cid) => countryIncomeOf(state.facts[cid]?.p, cid) || 1;
+  const h = inc(s.home);
+  const list = [{ cid: s.home, w: 1 }];
+  for (const [cid, cl] of Object.entries(s.claims || {})) {
+    if (cid === s.home) continue;
+    const w = Math.min(1, inc(cid) / h) * (s.partial?.[cid]?.share ?? 1) * (cl.puppet ? 0.5 : 1);
+    if (w > 0) list.push({ cid, w });
+  }
+  return list;
 }
 
 function ownedResources() {
@@ -2000,19 +2035,69 @@ function computeRanking() {
 }
 
 // ---------- V5.6: STATISTIK — verkliga mått som lagarna flyttar ----------
-const statTotals = (stats) => Object.fromEntries(Object.entries(stats || {}).map(([k, v]) => [k, v.total]));
+// V5.23 TILLVÄXTEN: värdet (−100…100) och för det som produceras även överskottet över 100
+// (o_gdp, o_factory, o_research, o_income) — statistiken växer vidare med det (statistics.js)
+const OVER_KEYS = new Set(OVER_STATS);
+function statTotals(stats) {
+  const T = {};
+  for (const [k, v] of Object.entries(stats || {})) {
+    T[k] = v.total;
+    if (OVER_KEYS.has(k) && v.raw > v.total) T['o_' + k] = v.raw - v.total;
+  }
+  return T;
+}
 
 // rikets delar: hemlandet + erövrade länder (delvis tagna med sin andel).
 // Lydstater är egna länder och räknas inte in.
+// V5.23: dT = landets EGEN utvecklingsnivå i stället för rikets bonus — en satsning i ett erövrat
+// land syns i det landet, och ett outvecklat land drar inte ner hemlandets siffror.
 function myRealmParts() {
   const s = state.solo;
   if (!s?.home) return [];
-  const parts = [{ cid: s.home, share: 1 }];
+  const parts = [{ cid: s.home, share: 1, dT: ownDevDelta(s.home) }];
   for (const cid of Object.keys(s.claims || {})) {
     if (cid === s.home || s.claims[cid].puppet) continue;
-    parts.push({ cid, share: s.partial?.[cid]?.share ?? 1 });
+    parts.push({ cid, share: s.partial?.[cid]?.share ?? 1, dT: ownDevDelta(cid) });
   }
   return parts;
+}
+
+// V5.23: hur mycket ett av dina länders egen utveckling skiljer sig från rikets bonus i nationsvärdena
+function ownDevDelta(cid) {
+  const realm = state.solo?.nationSources?.development;
+  if (!realm) return null;
+  const own = devMods(worldCtx().world, [cid]);
+  const d = {};
+  for (const k of new Set([...Object.keys(own), ...Object.keys(realm)])) {
+    const x = (own[k] || 0) - (realm[k] || 0);
+    if (x) d[k] = x;
+  }
+  return Object.keys(d).length ? d : null;
+}
+// nationsvärdena för ETT av dina länder (landkortet, befolkningen)
+function myTotalsFor(cid) {
+  return addStatDelta(statTotals(state.solo.stats), ownDevDelta(cid));
+}
+
+// V5.23 TILLVÄXTEN: ett lands ekonomi växer med din forskning (Income, utan tak) och med
+// landets EGEN infrastruktur och stadsnivå. Gäller hemlandet, erövrade länder och lydstater —
+// den som forskar och investerar i ett land går plus på det.
+function countryGrowth(cid) {
+  const inc = Math.max(0, state.solo?.stats?.income?.raw ?? 0);
+  const d = devOf(worldCtx().world, cid);
+  return 1 + inc / 250 + (d.infra || 0) / 100 * 1.2 + (d.tier || 0) / 100 * 0.8;
+}
+// av tillväxten slår så här mycket igenom redan under integrationen (ockupation … integrerat)
+const GROWTH_IN_PHASE = [0.6, 0.8, 1, 1];
+// dagsinkomsten från ett av dina länder: grundinkomsten i integrationens fas + tillväxten
+function countryYield(cid) {
+  const s = state.solo;
+  const base = countryIncomeOf(state.facts[cid]?.p, cid) * (s.partial?.[cid]?.share ?? 1);
+  const g = countryGrowth(cid) - 1;
+  const it = integOf(cid);
+  if (!it) return base * (1 + g);
+  const pi = phaseIndex(it.pct);
+  return base * PHASES[pi].income + base * g * GROWTH_IN_PHASE[pi];
 }
 
 // V5.14: länder som räknas för ett historiskt rike — hemlandet och allt du äger
@@ -2782,7 +2867,7 @@ function tickPopulation() {
     const mine = !!s?.stats && (s.home === c.id || !!s.claims?.[c.id]);
     const owner = world?.aiOwned?.[c.id] || c.id;
     const T0 = baselineTotalsOf(c.id);
-    const v = countryIndicators(c.id, mine ? statTotals(s.stats) : nationTotalsOf(owner), T0,
+    const v = countryIndicators(c.id, mine ? myTotalsFor(c.id) : nationTotalsOf(owner), T0,
       mine ? s.nation?.laws : state.world?.[owner]?.laws || null);
     if (!v) continue;
     // samma tal som STATISTIK visar som "befolkningsförändring per år".
@@ -3461,6 +3546,7 @@ function integRate(cid) {
     needed: neededIn(cid),
     sameIdeo: theirIdeo === s.nation?.ideology,
     adjacent: isAdjacentToRealm(cid),
+    dev: (devOf(worldCtx().world, cid).infra || 0) + (devOf(worldCtx().world, cid).tier || 0),   // V5.23
   });
   // V5.22: din flagga på stadshusen snabbar på när det går framåt, landets egen saktar in
   const f = OCC_FLAGS[s.identity?.occFlag]?.integ ?? 1;
@@ -3582,13 +3668,15 @@ function popShareOf(keys) {
   return total ? keys.reduce((a, k) => a + (cityOfKey(k)?.p || 0), 0) / total : 0;
 }
 // V5.17: byggnadernas avkastning och drift per dag.
-// Avkastningen (pengar, forskning, rekryter) är som förut i landets första 14 städer per
-// sort, sedan mättas marknaden. Driften (drift) är en andel av rikets dagsinkomst: sjukhus
-// i varje stad kostar 7 % av inkomsten, i städer med halva folket 3,5 %.
+// Driften (drift) är en andel av rikets dagsinkomst: sjukhus i varje stad kostar 7 % av
+// inkomsten, i städer med halva folket 3,5 %. V5.23: ingen mättnad längre, pengarna växer
+// med landets tillväxt (countryGrowth: din forskning + landets utveckling) och driften
+// stannar på DRIFT_MAX %.
 function buildingYield() {
   const s = state.solo;
   const out = { money: 0, rp: 0, man: 0, upkeep: 0 };
   const n = {};   // 'cid|byggnad' → antal hittills
+  const gro = {};
   let driftPct = 0;
   for (const [k, arr] of Object.entries(s?.cityB || {})) {
     const cid = k.split(':')[0];
@@ -3601,13 +3689,14 @@ function buildingYield() {
       if (!B.daily) continue;
       const key = cid + '|' + b;
       const w = yieldWeight(n[key] = (n[key] ?? -1) + 1);
-      out.money += (B.daily.money || 0) * w;
+      out.money += (B.daily.money || 0) * w * (gro[cid] ??= countryGrowth(cid));
       out.rp += (B.daily.rp || 0) * w;
       out.man += (B.daily.man || 0) * w;
     }
   }
   const { cover } = buildingCover();
   for (const [b, share] of Object.entries(cover)) driftPct += (BUILDINGS[b]?.drift || 0) * Math.min(1, share);
+  driftPct = Math.min(DRIFT_MAX, driftPct);   // V5.23: fler byggnader gör aldrig riket fattigare
   out.driftPct = driftPct;
   out.upkeep += driftPct / 100 * (moneyPerDay() + out.money);
   return out;
@@ -3719,12 +3808,12 @@ function tickDay() {
   // inget förrän de integrerats: i ockupationsfasen kostar de i stället.
   let occUnrest = 0;
   for (const cid of Object.keys(s.claims)) {
-    // tog du bara en del av städerna får du bara den delen av inkomsten
-    const base = Math.round(countryIncomeOf(state.facts[cid]?.p, cid) * (s.partial?.[cid]?.share ?? 1));
+    // tog du bara en del av städerna får du bara den delen av inkomsten.
+    // V5.23: inkomsten växer med din forskning och landets utveckling (countryYield)
+    s.res.money += Math.round(countryYield(cid));
     const it = integOf(cid);
-    if (!it) { s.res.money += base; continue; }
+    if (!it) continue;
     const ph = phaseOf(it.pct);
-    s.res.money += Math.round(base * ph.income);
     if (ph.pp < 0) s.res.pp += Math.round(2 * ph.pp);   // ockupation kostar pol. makt
     occUnrest += ph.unrest * 0.25;                      // oron RÄKNAS OM varje dag
   }
@@ -3756,8 +3845,10 @@ function tickDay() {
     let tax = 0, taxRp = 0, taxPp = 0, n = 0;
     for (const [cid, cl] of Object.entries(s.claims)) {
       if (!cl.puppet) continue;
-      tax += Math.round(countryIncomeOf(state.facts[cid]?.p, cid) * 15);
-      taxRp += Math.round(econOf(state.facts[cid]?.p, cid) * 0.5);
+      // V5.23: lydstaten växer med din forskning och det du investerat där — och skatten med den
+      const g = countryGrowth(cid);
+      tax += Math.round(countryIncomeOf(state.facts[cid]?.p, cid) * 15 * g);
+      taxRp += Math.round(econOf(state.facts[cid]?.p, cid) * 0.5 * Math.sqrt(g));
       taxPp += 3;
       n++;
     }
@@ -4150,7 +4241,7 @@ function maybeFireEvent() {
 function moneyPerDay() {
   const s = state.solo;
   let m = 10 + (s.stats?.income?.raw ?? 0) * 0.3;
-  for (const cid of Object.keys(s.claims || {})) m += countryIncomeOf(state.facts[cid]?.p, cid) * (s.partial?.[cid]?.share ?? 1);
+  for (const cid of Object.keys(s.claims || {})) m += Math.max(0, countryYield(cid));   // V5.23
   return Math.max(10, m);
 }
 
@@ -5521,8 +5612,7 @@ function indicatorPreview(deltaMods, laws2 = null) {
   const s = state.solo;
   if (!s?.stats || !hasIndicatorData()) return '';
   const T = statTotals(s.stats);
-  const T2 = { ...T };
-  for (const [k, v] of Object.entries(deltaMods || {})) T2[k] = Math.max(-100, Math.min(100, (T2[k] || 0) + v));
+  const T2 = addStatDelta(T, deltaMods || {});   // V5.23: forskningen över 100 räknas också
   const parts = myRealmParts();
   const laws = s.nation?.laws || null;
   const a = realmIndicators(parts, T, {}, baselineTotalsOf, laws);

@@ -45,7 +45,7 @@ peerjs@1.5.4, qrcode-generator@1.4.4). `file://` funkar inte.
 | `war.js` · `integration.js` · `stance.js` | casus belli/krav/historiska riken (32 st — BARA grundlandet `core` kan utropa sitt rike, och ALLA `lands` krävs helt annekterade: lydstater och delvis tagna länder räknas inte, se `empireOwnedIds` i main.js) · integration av erövrat land · ländernas hållning |
 | `geopolitics.js` | V5.8: VÄRLDSLÄGET — kalla krig (spänning 0–100, incidenter, kris → ibland varmt krig), val i demokratier, revolutioner/kupper som river upp lagarna. Ren logik; main.js kopplar in den via `geoApi(ctx)` i `aiWorldTick` |
 | `diplomacy.js` · `blocs.js` · `ministers.js` · `ranking.js` | relationer/sanktioner · block + fanor · kabinett · världsrankning |
-| `economy.js` · `resources.js` · `buildings.js` · `factions.js` · `leaders.js` | inkomst/arméstorlek · naturtillgångar · stadsbyggnader (40 st, 15 platser per stad — se Byggboom) · 4 faktioner · 200+ ledare |
+| `economy.js` · `resources.js` · `buildings.js` · `factions.js` · `leaders.js` | inkomst/arméstorlek · naturtillgångar · stadsbyggnader (60 st, 30 platser per stad — se Byggboom och Tillväxten) · 4 faktioner · 200+ ledare |
 | `battleA.js` · `units.js` | taktikstriden (Advance Wars-lik, används för ALLA krig) · enheter/sprites. `battleB.js` är oanvänd |
 | `globe.js` · `globe3d.js` | pixelglob (d3) · WebGL-planet. All ritning går via `_project`/`_front` så den funkar i båda |
 | `net.js` · `data.js` · `names.js` | PeerJS (värden äger världen) · kartdata · svenska landsnamn |
@@ -97,13 +97,13 @@ sedan går med som vanlig `player` (`state.hosting`). Kompisar går med på kode
 - **Händelserna** (`events/ytterligheter.js`, prefix `yt_`): villkoren `c.utopias`, `c.utopiaCrack`, `c.utopiaAge`, `c.brutals`, `c.brutalAge` och `c.shame`; platshållarna `{utopi}`, `{utopilag}`, `{brutal}` och `{brutallag}`; valet `undo: 'utopi' | 'brutal'` (`undoExtreme`).
 
 **Byggboom (V5.17, `buildings.js`):**
-- Städerna har 15 platser (`CITY_SLOTS`), och stadspanelen visar ALLA städer (`cityPanelCities`). Spelaren bockar för städer och bygger i alla på en gång (`buildChooser` och `buildTargets`).
+- Städerna har 30 platser (`CITY_SLOTS`, 15 före V5.23), och stadspanelen visar ALLA städer (`cityPanelCities`). Spelaren bockar för städer och bygger i alla på en gång (`buildChooser` och `buildTargets`).
 - Stadsbyggnaderna byggs parallellt, förbanden ett i taget.
 - Nya fält:
   - `stats` ger nationsvärden efter täckning, alltså andelen av rikets folk som bor i en stad med byggnaden (`buildingCover` → `coverageMods`, källan `buildings`).
   - `drift` är driften i % av rikets dagsinkomst vid full täckning, och `driftFix` är % per byggnad.
   - `perCountry` begränsar hur många som får byggas i ett land, och `needs` anger råvaror som krävs.
-- Avkastningen (`daily`) är full i landets första 14 städer per sort och avtar sedan (`yieldWeight`).
+- Avkastningen (`daily`) är full i varje stad sedan V5.23 (`yieldWeight` = 1; förut avtog den efter 14 städer per sort). Pengarna växer med landets `countryGrowth`, och driften stannar på `DRIFT_MAX` (40 %) av inkomsten.
 - Infrastruktur och stadsnivå har ingen kö-gräns. Varje land och slag bygger sitt första steg parallellt (`queueDev(cid, kind, steg)`, `devPlan`).
 
 **Sparade spel (V5.18, `saves.js`):** varje parti har en egen sparplats som aldrig försvinner av sig själv.
@@ -169,6 +169,16 @@ sedan går med som vanlig `player` (`state.hosting`). Kompisar går med på kode
 **Valen (V5.22):** `tickElections()` ersätter de gamla valen var 90:e dag. Valperiod 4 spelår (5 med `balanced`), `s.poll` = {gov, hist, terms, next, last}; stödet (`govSupportTarget`) mäts var tionde dag ur godkännande, oro, missnöje, BNP-tillväxt, arbetslöshet, inflation, regeringströtthet, stolthet och krig. Under `GOV_MAJORITY` (48 %) blir det maktskifte: -50 ⚖️, ledaren avgår och de två mest impopulära lagändringarna från mandatperioden rivs upp (`undoLaw`). NYVAL går att utlysa från ÖVERSIKT (15 ⚖️). `c.poll` finns i händelsernas villkor.
 
 **Omvärlden (V5.22):** sanktionerna (`worldSanction`) kräver att en stor del av världsekonomin är fientlig (relation ≤ -35, ≤ -60 väger dubbelt) — förut räckte snittet av de åtta sämsta relationerna, så varje demokrati hade tullar från start. Relationerna återgår mot det naturliga läget med halveringstid ett spelår (`tickDiplomacy`), och en händelses `rel` slår 20–70 % per land och avtar mot ±100 (`worldRelChange`).
+
+**Tillväxten (V5.23):** Carl: «när man researchar oavsett vilken level ska dess effekt inte avta … om jag research 10 levlar ska inte gdp per capitan stanna … om jag tar över ett land eller gör ett land till en lydstat ska jag gå starkt plus på det om jag researchar och investerar i landet».
+- **Överskottet över 100:** nationsvärdena klipps vid ±100 (`total`), men BNP, fabriker, forskning och inkomst har `raw` utan tak. `statTotals` lägger överskottet i `T.o_gdp`, `o_factory`, `o_research` och `o_income`, och `countryIndicators` låter det driva måtten bara åt det goda hållet (`MODE_LIST[].ok`; procentmått där lågt är bra, som arbetslösheten, rörs inte). BNP per capita får det dubbelt (`OVER_BOOST`). Ekonomiforskning i Sverige: ×3,1 på nivå 10 och ×7,4 på nivå 16, och den sjunker aldrig.
+- **Forskningen avtar aldrig** (research.js): en oändlig nivå ger den sista namngivna nivåns goda effekter × (1 + 0,08 n) (`ENDLESS_GROWTH`; förut en sjättedel). Namngivna nivåer som gav mindre av något gott än nivån före höjs vid laddning. Varje nivå i varje gren ger +2 BNP per capita (`TECH_SPILLOVER`), så ingen gren sänker BNP-målet.
+- **Trögheten:** BNP per capita, köpkraften, BNI och produktiviteten får växa 20 % per spelår (halveringstid 1,5 år; förut 7 %) — `SPEED` i realism.js.
+- **Utvecklingen** (development.js `devModsRealm`, main.js `devWeights`): hemlandet räknas fullt och varje annat land lägger till sin egen nivå efter sin tyngd jämfört med hemlandet (högst 1, lydstater ×0,5). Förut var det snittet, så ett outvecklat land drog ner riket. I statistiken får varje land sin egen nivå (`myRealmParts` → `dT`, `ownDevDelta`, `myTotalsFor`, `addStatDelta`).
+- **Länderna växer** (`countryGrowth(cid)` = 1 + inkomst-raw/250 + infrastruktur × 1,2 + stadsnivå × 0,8): hemlandet, erövrade länder och lydstater. `countryYield(cid)` = grundinkomsten i integrationsfasen + tillväxten, varav 60/80/100/100 % slår igenom i ockupation/pacificering/assimilering/integrerat (`GROWTH_IN_PHASE`). Lydstatsskatten växer lika mycket. Utbyggnad i ett erövrat land snabbar på integrationen (`dailyRate({ dev })`, upp till +0,4 %/dag).
+- **20 nya byggnader** (buildings.js): industripark, köpcentrum, logistikcenter, teknikpark, frihandelszon, skeppsvarv, bibliotek, yrkeshögskola, observatorium, vårdcentral, förskola, stadspark, konserthus, nöjespark, brandstation, tingsrätt, solcellspark, vattenkraftverk, oljeplattform och marinbas.
+- `computeStats` räknar nu källan `identity` (V5.22 skickade in den, men den räknades aldrig).
+- Testkrokar: `IMPERIUM.debug.gro.*` (`ind`, `yield`, `growth`, `conquer`, `puppet`, `invest`, `bYield`).
 
 **Statsskulden (V5.13):** `state.solo.bank` = { debt (💰), plan (år), months kvar, missed, defaultUntil, crisis, log }. Rikets BNP i spelets pengar = `bankY()` (fyra spelår av grundinkomsten). Startskulden = rikets verkliga statsskuld i % av BNP. `tickBank` betalar var 30:e dag; räcker pengarna inte läggs resten på skulden och efter 3 missade månader blir det statsbankrutt (halva skulden struken, betyget D i ett år, kris). Lagarnas och nationsvärdenas skuldeffekt (`s.debtPolicy` från `tickIndLag`) blir ett månadsunderskott eller -överskott (/40 per månad). Statsskuld och Räntekostnader i STATISTIK skrivs över med bankens siffror (`applyBankToIndicators`), och förhandsrutan för lagar visar skuldeffekten som "STATEN LÅNAR X % AV BNP MER PER ÅR".
 

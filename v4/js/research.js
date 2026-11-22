@@ -402,8 +402,9 @@ export const RESEARCH = {
 };
 
 // V5.15: forskningen tar aldrig slut. Efter grenens sista namngivna nivå kommer
-// nivåer i all oändlighet — varje ger ungefär en sjättedel av sista nivåns
-// goda effekter till, dyrare och dyrare.
+// nivåer i all oändlighet, dyrare och dyrare. V5.23: varje ger minst lika mycket
+// som den sista namngivna nivån, och ENDLESS_GROWTH mer för varje nivå.
+export const ENDLESS_GROWTH = 0.08;
 export const ENDLESS_NAME = {
   political: 'Statecraft Mastery', economy: 'Economic Breakthrough', corruption: 'Integrity Doctrine',
   unrest: 'Social Harmony', safety: 'Public Safety Advance', immigration: 'Talent Magnet',
@@ -415,6 +416,33 @@ export const ENDLESS_NAME = {
   space: 'Deep Space Program', infrastructure: 'Mega-Projects', artillery: 'Fire Doctrine',
   airdefense: 'Sky Shield', medicine: 'Field Medicine', engineering: 'Engineering Doctrine',
 };
+
+// V5.23 TILLVÄXTEN: en nivå ger aldrig mindre av något gott än nivån före i samma gren
+// (förut t.ex. Safety 25 → 20 och Space-forskning 22 → 20). Dåliga bieffekter rörs inte.
+export const TECH_SPILLOVER = 2;
+{
+  const BAD = new Set(['corruption', 'unrest', 'justtime']);
+  for (const def of Object.values(RESEARCH)) {
+    const best = {};
+    for (const t of def.tiers) {
+      // teknikspridning: varje ny nivå i VILKEN gren som helst gör ekonomin lite mer produktiv,
+      // så ingen forskning får BNP per capita att se ut att gå ner (t.ex. Political T4 med −10 frihet)
+      t.mods ||= {};
+      t.mods.gdp = (t.mods.gdp || 0) + TECH_SPILLOVER;
+      for (const [k, v] of Object.entries(t.mods || {})) {
+        const good = BAD.has(k) ? -v : v;
+        if (good <= 0) continue;
+        if (best[k] != null && good < best[k]) t.mods[k] = BAD.has(k) ? -best[k] : best[k];
+        best[k] = Math.max(best[k] ?? 0, good);
+      }
+      for (const [T, a] of Object.entries(t.combat || {})) {
+        const kk = 'atk' + T;
+        if (best[kk] != null && a < best[kk]) t.combat[T] = best[kk];
+        best[kk] = Math.max(best[kk] ?? 0, t.combat[T]);
+      }
+    }
+  }
+}
 
 // V5.15: förkunskaper mellan grenar — man bygger inte drönarsvärmar utan datorer.
 // 'gren:nivå' (1-baserat) → { annan gren: nivå som krävs }
@@ -472,11 +500,15 @@ export function tierOf(bid, i) {
   const key = bid + ':' + n;
   if (_endless.has(key)) return _endless.get(key);
   const last = def.tiers[def.tiers.length - 1];
-  // bara de goda effekterna följer med — oändlig forskning gör aldrig landet sämre
+  // bara de goda effekterna följer med — oändlig forskning gör aldrig landet sämre.
+  // V5.23 TILLVÄXTEN: effekten AVTAR ALDRIG. Förut gav nivå 10 en sjättedel av nivå 9
+  // (ekonomin: +74 → +12 i BNP per capita), så forskningen såg ut att stanna. Nu ger varje
+  // oändlig nivå minst lika mycket som den sista namngivna, och 8 % mer för varje nivå.
+  const grow = 1 + ENDLESS_GROWTH * n;
   const mods = {};
   for (const [k, v] of Object.entries(last.mods || {})) {
     if ((v > 0) === INVERTED.has(k)) continue;
-    mods[k] = Math.sign(v) * Math.max(1, Math.round(Math.abs(v) * 0.16));
+    mods[k] = Math.sign(v) * Math.max(1, Math.round(Math.abs(v) * grow));
   }
   // militära grenar: förbanden blir starkare i all oändlighet
   const touched = new Set();
@@ -485,8 +517,9 @@ export function tierOf(bid, i) {
   for (const T of UNIT_TYPES3) {
     if (!touched.has(T)) continue;
     const lastAtk = [...def.tiers].reverse().find((t) => t.combat?.[T])?.combat[T] || 0;
-    if (lastAtk) combat[T] = Math.max(1, Math.round(lastAtk * 0.15));
-    const u = { hp: 6 };
+    if (lastAtk) combat[T] = Math.max(1, Math.round(lastAtk * grow));
+    const lastHp = [...def.tiers].reverse().find((t) => t.unit?.[T]?.hp)?.unit[T].hp || 10;
+    const u = { hp: Math.max(6, Math.round(lastHp * grow)) };
     if (n % 3 === 0) u.heal = 1;
     if (n % 4 === 0) u.mv = 1;
     if (n % 5 === 0) u.rng = 1;
