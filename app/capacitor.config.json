@@ -1,0 +1,12 @@
+{
+  "appId": "io.eightbitcat.imperium",
+  "appName": "Imperium",
+  "webDir": "www",
+  "backgroundColor": "#05080c",
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": false,
+    "allowsLinkPreview": false,
+    "preferredContentMode": "mobile"
+  }
+}

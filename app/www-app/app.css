@@ -1,0 +1,15 @@
+/* IMPERIUM-appen: det som skiljer appen från webbspelet */
+/* TV-läget (stor skärm + mobiler) och länken till V3 hör inte hemma i en iPhone-app */
+#btnTV, .v1link { display: none !important; }
+/* hack i iPhonens skärmkanter (notch, hemindikator) */
+body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+#appbutik .card { max-width: 440px; max-height: calc(100vh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+#appbutik { z-index: 9000; }
+#appbutik #ablist .btn { display: block; width: 100%; text-align: left; line-height: 1.7; }
+#appmsg {
+  position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  z-index: 9999; max-width: 90vw; padding: 10px 14px; background: #0a0f14; color: #ffd24f;
+  border: 2px solid #ffd24f; font: 8px/1.6 "Press Start 2P", monospace; text-align: center;
+  opacity: 0; pointer-events: none; transition: opacity .25s;
+}
+#appmsg.show { opacity: 1; }

@@ -1,0 +1,27 @@
+{
+  "name": "imperium-app",
+  "private": true,
+  "appVersion": "1.0",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "sync": "node build.mjs && npx cap sync ios && node tools/ios-plist.mjs"
+  },
+  "dependencies": {
+    "@capacitor-community/admob": "8.5.0",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/ios": "^8.6.2",
+    "@capgo/native-purchases": "^8.11.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.2"
+  },
+  "imperium": {
+    "bundle": "io.eightbitcat.imperium",
+    "admob": {
+      "appId": "ca-app-pub-3940256099942544~1458002511",
+      "interstitial": "ca-app-pub-3940256099942544/4411468910",
+      "test": true
+    }
+  }
+}

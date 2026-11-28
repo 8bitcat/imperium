@@ -1,0 +1,2 @@
+# vendor-filerna är låsta med sha256 (vendor/lås.json): inga radslutsbyten
+vendor/** -text
