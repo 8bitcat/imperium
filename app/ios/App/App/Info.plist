@@ -5,7 +5,7 @@
   <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>en</string>
+	<string>sv</string>
 	<key>CFBundleDisplayName</key>
         <string>Imperium</string>
 	<key>CFBundleExecutable</key>
@@ -79,5 +79,9 @@
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>sv</string>
+	</array>
 </dict>
 </plist>

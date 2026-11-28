@@ -4,6 +4,7 @@
 //   NSUserTrackingUsageDescription texten i Apples spårningsfråga (ATT), krävs av AdMob
 //   SKAdNetworkItems               Googles SKAdNetwork-id (cstr6suwn9). Googles fulla lista kan läggas till här.
 //   ITSAppUsesNonExemptEncryption  false = ingen exportfråga i TestFlight (appen använder bara Apples HTTPS)
+//   CFBundleDevelopmentRegion/CFBundleLocalizations  sv – spelet är på svenska
 //   node tools/ios-plist.mjs
 import fs from 'fs';
 import path from 'path';
@@ -25,5 +26,8 @@ satt('GADApplicationIdentifier', `<string>${esc(CFG.admob.appId)}</string>`);
 satt('NSUserTrackingUsageDescription', '<string>Används bara för att visa annonser som passar dig bättre. Spelet fungerar lika bra om du säger nej.</string>');
 satt('SKAdNetworkItems', '<array>\n\t\t<dict>\n\t\t\t<key>SKAdNetworkIdentifier</key>\n\t\t\t<string>cstr6suwn9.skadnetwork</string>\n\t\t</dict>\n\t</array>');
 satt('ITSAppUsesNonExemptEncryption', '<false/>');
+// spelet finns bara på svenska: App Store visar då «Svenska» under Språk, och iOS-dialogerna (ATT, köp) blir svenska
+satt('CFBundleDevelopmentRegion', '<string>sv</string>');
+satt('CFBundleLocalizations', '<array>\n\t\t<string>sv</string>\n\t</array>');
 fs.writeFileSync(PLIST, t);
 console.log('Info.plist: AdMob', CFG.admob.appId, CFG.admob.test === false ? '(skarp)' : '(test)');

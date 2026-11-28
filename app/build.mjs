@@ -58,6 +58,8 @@ const byt = (fran, till) => {
   if (n !== 1) fel(`index.html: hittade ${n} av «${fran.slice(0, 70)}» (väntade 1) – uppdatera app/build.mjs`);
   html = html.replace(fran, till);
 };
+// sidan går ut under notchen och hemindikatorn; app.css håller knapparna innanför med env(safe-area-inset-*)
+byt('user-scalable=no">', 'user-scalable=no, viewport-fit=cover">');
 byt('<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>', '<script src="vendor/d3.min.js"></script>');
 byt('<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>', '<script src="vendor/topojson-client.min.js"></script>');
 byt('<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>', '<script src="vendor/peerjs.min.js"></script>');
@@ -65,10 +67,18 @@ byt('<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min
 byt('<link rel="preconnect" href="https://fonts.googleapis.com">\n', '');
 byt('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n', '');
 byt('<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">',
-  '<link href="vendor/fonts/press-start-2p.css" rel="stylesheet">\n<link href="app/app.css" rel="stylesheet">');
+  '<link href="vendor/fonts/press-start-2p.css" rel="stylesheet">');
+// appens CSS sist i <head>, så att den vinner över webbspelets <style> vid lika specificitet
+byt('</head>', '<link href="app/app.css" rel="stylesheet">\n</head>');
 // krediteringen: webbens sprites finns inte i appen
 byt('SPRITES: BERKLEYTORENO &amp; UMREX (NEWGROUNDS) — CC BY-NC-SA 3.0<br>', '');
 byt('TILES: KENNEY.NL — CC0 &nbsp;&#8226;&nbsp; INOFFICIELLT FANVERK', 'TILES: KENNEY.NL — CC0');
+// App Review: inga «prototyp»-etiketter (riktlinje 2.2) och inga andra spels namn i texterna (4.1)
+byt('&#9876; ERÖVRA VÄRLDEN (PROTOTYP)</button>', '&#9876; ERÖVRA VÄRLDEN</button>');
+byt('&#9876; PROTOTYP A — TAKTIK</button>', '&#9876; TAKTIK — TURORDNING</button>');
+byt('&#127918; PROTOTYP B — REALTID</button>', '&#127918; REALTID</button>');
+byt('Turbaserat rutnät à la Advance Wars.', 'Turbaserat rutnät.');
+byt('Realtidsstrid à la Red Alert i landets biom', 'Realtidsstrid i landets biom');
 // 3D från första starten + appens inställningar, före main.js
 const appCfg = { bundle: CFG.bundle, admob: CFG.admob || {} };
 byt('<script type="module" src="js/main.js"></script>',
@@ -90,6 +100,11 @@ js('data.js', (t) => {
     t = t.replace(u, `'vendor/countries-${s}.json'`);
   }
   return t;
+});
+js('main.js', (t) => {
+  const u = "`PROTOTYP ${kind} — ${kind === 'A'";
+  if (!t.includes(u)) fel('js/main.js: hittade inte stridsrubriken «PROTOTYP ${kind}»');
+  return t.replace(u, "`${kind === 'A'");
 });
 let flaggor = 0;
 (function ga(dir) {
