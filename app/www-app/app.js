@@ -104,8 +104,12 @@
     spara();
     return { p, v };
   }
+  // beloppen visas som i spelet: pengar i riktiga dollar (real.js money), forskning i poäng
+  let REAL = null;
+  import('../js/real.js').then((m) => { REAL = m; }).catch(() => {});
+  const belopp = (p, v) => p.typ === 'pengar' ? (REAL ? REAL.money(v) : `${Math.round(v)} \u{1F4B0}`) : `${Math.round(v).toLocaleString('sv-SE')} FORSKNINGSPOÄNG`;
   const tack = ({ p, v }) => p.typ === 'ingenreklam' ? 'TACK! INGA FLER ANNONSER.'
-    : v ? `TACK! +${Math.round(v).toLocaleString('sv-SE')} ${p.typ === 'rp' ? 'FORSKNINGSPOÄNG' : 'I KASSAN'}`
+    : v ? `TACK! +${belopp(p, v)}${p.typ === 'pengar' ? ' I KASSAN' : ''}`
       : 'TACK! KÖPET KOMMER IN NÄR DU SPELAR ETT SOLOSPEL.';
 
   // ---------- Apple ----------
@@ -179,7 +183,7 @@
       b.className = 'btn' + (p.typ === 'ingenreklam' ? ' amber' : '');
       const agd = p.typ === 'ingenreklam' && las().ingenreklam;
       const v = vardeFor(p);
-      const mer = v ? ` (+${Math.round(v).toLocaleString('sv-SE')})` : '';
+      const mer = v ? ` (+${belopp(p, v)})` : '';
       b.innerHTML = `${p.namn}${agd ? ' &#10003;' : ''}<br><span style="font-size:7px;opacity:.8">${p.text}${mer}</span>`
         + `<span style="float:right">${agd ? 'KÖPT' : pr[p.sku] || ''}</span>`;
       b.disabled = agd || !native();
