@@ -18,7 +18,7 @@ workflows:
         - apple_signing
       vars:
         BUNDLE_ID: io.eightbitcat.imperium
-        APP_STORE_APPLE_ID: 0             # TODO: sätts när appen skapats i App Store Connect (ny-app.mjs skriver ut den)
+        APP_STORE_APPLE_ID: 6840295031    # Imperium: Laws & Nations i App Store Connect (App Information → Apple ID)
         XCODE_PROJECT: App.xcodeproj
         XCODE_SCHEME: App
       node: 22
